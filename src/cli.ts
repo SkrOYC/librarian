@@ -19,7 +19,7 @@ export function createProgram() {
     .argument('<query>', 'The question or exploration query')
     .option('-t, --tech <technology>', 'Specific technology to explore')
     .option('-g, --group <group>', 'Technology group to explore')
-    .option('-c, --config <path>', 'Path to configuration file', 'librarian.yaml')
+    .option('-c, --config <path>', 'Path to configuration file')
     .action(async (query, options) => {
       try {
         const config = await loadConfig(options.config);
@@ -64,7 +64,7 @@ export function createProgram() {
     .command('list')
     .description('List available technologies')
     .option('-g, --group <group>', 'Filter technologies by group')
-    .option('-c, --config <path>', 'Path to configuration file', 'librarian.yaml')
+    .option('-c, --config <path>', 'Path to configuration file')
     .action(async (options) => {
       try {
         const config = await loadConfig(options.config);

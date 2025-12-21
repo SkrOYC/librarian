@@ -29,10 +29,10 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 3: Repository Path Structure and Sandboxing' (Protocol in workflow.md) [0be3804]
 
 ## Phase 4: Integration and Testing
-- [~] Task: Write integration tests for the complete explore workflow with --tech flag
-- [ ] Task: Write integration tests for the complete explore workflow with --group flag
-- [ ] Task: Write integration tests for the list command with and without --group flag
-- [ ] Task: Update ReactAgent to work with the new configuration and path structure
-- [ ] Task: Test configuration loading with nested technology groups
-- [ ] Task: Verify that all existing functionality works with the new interface
-- [ ] Task: Conductor - User Manual Verification 'Phase 4: Integration and Testing' (Protocol in workflow.md)
+- [x] Task: Write integration tests for the complete explore workflow with --tech flag [89c1ede]
+- [x] Task: Write integration tests for the complete explore workflow with --group flag [89c1ede]
+- [x] Task: Write integration tests for the list command with and without --group flag [89c1ede]
+- [x] Task: Update ReactAgent to work with the new configuration and path structure [cd16f42]
+- [x] Task: Test configuration loading with nested technology groups [738c919]
+- [x] Task: Verify that all existing functionality works with the new interface [89c1ede]
+- [~] Task: Conductor - User Manual Verification 'Phase 4: Integration and Testing' (Protocol in workflow.md)

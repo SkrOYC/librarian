@@ -13,9 +13,10 @@ import { LibrarianConfig } from "../index";
 
 export interface ReactAgentConfig {
   aiProvider: {
-    type: 'openai' | 'anthropic' | 'google';
+    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible';
     apiKey: string;
     model?: string;
+    baseURL?: string;
   };
   workingDir: string;
 }
@@ -38,13 +39,21 @@ export class ReactAgent {
   }
 
   private createAIModel(aiProvider: ReactAgentConfig['aiProvider']): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
-    const { type, apiKey, model } = aiProvider;
+    const { type, apiKey, model, baseURL } = aiProvider;
     
     switch (type) {
       case 'openai':
         return new ChatOpenAI({ 
           apiKey,
           modelName: model || 'gpt-4o',
+        });
+      case 'openai-compatible':
+        return new ChatOpenAI({ 
+          apiKey,
+          modelName: model || 'gpt-4o',
+          configuration: {
+            baseURL: baseURL || 'https://api.openai.com/v1',
+          }
         });
       case 'anthropic':
         return new ChatAnthropic({ 

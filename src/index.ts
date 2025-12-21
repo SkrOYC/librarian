@@ -13,6 +13,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { BaseMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
+import { ReactAgent } from './agents/react-agent.js';
 
 export interface LibrarianConfig {
   technologies: {
@@ -255,32 +256,24 @@ export class Librarian {
   }
 
   async queryRepository(repoName: string, query: string): Promise<string> {
-    const repoUrl = this.getRepoUrl(repoName);
+    const tech = this.resolveTechnology(repoName);
     
-    if (!repoUrl) {
+    if (!tech) {
       throw new Error(`Repository ${repoName} not found in configuration`);
     }
 
     // Clone or sync the repository first
     const repoPath = await this.syncRepository(repoName);
     
-    // Read the repository content (for now, just list files)
-    const repoContents = this.readRepositoryContents(repoPath);
+    // Initialize the agent
+    const agent = new ReactAgent({
+      aiProvider: this.config.aiProvider,
+      workingDir: repoPath
+    });
+    await agent.initialize();
     
-    // Create a prompt for the AI with the repository information
-    const systemMessage = `You are an expert software engineer analyzing the repository "${repoName}". 
-    The repository is located at "${repoPath}" and contains the following files:
-    ${repoContents.slice(0, 1000)}...`;
-    
-    const userMessage = `Based on the repository structure and content, please answer the following question: ${query}`;
-    
-    // Query the AI model
-    const aiResponse = await this.queryAI([
-      new SystemMessage(systemMessage),
-      new HumanMessage(userMessage)
-    ]);
-    
-    return aiResponse.content as string;
+    // Execute the query using the agent
+    return await agent.queryRepository(repoPath, query);
   }
 
   private readRepositoryContents(repoPath: string): string {

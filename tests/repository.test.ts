@@ -96,7 +96,7 @@ describe('Repository Management', () => {
 
     it('should handle error when trying to update an invalid git repo', async () => {
       // Create the repo directory with a .git folder to simulate a git repository
-      const repoPath = path.join(testWorkingDir, 'test-repo');
+      const repoPath = path.join(testWorkingDir, 'default', 'test-repo');
       fs.mkdirSync(repoPath, { recursive: true });
       const gitPath = path.join(repoPath, '.git');
       fs.mkdirSync(gitPath, { recursive: true });
@@ -113,7 +113,7 @@ describe('Repository Management', () => {
         // Just verify it's a git-related error
         expect((error as Error).message).to.exist;
       }
-    });
+    }); // Increased timeout removed due to chai incompatibility
   });
 
   describe('queryRepository', () => {

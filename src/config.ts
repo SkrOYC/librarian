@@ -4,8 +4,11 @@ import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { LibrarianConfig } from './index.js';
 
+import os from 'os';
+
 const TechnologySchema = z.object({
-  repo: z.string(),
+  repo: z.string().optional(),
+  name: z.string().optional(), // For README style
   branch: z.string().default('main'),
   description: z.string().optional(),
 });
@@ -29,21 +32,31 @@ const ConfigSchema = z.object({
   repos_path: z.string().optional(),
 });
 
-export async function loadConfig(configPath: string): Promise<LibrarianConfig> {
+function expandTilde(filePath: string): string {
+  if (filePath.startsWith('~/')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
+
+export async function loadConfig(configPath?: string): Promise<LibrarianConfig> {
+  const defaultPath = path.join(os.homedir(), '.config', 'librarian', 'config.yaml');
+  const actualPath = configPath ? expandTilde(configPath) : defaultPath;
+
   // Check if config file exists
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`Configuration file not found: ${configPath}`);
+  if (!fs.existsSync(actualPath)) {
+    throw new Error(`Configuration file not found: ${actualPath}`);
   }
 
   // Read and parse the YAML file
-  const configFileContent = fs.readFileSync(configPath, 'utf8');
+  const configFileContent = fs.readFileSync(actualPath, 'utf8');
   const parsedConfig = parse(configFileContent);
 
   // Validate the configuration
   const validatedConfig = ConfigSchema.parse(parsedConfig);
 
   // Migration logic for technologies
-  let technologies = validatedConfig.technologies;
+  let technologies: any = validatedConfig.technologies;
 
   if (validatedConfig.repositories && !technologies) {
     const defaultGroup: Record<string, { repo: string, branch: string }> = {};
@@ -53,6 +66,18 @@ export async function loadConfig(configPath: string): Promise<LibrarianConfig> {
     technologies = {
       default: defaultGroup
     };
+  }
+
+  if (technologies) {
+    // Normalize repo/name
+    for (const group of Object.values(technologies)) {
+      for (const tech of Object.values(group as any)) {
+        const t = tech as any;
+        if (!t.repo && t.name) {
+          t.repo = t.name;
+        }
+      }
+    }
   }
 
   if (!technologies) {
@@ -65,7 +90,7 @@ export async function loadConfig(configPath: string): Promise<LibrarianConfig> {
   if (!aiProvider && validatedConfig.llm_provider) {
     aiProvider = {
       type: validatedConfig.llm_provider,
-      apiKey: (process.env.LIBRARIAN_API_KEY || ''), // Should probably handle API key differently if not in config
+      apiKey: (process.env.LIBRARIAN_API_KEY || process.env.OPENAI_API_KEY || ''), 
       model: validatedConfig.llm_model,
       baseURL: validatedConfig.base_url
     };
@@ -83,7 +108,9 @@ export async function loadConfig(configPath: string): Promise<LibrarianConfig> {
   return {
     ...validatedConfig,
     technologies,
-    aiProvider
+    aiProvider,
+    repos_path: validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined,
+    workingDir: expandTilde(validatedConfig.workingDir)
   } as LibrarianConfig;
 }
 
