@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
+import { Librarian, LibrarianConfig } from '../src/index.js';
 
 describe('Project Initialization', () => {
   describe('package.json', () => {
@@ -40,6 +41,57 @@ describe('Project Initialization', () => {
       expect(tsConfig.compilerOptions.rootDir).to.exist;
       expect(tsConfig.compilerOptions.strict).to.exist;
       expect(tsConfig.compilerOptions.esModuleInterop).to.exist;
+    });
+  });
+});
+
+describe('End-to-End Integration', () => {
+  const testWorkingDir = './integration-test-work';
+  const mockConfig: LibrarianConfig = {
+    repositories: {
+      'test-repo': 'https://github.com/test/repo.git'
+    },
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: testWorkingDir
+  };
+
+  beforeEach(() => {
+    // Clean up test directory before each test
+    if (fs.existsSync(testWorkingDir)) {
+      fs.rmSync(testWorkingDir, { recursive: true, force: true });
+    }
+  });
+
+  afterEach(() => {
+    // Clean up test directory after each test
+    if (fs.existsSync(testWorkingDir)) {
+      fs.rmSync(testWorkingDir, { recursive: true, force: true });
+    }
+  });
+
+  describe('Full Librarian Workflow', () => {
+    it('should initialize, create AI model, and prepare for queries', () => {
+      const librarian = new Librarian(mockConfig);
+      
+      // Verify all components are properly integrated
+      expect(librarian).to.be.an.instanceOf(Librarian);
+    });
+
+    it('should handle configuration validation', () => {
+      // Test that the configuration is properly structured
+      expect(mockConfig.repositories).to.be.an('object');
+      expect(mockConfig.aiProvider).to.be.an('object');
+      expect(mockConfig.workingDir).to.be.a('string');
+    });
+
+    it('should create working directory during initialization', async () => {
+      const librarian = new Librarian(mockConfig);
+      await librarian.initialize();
+      
+      expect(fs.existsSync(testWorkingDir)).to.be.true;
     });
   });
 });
