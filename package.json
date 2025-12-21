@@ -1,0 +1,51 @@
+{
+  "name": "@oscar/librarian",
+  "version": "0.1.0",
+  "description": "Librarian CLI - Technology Research Agent",
+  "main": "./dist/index.js",
+  "bin": {
+    "librarian": "./dist/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "bun test tests/",
+    "test:watch": "bun test --watch tests/",
+    "lint": "eslint src --ext .ts",
+    "start": "node dist/index.js",
+    "cli": "node dist/cli.js"
+  },
+  "keywords": [
+    "cli",
+    "research",
+    "ai",
+    "typescript",
+    "langchain",
+    "git"
+  ],
+  "author": "Oscar",
+  "license": "MIT",
+  "dependencies": {
+    "@langchain/anthropic": "^1.3.2",
+    "@langchain/core": "^1.1.7",
+    "@langchain/google-genai": "^2.1.2",
+    "@langchain/langgraph": "^1.0.7",
+    "@langchain/openai": "^1.2.0",
+    "commander": "^14.0.2",
+    "isomorphic-git": "^1.36.1",
+    "yaml": "^2.8.2",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.0.3",
+    "@typescript-eslint/eslint-plugin": "^8.50.0",
+    "@typescript-eslint/parser": "^8.50.0",
+    "bun-types": "^1.3.5",
+    "chai": "^6.2.1",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3"
+  }
+}
