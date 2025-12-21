@@ -1,7 +1,7 @@
 # Modernization Track: Agent Orchestration and Streaming Implementation
 
 ## Phase 1: Tool Modernization
-- [ ] Task: Rewrite FileListTool using modern `tool()` function with Zod schema
+- [x] Task: Rewrite FileListTool using modern `tool()` function with Zod schema [6827b2e]
 - [ ] Task: Rewrite FileReadTool using modern `tool()` function with Zod schema  
 - [ ] Task: Rewrite GrepContentTool using modern `tool()` function with Zod schema
 - [ ] Task: Rewrite FileFindTool using modern `tool()` function with Zod schema
