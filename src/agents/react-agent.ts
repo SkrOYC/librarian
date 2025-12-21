@@ -1,5 +1,5 @@
 import { createAgent } from "langchain";
-import { FileListTool } from "../tools/file-listing.tool";
+import { fileListTool } from "../tools/file-listing.tool";
 import { FileReadTool } from "../tools/file-reading.tool";
 import { GrepContentTool } from "../tools/grep-content.tool";
 import { FileFindTool } from "../tools/file-finding.tool";
@@ -29,9 +29,9 @@ export class ReactAgent {
   constructor(config: ReactAgentConfig) {
     this.aiModel = this.createAIModel(config.aiProvider);
     
-    // Initialize tools - all the FileExplorer-based tools
+    // Initialize tools - modernized tool pattern
     this.tools = [
-      new FileListTool(config.workingDir),
+      fileListTool,
       new FileReadTool(config.workingDir), 
       new GrepContentTool(config.workingDir),
       new FileFindTool(config.workingDir)

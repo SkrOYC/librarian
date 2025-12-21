@@ -1,14 +1,11 @@
 import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
-import { FileListTool } from '../src/tools/file-listing.tool';
+import { fileListTool } from '../src/tools/file-listing.tool';
 import { FileReadTool } from '../src/tools/file-reading.tool';
 import { GrepContentTool } from '../src/tools/grep-content.tool';
 import { FileFindTool } from '../src/tools/file-finding.tool';
 import { ReactAgent } from '../src/agents/react-agent';
-
-// Test suite for ReAct Agent - Repository Exploration Functions
-const fileListTool = new FileListTool();
 const fileReadTool = new FileReadTool();
 const grepContentTool = new GrepContentTool();
 const fileFindTool = new FileFindTool();
@@ -27,7 +24,7 @@ test('FileListTool should list directory contents', async () => {
   fs.writeFileSync(testFile1, 'Test content 1');
   fs.writeFileSync(testFile2, 'Test content 2');
   
-  const result = await fileListTool._call(JSON.stringify({ directoryPath: testDir }));
+  const result = await fileListTool.invoke({ directoryPath: testDir });
   
   expect(result).to.include('test1.txt');
   expect(result).to.include('test2.txt');
@@ -40,7 +37,7 @@ test('FileListTool should list directory contents', async () => {
 });
 
 test('FileListTool should handle invalid directory paths', async () => {
-  const result = await fileListTool._call(JSON.stringify({ directoryPath: '../invalid_dir' }));
+  const result = await fileListTool.invoke({ directoryPath: '../invalid_dir' });
   expect(result).to.include('contains invalid path characters');
 });
 
