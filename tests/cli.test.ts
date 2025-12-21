@@ -39,4 +39,10 @@ describe('CLI Commands', () => {
     expect(option).toBeDefined();
     expect(option?.description).toBe('Filter technologies by group');
   });
+
+  it('should not have a query command', () => {
+    const program = createProgram();
+    const command = program.commands.find(c => c.name() === 'query');
+    expect(command).toBeUndefined();
+  });
 });
