@@ -1,0 +1,36 @@
+# Initial Concept
+
+Based on the README.md file, this is the Librarian CLI - Technology Research Agent. It's a powerful CLI tool that enables AI coding agents to query specific technology repositories and receive detailed technical responses through autonomous exploration.
+
+Key aspects:
+- Query specific technology repositories with detailed technical questions
+- Receive autonomous exploration through a ReAct agent that reads and analyzes the codebase
+- Get streaming markdown responses with technical insights and explanations
+
+Core features include repository management, LangChain-powered agent, unified model abstraction, dynamic prompt construction, and more.
+
+# Product Guide: Librarian CLI - Technology Research Agent
+
+## Vision
+The Librarian CLI is a powerful command-line tool that enables AI coding agents to query specific technology repositories and receive detailed technical responses through autonomous exploration. Its primary purpose is to reduce hallucinations from AI coding agents by providing à la carte guidance grounded in actual source code.
+
+## Target Audience
+The primary target audience consists of software engineers who work with AI coding agents. The actual user is the AI agent itself, operating in coding environments like the current platform. The tool is designed to be used by AI coding agents throughout their entire coding lifecycle - planning and execution phases - to access direct insights of SDKs/APIs/libraries/packages so that they know for sure how to use them and integrate them.
+
+## Goals
+- Reduce hallucinations in AI coding agents by providing responses grounded in actual source code
+- Enable deep repository exploration with AI-powered analysis and context-aware responses
+- Provide AI agents with direct insights of SDKs/APIs/libraries/packages for accurate usage and integration information
+- Support autonomous development processes where AI agents can independently access real codebase information during planning and execution
+- Offer à la carte guidance that AI agents can request on-demand
+
+## Features
+- **Deep Repository Exploration**: AI-powered analysis that understands complex codebases and provides context-aware responses
+- **Flexible Repository Support**: Works with any Git repository that users configure, with special focus on popular open-source frameworks and libraries (React, Node.js, LangChain, etc.)
+- **Multi-Provider AI Integration**: Support for multiple AI providers (OpenAI, Anthropic, Google) through unified abstraction, allowing users to configure their preferred provider based on their specific needs
+- **Repository Management**: Auto-clone and sync from Git before each query to ensure up-to-date information
+- **Secure Sandboxed Operations**: Isolated working directories with secure file operations for safe exploration
+- **Streaming Responses**: Real-time markdown responses with technical insights and explanations
+
+## Value Proposition
+The Librarian CLI addresses the critical issue of AI hallucinations in coding contexts by grounding agent responses in actual source code. Rather than generating speculative answers, the tool enables AI agents to access, analyze, and reference real code from configured repositories during their entire coding lifecycle, significantly improving the accuracy and reliability of technical decisions during planning and execution phases.
