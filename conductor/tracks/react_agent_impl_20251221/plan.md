@@ -9,7 +9,7 @@
 - [x] Task: Ensure all security measures (path traversal prevention, sandboxing) are preserved
 - [~] Task: Conductor - User Manual Verification 'Phase 1: FileExplorer Command Analysis and Adaptation' (Protocol in workflow.md)
 
-## Phase 2: LangChain Tool Creation
+## Phase 2: LangChain Tool Creation [checkpoint: 96fad98]
 - [x] Task: Write unit tests for LangChain tool wrappers for each command
 - [x] Task: Create LangChain tool for file viewing with proper schema validation
 - [x] Task: Create LangChain tool for file finding with proper schema validation
