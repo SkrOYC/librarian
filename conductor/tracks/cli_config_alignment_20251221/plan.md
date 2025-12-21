@@ -16,8 +16,8 @@
 - [x] Task: Implement the 'list' command to display grouped technologies with descriptions [80c4070]
 - [x] Task: Add --tech flag functionality for specifying individual technologies [53447f8]
 - [x] Task: Add --group flag functionality for specifying technology groups [49c7573]
-- [~] Task: Update help text and documentation for new commands
-- [ ] Task: Conductor - User Manual Verification 'Phase 2: CLI Command Implementation - Explore and List' (Protocol in workflow.md)
+- [x] Task: Update help text and documentation for new commands [74c068b]
+- [~] Task: Conductor - User Manual Verification 'Phase 2: CLI Command Implementation - Explore and List' (Protocol in workflow.md)
 
 ## Phase 3: Repository Path Structure and Sandboxing
 - [ ] Task: Write unit tests for the new repository path resolution logic
