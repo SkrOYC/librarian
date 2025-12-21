@@ -6,8 +6,9 @@ Key aspects:
 - Query specific technology repositories with detailed technical questions
 - Receive autonomous exploration through a ReAct agent that reads and analyzes the codebase
 - Get streaming markdown responses with technical insights and explanations
+- Uses specialized FileExplorer tools for repository navigation and content analysis
 
-Core features include repository management, LangChain-powered agent, unified model abstraction, dynamic prompt construction, and more.
+Core features include repository management, LangChain-powered ReAct agent, specialized file exploration tools, unified model abstraction, and more.
 
 # Product Guide: Librarian CLI - Technology Research Agent
 
@@ -25,7 +26,8 @@ The primary target audience consists of software engineers who work with AI codi
 - Offer à la carte guidance that AI agents can request on-demand
 
 ## Features
-- **Deep Repository Exploration**: AI-powered analysis that understands complex codebases and provides context-aware responses
+- **Deep Repository Exploration**: AI-powered ReAct agent analysis that understands complex codebases and provides context-aware responses
+- **Specialized FileExplorer Tools**: Dedicated tools for listing directories, reading files, searching content, and finding files by pattern to enable comprehensive codebase exploration
 - **Flexible Repository Support**: Works with any Git repository that users configure, with special focus on popular open-source frameworks and libraries (React, Node.js, LangChain, etc.)
 - **Multi-Provider AI Integration**: Support for multiple AI providers (OpenAI, Anthropic, Google) through unified abstraction, allowing users to configure their preferred provider based on their specific needs
 - **Repository Management**: Auto-clone and sync from Git before each query to ensure up-to-date information

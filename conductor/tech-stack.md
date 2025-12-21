@@ -23,6 +23,7 @@
 
 ## File System Operations
 - **Node.js built-in modules** - For file system operations and path handling
+- **Custom FileExplorer Tools** - Specialized tools for repository exploration (file listing, reading, content search, and file finding)
 
 ## Utilities
 - **Chalk** - Terminal output formatting
