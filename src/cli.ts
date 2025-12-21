@@ -69,8 +69,26 @@ export function createProgram() {
     .action(async (options) => {
       try {
         const config = await loadConfig(options.config);
-        // Implementation for list will come in Task 4
-        console.log('Listing technologies');
+        
+        const groupsToDisplay = options.group 
+          ? { [options.group]: config.technologies[options.group] }
+          : config.technologies;
+
+        if (options.group && !config.technologies[options.group]) {
+          throw new Error(`Group ${options.group} not found in configuration`);
+        }
+
+        console.log('Available Technologies:');
+        for (const [groupName, techs] of Object.entries(groupsToDisplay)) {
+          if (!techs || Object.keys(techs).length === 0) continue;
+          
+          console.log(`\n[${groupName}]`);
+          for (const [techName, details] of Object.entries(techs)) {
+            const desc = details.description ? ` - ${details.description}` : '';
+            const branch = details.branch ? ` (${details.branch})` : '';
+            console.log(`  - ${techName}${branch}${desc}`);
+          }
+        }
       } catch (error: unknown) {
         if (error instanceof Error) {
           console.error('Error:', error.message);
