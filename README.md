@@ -203,15 +203,15 @@ Example:
 
 ### Core Components
 
-1. **CLI Entry Point** (`src/index.ts`)
+1. **CLI Entry Point** (`src/cli.ts`)
    - Command parsing with Commander.js
    - Configuration loading and validation
    - Error handling and exit codes
 
-2. **Configuration Manager** (`src/config/`)
-   - YAML config file parsing
-   - Technology validation and normalization
-   - Path resolution for local repositories
+2. **Core Librarian** (`src/index.ts`)
+   - Main class for orchestrating operations
+   - Technology resolution
+   - Repository synchronization logic
 
 3. **Repository Manager** (`src/repo/`)
    - Git clone/pull operations
