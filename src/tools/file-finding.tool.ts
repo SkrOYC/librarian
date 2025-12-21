@@ -126,16 +126,18 @@ function simpleMatch(str: string, pattern: string): boolean {
 export class FileFindTool extends Tool {
   name = "file_find";
   description = "Find files matching glob patterns in a directory. Use this to locate specific files by name or extension.";
+  private workingDir: string;
 
-  constructor() {
+  constructor(workingDir: string = process.cwd()) {
     super();
+    this.workingDir = workingDir;
   }
 
   async _call(input: string): Promise<string> {
     try {
       // Parse the input JSON string
       const parsedInput: {
-        searchPath: string;
+        searchPath?: string;
         patterns: string[];
         exclude?: string[];
         recursive?: boolean;
@@ -143,8 +145,8 @@ export class FileFindTool extends Tool {
         includeHidden?: boolean;
       } = JSON.parse(input);
 
+      const searchPath = parsedInput.searchPath || '.';
       const { 
-        searchPath, 
         patterns, 
         exclude, 
         recursive, 
@@ -153,13 +155,12 @@ export class FileFindTool extends Tool {
       } = parsedInput;
 
       // Validate the path to prevent directory traversal
-      if (searchPath.includes('../') || searchPath.includes('..\\') || searchPath.startsWith('..')) {
+      if (searchPath.includes('..')) {
         throw new Error(`Search path "${searchPath}" contains invalid path characters`);
       }
 
-      const resolvedPath = path.resolve(searchPath);
-      const workingDir = process.cwd(); // In a real implementation, this would be from config
-      const resolvedWorkingDir = path.resolve(workingDir);
+      const resolvedPath = path.resolve(this.workingDir, searchPath);
+      const resolvedWorkingDir = path.resolve(this.workingDir);
 
       if (!resolvedPath.startsWith(resolvedWorkingDir)) {
         throw new Error(`Search path "${searchPath}" attempts to escape the working directory sandbox`);

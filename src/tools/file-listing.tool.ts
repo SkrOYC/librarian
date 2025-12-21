@@ -101,25 +101,26 @@ async function listDirectory(
 export class FileListTool extends Tool {
   name = "file_list";
   description = "List the contents of a directory with metadata. Use this to understand the structure of a repository or directory.";
+  private workingDir: string;
 
-  constructor() {
+  constructor(workingDir: string = process.cwd()) {
     super();
+    this.workingDir = workingDir;
   }
 
   async _call(input: string): Promise<string> {
     try {
       // Parse the input JSON string
       const parsedInput = JSON.parse(input);
-      const { directoryPath, includeHidden = false } = parsedInput;
+      const { directoryPath = '.', includeHidden = false } = parsedInput;
 
       // Validate the path to prevent directory traversal
       if (directoryPath.includes('../') || directoryPath.includes('..\\') || directoryPath.startsWith('..')) {
         throw new Error(`Directory path "${directoryPath}" contains invalid path characters`);
       }
 
-      const resolvedPath = path.resolve(directoryPath);
-      const workingDir = process.cwd(); // In a real implementation, this would be from config
-      const resolvedWorkingDir = path.resolve(workingDir);
+      const resolvedPath = path.resolve(this.workingDir, directoryPath);
+      const resolvedWorkingDir = path.resolve(this.workingDir);
 
       if (!resolvedPath.startsWith(resolvedWorkingDir)) {
         throw new Error(`Directory path "${directoryPath}" attempts to escape the working directory sandbox`);

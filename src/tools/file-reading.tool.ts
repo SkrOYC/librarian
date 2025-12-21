@@ -74,9 +74,11 @@ async function readFileContent(filePath: string): Promise<string> {
 export class FileReadTool extends Tool {
   name = "file_read";
   description = "Read the contents of a file. Use this to examine the content of a specific file.";
+  private workingDir: string;
 
-  constructor() {
+  constructor(workingDir: string = process.cwd()) {
     super();
+    this.workingDir = workingDir;
   }
 
   async _call(input: string): Promise<string> {
@@ -90,9 +92,8 @@ export class FileReadTool extends Tool {
         throw new Error(`File path "${filePath}" contains invalid path characters`);
       }
 
-      const resolvedPath = path.resolve(filePath);
-      const workingDir = process.cwd(); // In a real implementation, this would be from config
-      const resolvedWorkingDir = path.resolve(workingDir);
+      const resolvedPath = path.resolve(this.workingDir, filePath);
+      const resolvedWorkingDir = path.resolve(this.workingDir);
 
       if (!resolvedPath.startsWith(resolvedWorkingDir)) {
         throw new Error(`File path "${filePath}" attempts to escape the working directory sandbox`);
@@ -100,13 +101,13 @@ export class FileReadTool extends Tool {
 
       // Check if it's a media file
       if (isImageFile(resolvedPath) || isAudioFile(resolvedPath)) {
-        return `This is a media file (${isImageFile(resolvedPath) ? 'image' : 'audio'}). Media files cannot be read as text. Path: ${resolvedPath}`;
+        return `This is a media file (${isImageFile(resolvedPath) ? 'image' : 'audio'}). Media files cannot be read as text. Path: ${filePath}`;
       }
 
       // Check if it's a text file
       const isText = await isTextFile(resolvedPath);
       if (!isText) {
-        return `This file is not a text file and cannot be read as text. Path: ${resolvedPath}`;
+        return `This file is not a text file and cannot be read as text. Path: ${filePath}`;
       }
 
       // Read the file content
@@ -118,7 +119,7 @@ export class FileReadTool extends Tool {
         return `File content is too large (${content.length} characters). First ${maxContentLength} characters:\n\n${content.substring(0, maxContentLength)}\n\n[Content truncated due to length]`;
       }
 
-      return `Content of file: ${resolvedPath}\n\n${content}`;
+      return `Content of file: ${filePath}\n\n${content}`;
     } catch (error) {
       return `Error reading file: ${(error as Error).message}`;
     }

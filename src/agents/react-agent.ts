@@ -30,10 +30,10 @@ export class ReactAgent {
     
     // Initialize tools - all the FileExplorer-based tools
     this.tools = [
-      new FileListTool(),
-      new FileReadTool(), 
-      new GrepContentTool(),
-      new FileFindTool()
+      new FileListTool(config.workingDir),
+      new FileReadTool(config.workingDir), 
+      new GrepContentTool(config.workingDir),
+      new FileFindTool(config.workingDir)
     ];
   }
 

@@ -113,30 +113,49 @@ export class Librarian {
     return undefined;
   }
 
-  private getSecureRepoPath(repoName: string): string {
+  private getSecureGroupPath(groupName: string): string {
+    if (groupName.includes('../') || groupName.includes('..\\') || groupName.startsWith('..')) {
+      throw new Error(`Group name "${groupName}" contains invalid path characters`);
+    }
+
+    const sanitizedGroupName = path.basename(groupName);
+    const workDir = this.config.repos_path || this.config.workingDir;
+    const groupPath = path.join(workDir, sanitizedGroupName);
+
+    const resolvedWorkingDir = path.resolve(workDir);
+    const resolvedGroupPath = path.resolve(groupPath);
+
+    if (!resolvedGroupPath.startsWith(resolvedWorkingDir)) {
+      throw new Error(`Group name "${groupName}" attempts to escape the working directory sandbox`);
+    }
+
+    return groupPath;
+  }
+
+  private getSecureRepoPath(repoName: string, groupName: string = 'default'): string {
     // Check for path traversal attempts in the repoName before sanitizing
     if (repoName.includes('../') || repoName.includes('..\\') || repoName.startsWith('..')) {
       throw new Error(`Repository name "${repoName}" contains invalid path characters`);
     }
     
-    // Sanitize the repoName to prevent directory traversal
+    // Sanitize the names
     const sanitizedRepoName = path.basename(repoName);
-    const workDir = this.config.repos_path || this.config.workingDir;
-    const repoPath = path.join(workDir, sanitizedRepoName);
+    const groupPath = this.getSecureGroupPath(groupName);
+    const repoPath = path.join(groupPath, sanitizedRepoName);
     
-    // Verify that the resulting path is within the working directory (sandboxing)
-    const resolvedWorkingDir = path.resolve(workDir);
+    // Verify that the resulting path is within the group directory (which is already sandboxed)
+    const resolvedGroupDir = path.resolve(groupPath);
     const resolvedRepoPath = path.resolve(repoPath);
     
-    if (!resolvedRepoPath.startsWith(resolvedWorkingDir)) {
-      throw new Error(`Repository name "${repoName}" attempts to escape the working directory sandbox`);
+    if (!resolvedRepoPath.startsWith(resolvedGroupDir)) {
+      throw new Error(`Repository name "${repoName}" attempts to escape the group sandbox`);
     }
     
     return repoPath;
   }
 
-  async updateRepository(repoName: string): Promise<void> {
-    const repoPath = this.getSecureRepoPath(repoName);
+  async updateRepository(repoName: string, groupName: string = 'default'): Promise<void> {
+    const repoPath = this.getSecureRepoPath(repoName, groupName);
     const gitPath = path.join(repoPath, '.git');
     
     if (!fs.existsSync(repoPath)) {
@@ -157,7 +176,9 @@ export class Librarian {
       singleBranch: true,
     });
     
-    const branch = this.getRepoBranch(repoName);
+    const tech = this.resolveTechnology(groupName + ':' + repoName) || this.resolveTechnology(repoName);
+    const branch = tech?.branch || 'main';
+    
     // Checkout the latest version
     await checkout({
       fs,
@@ -167,46 +188,37 @@ export class Librarian {
   }
 
   private getRepoBranch(repoName: string): string {
-    for (const group of Object.values(this.config.technologies)) {
-      if (group[repoName]) {
-        return group[repoName].branch || 'main';
-      }
-    }
-    return 'main';
+    const tech = this.resolveTechnology(repoName);
+    return tech?.branch || 'main';
   }
 
   private getRepoUrl(repoName: string): string | undefined {
-    for (const group of Object.values(this.config.technologies)) {
-      if (group[repoName]) {
-        return group[repoName].repo;
-      }
-    }
-    return undefined;
+    const tech = this.resolveTechnology(repoName);
+    return tech?.repo;
   }
 
   async syncRepository(repoName: string): Promise<string> {
-    const repoUrl = this.getRepoUrl(repoName);
-    const branch = this.getRepoBranch(repoName);
+    const tech = this.resolveTechnology(repoName);
     
-    if (!repoUrl) {
+    if (!tech) {
       throw new Error(`Repository ${repoName} not found in configuration`);
     }
 
-    const repoPath = this.getSecureRepoPath(repoName);
+    const repoPath = this.getSecureRepoPath(tech.name, tech.group);
     
     if (fs.existsSync(repoPath)) {
       // Repository exists, update it
-      await this.updateRepository(repoName);
+      await this.updateRepository(tech.name, tech.group);
     } else {
       // Repository doesn't exist, clone it
-      return await this.cloneRepository(repoName, repoUrl, branch);
+      return await this.cloneRepository(tech.name, tech.repo, tech.group, tech.branch);
     }
     
     return repoPath;
   }
 
-  async cloneRepository(repoName: string, repoUrl: string, branch: string = 'main'): Promise<string> {
-    const repoPath = this.getSecureRepoPath(repoName);
+  async cloneRepository(repoName: string, repoUrl: string, groupName: string = 'default', branch: string = 'main'): Promise<string> {
+    const repoPath = this.getSecureRepoPath(repoName, groupName);
     
     // Check if repository already exists
     if (fs.existsSync(repoPath)) {
@@ -214,11 +226,17 @@ export class Librarian {
       const gitPath = path.join(repoPath, '.git');
       if (fs.existsSync(gitPath)) {
         console.log(`Repository ${repoName} already exists at ${repoPath}, updating instead of cloning`);
-        await this.updateRepository(repoName);
+        await this.updateRepository(repoName, groupName);
       } else {
         console.log(`Directory ${repoName} exists but is not a git repo, skipping update`);
       }
       return repoPath;
+    }
+
+    // Ensure group directory exists
+    const groupPath = this.getSecureGroupPath(groupName);
+    if (!fs.existsSync(groupPath)) {
+      fs.mkdirSync(groupPath, { recursive: true });
     }
 
     console.log(`Cloning repository ${repoName} from ${repoUrl} (branch: ${branch}) to ${repoPath}`);

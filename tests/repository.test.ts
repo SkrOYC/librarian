@@ -48,20 +48,21 @@ describe('Repository Management', () => {
       
       // We can't actually clone from a fake URL, but we can test the path logic
       // For this test, we'll just verify that the method constructs the right path
-      const repoPath = path.join(testWorkingDir, 'test-repo');
-      expect(repoPath).to.equal(path.join(testWorkingDir, 'test-repo'));
+      // @ts-ignore
+      const repoPath = librarian.getSecureRepoPath('test-repo', 'default');
+      expect(repoPath).to.equal(path.join(testWorkingDir, 'default', 'test-repo'));
     });
 
     it('should not perform git operations if directory exists but is not a git repo', async () => {
       // Create the repo directory first (without .git)
-      const repoPath = path.join(testWorkingDir, 'test-repo');
+      const repoPath = path.join(testWorkingDir, 'default', 'test-repo');
       fs.mkdirSync(repoPath, { recursive: true });
       
       const librarian = new Librarian(mockConfig);
       await librarian.initialize();
       
       // This should return the existing path without attempting git operations
-      const resultPath = await librarian.cloneRepository('test-repo', 'https://github.com/test/repo.git');
+      const resultPath = await librarian.cloneRepository('test-repo', 'https://github.com/test/repo.git', 'default');
       expect(resultPath).to.equal(repoPath);
     });
   });
