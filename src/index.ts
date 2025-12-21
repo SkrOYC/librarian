@@ -84,6 +84,35 @@ export class Librarian {
     }
   }
 
+  public resolveTechnology(qualifiedName: string): { name: string, group: string, repo: string, branch: string } | undefined {
+    let group: string | undefined;
+    let name: string;
+
+    if (qualifiedName.includes(':')) {
+      const parts = qualifiedName.split(':');
+      group = parts[0];
+      name = parts[1] || '';
+    } else {
+      name = qualifiedName;
+    }
+
+    if (group) {
+      const groupTechs = this.config.technologies[group];
+      const tech = groupTechs ? groupTechs[name] : undefined;
+      if (tech) {
+        return { name, group, repo: tech.repo, branch: tech.branch || 'main' };
+      }
+    } else {
+      for (const [groupName, techs] of Object.entries(this.config.technologies)) {
+        const tech = techs[name];
+        if (tech) {
+          return { name, group: groupName, repo: tech.repo, branch: tech.branch || 'main' };
+        }
+      }
+    }
+    return undefined;
+  }
+
   private getSecureRepoPath(repoName: string): string {
     // Check for path traversal attempts in the repoName before sanitizing
     if (repoName.includes('../') || repoName.includes('..\\') || repoName.startsWith('..')) {

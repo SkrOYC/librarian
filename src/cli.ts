@@ -27,12 +27,11 @@ export function createProgram() {
         await librarian.initialize();
 
         if (options.tech) {
-          // Handle group:tech format
-          let tech = options.tech;
-          if (tech.includes(':')) {
-            tech = tech.split(':')[1];
+          const techDetails = librarian.resolveTechnology(options.tech);
+          if (!techDetails) {
+            throw new Error(`Technology ${options.tech} not found in configuration`);
           }
-          const result = await librarian.queryRepository(tech, query);
+          const result = await librarian.queryRepository(techDetails.name, query);
           console.log(result);
         } else if (options.group) {
           console.log(`Exploring all technologies in group: ${options.group}`);
