@@ -12,7 +12,7 @@ import path from 'path';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { BaseMessage } from '@langchain/core/messages';
+import { BaseMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
 
 export interface LibrarianConfig {
   repositories: {
@@ -178,8 +178,54 @@ export class Librarian {
     // Clone or sync the repository first
     const repoPath = await this.syncRepository(repoName);
     
-    console.log(`Querying repository ${repoName} with: ${query}`);
-    return `Query result for ${repoName} at ${repoPath}`;
+    // Read the repository content (for now, just list files)
+    const repoContents = this.readRepositoryContents(repoPath);
+    
+    // Create a prompt for the AI with the repository information
+    const systemMessage = `You are an expert software engineer analyzing the repository "${repoName}". 
+    The repository is located at "${repoPath}" and contains the following files:
+    ${repoContents.slice(0, 1000)}...`;
+    
+    const userMessage = `Based on the repository structure and content, please answer the following question: ${query}`;
+    
+    // Query the AI model
+    const aiResponse = await this.queryAI([
+      new SystemMessage(systemMessage),
+      new HumanMessage(userMessage)
+    ]);
+    
+    return aiResponse.content as string;
+  }
+
+  private readRepositoryContents(repoPath: string): string {
+    try {
+      const files = this.walkDirectory(repoPath);
+      return files.join('\n');
+    } catch (error) {
+      console.error(`Error reading repository contents: ${error}`);
+      return 'Error reading repository contents';
+    }
+  }
+
+  private walkDirectory(dir: string, fileList: string[] = []): string[] {
+    const files = fs.readdirSync(dir);
+    
+    for (const file of files) {
+      const filePath = path.join(dir, file);
+      const stat = fs.statSync(filePath);
+      
+      if (stat.isDirectory()) {
+        // Skip node_modules and other large directories
+        if (file !== 'node_modules' && !file.startsWith('.')) {
+          this.walkDirectory(filePath, fileList);
+        }
+      } else {
+        // Add file path to the list
+        fileList.push(filePath);
+      }
+    }
+    
+    return fileList;
   }
 
   async queryAI(messages: BaseMessage[]): Promise<BaseMessage> {
