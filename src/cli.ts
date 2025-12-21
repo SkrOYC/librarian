@@ -49,6 +49,16 @@ export function createProgram() {
     });
 
   program
+    .command('list')
+    .description('List available technologies')
+    .option('-g, --group <group>', 'Filter technologies by group')
+    .option('-c, --config <path>', 'Path to configuration file', 'librarian.yaml')
+    .action(async (options) => {
+      // Implementation will come in Task 4/6
+      console.log('Listing technologies');
+    });
+
+  program
     .command('config')
     .description('Display or update configuration')
     .option('-p, --path', 'Show config file path')
