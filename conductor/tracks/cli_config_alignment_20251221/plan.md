@@ -11,8 +11,8 @@
 
 ## Phase 2: CLI Command Implementation - Explore and List
 - [x] Task: Write unit tests for the new 'explore' command with --tech and --group flags [66550be]
-- [~] Task: Write unit tests for the new 'list' command with optional --group flag
-- [ ] Task: Implement the 'explore' command in CLI with proper argument parsing
+- [x] Task: Write unit tests for the new 'list' command with optional --group flag [b390192]
+- [~] Task: Implement the 'explore' command in CLI with proper argument parsing
 - [ ] Task: Implement the 'list' command to display grouped technologies with descriptions
 - [ ] Task: Add --tech flag functionality for specifying individual technologies
 - [ ] Task: Add --group flag functionality for specifying technology groups
