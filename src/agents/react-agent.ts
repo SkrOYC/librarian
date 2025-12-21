@@ -1,6 +1,6 @@
 import { createAgent } from "langchain";
 import { fileListTool } from "../tools/file-listing.tool";
-import { FileReadTool } from "../tools/file-reading.tool";
+import { fileReadTool } from "../tools/file-reading.tool";
 import { GrepContentTool } from "../tools/grep-content.tool";
 import { FileFindTool } from "../tools/file-finding.tool";
 import { ChatOpenAI } from "@langchain/openai";
@@ -32,7 +32,7 @@ export class ReactAgent {
     // Initialize tools - modernized tool pattern
     this.tools = [
       fileListTool,
-      new FileReadTool(config.workingDir), 
+      fileReadTool,
       new GrepContentTool(config.workingDir),
       new FileFindTool(config.workingDir)
     ];

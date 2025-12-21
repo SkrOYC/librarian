@@ -2,11 +2,11 @@ import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
 import { fileListTool } from '../src/tools/file-listing.tool';
-import { FileReadTool } from '../src/tools/file-reading.tool';
+import { fileReadTool as fileReadToolModern } from '../src/tools/file-reading.tool';
 import { GrepContentTool } from '../src/tools/grep-content.tool';
 import { FileFindTool } from '../src/tools/file-finding.tool';
 import { ReactAgent } from '../src/agents/react-agent';
-const fileReadTool = new FileReadTool();
+const fileReadTool = fileReadToolModern;
 const grepContentTool = new GrepContentTool();
 const fileFindTool = new FileFindTool();
 
@@ -48,7 +48,7 @@ test('FileReadTool should read file content', async () => {
   const testContent = 'This is test content for the file reading tool.';
   fs.writeFileSync(testFile, testContent);
   
-  const result = await fileReadTool._call(JSON.stringify({ filePath: testFile }));
+  const result = await fileReadToolModern.invoke({ filePath: testFile });
   
   expect(result).to.include(testContent);
   expect(result).to.include('Content of file');
@@ -58,7 +58,7 @@ test('FileReadTool should read file content', async () => {
 });
 
 test('FileReadTool should handle non-existent files', async () => {
-  const result = await fileReadTool._call(JSON.stringify({ filePath: 'non_existent_file.txt' }));
+  const result = await fileReadToolModern.invoke({ filePath: 'non_existent_file.txt' });
   expect(result).to.include('Error reading file');
 });
 

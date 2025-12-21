@@ -1,17 +1,7 @@
-import { Tool } from "@langchain/core/tools";
+import { tool } from "langchain";
+import * as z from "zod";
 import fs from 'fs/promises';
 import path from 'path';
-
-// Define types for file system operations
-interface FileSystemEntry {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  size?: number | undefined;
-  modified?: Date | undefined;
-  permissions?: string | undefined;
-  lineCount?: number | undefined;
-}
 
 // Check if file is an image file
 function isImageFile(filePath: string): boolean {
@@ -49,7 +39,7 @@ async function isTextFile(filePath: string): Promise<boolean> {
   // For files without extensions or unknown extensions, try to detect if it's text
   try {
     const buffer = await fs.readFile(filePath, { encoding: 'binary', flag: 'r' });
-      // Check the first few bytes for null bytes which indicate binary content
+      // Check first few bytes for null bytes which indicate binary content
       const bufferContent = Buffer.from(buffer);
       for (let i = 0; i < Math.min(512, bufferContent.length); i++) {
         if (bufferContent[i] === 0) return false; // Found null byte, likely binary
@@ -70,30 +60,20 @@ async function readFileContent(filePath: string): Promise<string> {
   }
 }
 
-// Define the tool using LangChain's Tool class
-export class FileReadTool extends Tool {
-  name = "file_read";
-  description = "Read the contents of a file. Use this to examine the content of a specific file.";
-  private workingDir: string;
-
-  constructor(workingDir: string = process.cwd()) {
-    super();
-    this.workingDir = workingDir;
-  }
-
-  async _call(input: string): Promise<string> {
+// Create the modernized tool using the tool() function
+export const fileReadTool = tool(
+  async ({ filePath }, config) => {
     try {
-      // Parse the input JSON string
-      const parsedInput = JSON.parse(input);
-      const { filePath } = parsedInput;
+      // Get working directory from config context or default to process.cwd()
+      const workingDir = config?.context?.workingDir || process.cwd();
 
       // Validate the path to prevent directory traversal
       if (filePath.includes('../') || filePath.includes('..\\') || filePath.startsWith('..')) {
         throw new Error(`File path "${filePath}" contains invalid path characters`);
       }
 
-      const resolvedPath = path.resolve(this.workingDir, filePath);
-      const resolvedWorkingDir = path.resolve(this.workingDir);
+      const resolvedPath = path.resolve(workingDir, filePath);
+      const resolvedWorkingDir = path.resolve(workingDir);
 
       if (!resolvedPath.startsWith(resolvedWorkingDir)) {
         throw new Error(`File path "${filePath}" attempts to escape the working directory sandbox`);
@@ -110,10 +90,10 @@ export class FileReadTool extends Tool {
         return `This file is not a text file and cannot be read as text. Path: ${filePath}`;
       }
 
-      // Read the file content
+      // Read file content
       const content = await readFileContent(resolvedPath);
       
-      // Limit the content size to avoid overwhelming the AI
+      // Limit content size to avoid overwhelming the AI
       const maxContentLength = 50000; // 50KB limit
       if (content.length > maxContentLength) {
         return `File content is too large (${content.length} characters). First ${maxContentLength} characters:\n\n${content.substring(0, maxContentLength)}\n\n[Content truncated due to length]`;
@@ -123,5 +103,12 @@ export class FileReadTool extends Tool {
     } catch (error) {
       return `Error reading file: ${(error as Error).message}`;
     }
+  },
+  {
+    name: "file_read",
+    description: "Read the contents of a file. Use this to examine the content of a specific file.",
+    schema: z.object({
+      filePath: z.string().describe("The path to the file to read, relative to the working directory"),
+    }),
   }
-}
+);
