@@ -15,15 +15,23 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { BaseMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
 
 export interface LibrarianConfig {
-  repositories: {
-    [key: string]: string; // name -> URL mapping
+  technologies: {
+    [group: string]: {
+      [tech: string]: {
+        repo: string;
+        branch?: string;
+        description?: string;
+      };
+    };
   };
   aiProvider: {
-    type: 'openai' | 'anthropic' | 'google';
+    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible';
     apiKey: string;
     model?: string;
+    baseURL?: string;
   };
   workingDir: string;
+  repos_path?: string;
 }
 
 export class Librarian {
@@ -36,13 +44,21 @@ export class Librarian {
   }
 
   private createAIModel(): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
-    const { type, apiKey, model } = this.config.aiProvider;
+    const { type, apiKey, model, baseURL } = this.config.aiProvider;
     
     switch (type) {
       case 'openai':
         return new ChatOpenAI({ 
           apiKey,
           modelName: model || 'gpt-4o',
+        });
+      case 'openai-compatible':
+        return new ChatOpenAI({ 
+          apiKey,
+          modelName: model || 'gpt-4o',
+          configuration: {
+            baseURL: baseURL || 'https://api.openai.com/v1',
+          }
         });
       case 'anthropic':
         return new ChatAnthropic({ 
@@ -62,39 +78,10 @@ export class Librarian {
   async initialize(): Promise<void> {
     console.log('Librarian initialized');
     // Create working directory if it doesn't exist
-    if (!fs.existsSync(this.config.workingDir)) {
-      fs.mkdirSync(this.config.workingDir, { recursive: true });
+    const workDir = this.config.repos_path || this.config.workingDir;
+    if (!fs.existsSync(workDir)) {
+      fs.mkdirSync(workDir, { recursive: true });
     }
-  }
-
-  async cloneRepository(repoName: string, repoUrl: string): Promise<string> {
-    const repoPath = this.getSecureRepoPath(repoName);
-    
-    // Check if repository already exists
-    if (fs.existsSync(repoPath)) {
-      // Check if it's a git repository by checking for .git folder
-      const gitPath = path.join(repoPath, '.git');
-      if (fs.existsSync(gitPath)) {
-        console.log(`Repository ${repoName} already exists at ${repoPath}, updating instead of cloning`);
-        await this.updateRepository(repoName);
-      } else {
-        console.log(`Directory ${repoName} exists but is not a git repo, skipping update`);
-      }
-      return repoPath;
-    }
-
-    console.log(`Cloning repository ${repoName} from ${repoUrl} to ${repoPath}`);
-    
-    await clone({
-      fs,
-      http,
-      dir: repoPath,
-      url: repoUrl,
-      singleBranch: true,
-      depth: 1, // Shallow clone for faster operation
-    });
-    
-    return repoPath;
   }
 
   private getSecureRepoPath(repoName: string): string {
@@ -105,10 +92,11 @@ export class Librarian {
     
     // Sanitize the repoName to prevent directory traversal
     const sanitizedRepoName = path.basename(repoName);
-    const repoPath = path.join(this.config.workingDir, sanitizedRepoName);
+    const workDir = this.config.repos_path || this.config.workingDir;
+    const repoPath = path.join(workDir, sanitizedRepoName);
     
     // Verify that the resulting path is within the working directory (sandboxing)
-    const resolvedWorkingDir = path.resolve(this.config.workingDir);
+    const resolvedWorkingDir = path.resolve(workDir);
     const resolvedRepoPath = path.resolve(repoPath);
     
     if (!resolvedRepoPath.startsWith(resolvedWorkingDir)) {
@@ -140,16 +128,36 @@ export class Librarian {
       singleBranch: true,
     });
     
+    const branch = this.getRepoBranch(repoName);
     // Checkout the latest version
     await checkout({
       fs,
       dir: repoPath,
-      ref: 'origin/main', // or 'origin/master' depending on the repository
+      ref: `origin/${branch}`,
     });
   }
 
+  private getRepoBranch(repoName: string): string {
+    for (const group of Object.values(this.config.technologies)) {
+      if (group[repoName]) {
+        return group[repoName].branch || 'main';
+      }
+    }
+    return 'main';
+  }
+
+  private getRepoUrl(repoName: string): string | undefined {
+    for (const group of Object.values(this.config.technologies)) {
+      if (group[repoName]) {
+        return group[repoName].repo;
+      }
+    }
+    return undefined;
+  }
+
   async syncRepository(repoName: string): Promise<string> {
-    const repoUrl = this.config.repositories[repoName];
+    const repoUrl = this.getRepoUrl(repoName);
+    const branch = this.getRepoBranch(repoName);
     
     if (!repoUrl) {
       throw new Error(`Repository ${repoName} not found in configuration`);
@@ -162,14 +170,45 @@ export class Librarian {
       await this.updateRepository(repoName);
     } else {
       // Repository doesn't exist, clone it
-      return await this.cloneRepository(repoName, repoUrl);
+      return await this.cloneRepository(repoName, repoUrl, branch);
     }
     
     return repoPath;
   }
 
+  async cloneRepository(repoName: string, repoUrl: string, branch: string = 'main'): Promise<string> {
+    const repoPath = this.getSecureRepoPath(repoName);
+    
+    // Check if repository already exists
+    if (fs.existsSync(repoPath)) {
+      // Check if it's a git repository by checking for .git folder
+      const gitPath = path.join(repoPath, '.git');
+      if (fs.existsSync(gitPath)) {
+        console.log(`Repository ${repoName} already exists at ${repoPath}, updating instead of cloning`);
+        await this.updateRepository(repoName);
+      } else {
+        console.log(`Directory ${repoName} exists but is not a git repo, skipping update`);
+      }
+      return repoPath;
+    }
+
+    console.log(`Cloning repository ${repoName} from ${repoUrl} (branch: ${branch}) to ${repoPath}`);
+    
+    await clone({
+      fs,
+      http,
+      dir: repoPath,
+      url: repoUrl,
+      ref: branch,
+      singleBranch: true,
+      depth: 1, // Shallow clone for faster operation
+    });
+    
+    return repoPath;
+  }
+
   async queryRepository(repoName: string, query: string): Promise<string> {
-    const repoUrl = this.config.repositories[repoName];
+    const repoUrl = this.getRepoUrl(repoName);
     
     if (!repoUrl) {
       throw new Error(`Repository ${repoName} not found in configuration`);

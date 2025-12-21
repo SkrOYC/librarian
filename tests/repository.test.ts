@@ -6,8 +6,10 @@ import path from 'path';
 describe('Repository Management', () => {
   const testWorkingDir = './test-work';
   const mockConfig: LibrarianConfig = {
-    repositories: {
-      'test-repo': 'https://github.com/test/repo.git'
+    technologies: {
+      default: {
+        'test-repo': { repo: 'https://github.com/test/repo.git', branch: 'main' }
+      }
     },
     aiProvider: {
       type: 'openai',

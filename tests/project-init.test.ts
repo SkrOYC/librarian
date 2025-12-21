@@ -48,8 +48,10 @@ describe('Project Initialization', () => {
 describe('End-to-End Integration', () => {
   const testWorkingDir = './integration-test-work';
   const mockConfig: LibrarianConfig = {
-    repositories: {
-      'test-repo': 'https://github.com/test/repo.git'
+    technologies: {
+      default: {
+        'test-repo': { repo: 'https://github.com/test/repo.git', branch: 'main' }
+      }
     },
     aiProvider: {
       type: 'openai',
@@ -82,7 +84,7 @@ describe('End-to-End Integration', () => {
 
     it('should handle configuration validation', () => {
       // Test that the configuration is properly structured
-      expect(mockConfig.repositories).to.be.an('object');
+      expect(mockConfig.technologies).to.be.an('object');
       expect(mockConfig.aiProvider).to.be.an('object');
       expect(mockConfig.workingDir).to.be.a('string');
     });

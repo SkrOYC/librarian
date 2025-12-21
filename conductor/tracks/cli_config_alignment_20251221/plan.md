@@ -1,13 +1,13 @@
 # Implementation Plan: Configuration and CLI Alignment
 
 ## Phase 1: Updated Configuration Schema and Validation
-- [ ] Task: Write unit tests for the new nested configuration schema with groups, branch, and description fields
-- [ ] Task: Update the Zod schema in config.ts to support nested technology groups structure
-- [ ] Task: Implement configuration loading with support for repos_path and nested technologies
-- [ ] Task: Add validation for branch field with default fallback to main/master
-- [ ] Task: Add support for openai-compatible provider type in configuration
-- [ ] Task: Create migration path for existing configuration files
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: Updated Configuration Schema and Validation' (Protocol in workflow.md)
+- [x] Task: Write unit tests for the new nested configuration schema with groups, branch, and description fields
+- [x] Task: Update the Zod schema in config.ts to support nested technology groups structure
+- [x] Task: Implement configuration loading with support for repos_path and nested technologies
+- [x] Task: Add validation for branch field with default fallback to main/master
+- [x] Task: Add support for openai-compatible provider type in configuration
+- [x] Task: Create migration path for existing configuration files
+- [~] Task: Conductor - User Manual Verification 'Phase 1: Updated Configuration Schema and Validation' (Protocol in workflow.md)
 
 ## Phase 2: CLI Command Implementation - Explore and List
 - [ ] Task: Write unit tests for the new 'explore' command with --tech and --group flags
