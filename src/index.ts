@@ -8,6 +8,12 @@ import http from 'isomorphic-git/http/node';
 import fs from 'fs';
 import path from 'path';
 
+// LangChain imports for AI provider integration
+import { ChatOpenAI } from '@langchain/openai';
+import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { BaseMessage } from '@langchain/core/messages';
+
 export interface LibrarianConfig {
   repositories: {
     [key: string]: string; // name -> URL mapping
@@ -22,9 +28,35 @@ export interface LibrarianConfig {
 
 export class Librarian {
   private config: LibrarianConfig;
+  private aiModel: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
 
   constructor(config: LibrarianConfig) {
     this.config = config;
+    this.aiModel = this.createAIModel();
+  }
+
+  private createAIModel(): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
+    const { type, apiKey, model } = this.config.aiProvider;
+    
+    switch (type) {
+      case 'openai':
+        return new ChatOpenAI({ 
+          apiKey,
+          modelName: model || 'gpt-4o',
+        });
+      case 'anthropic':
+        return new ChatAnthropic({ 
+          apiKey,
+          modelName: model || 'claude-3-sonnet-20240229',
+        });
+      case 'google':
+        return new ChatGoogleGenerativeAI({ 
+          apiKey,
+          model: model || 'gemini-pro',
+        });
+      default:
+        throw new Error(`Unsupported AI provider type: ${type}`);
+    }
   }
 
   async initialize(): Promise<void> {
@@ -148,5 +180,9 @@ export class Librarian {
     
     console.log(`Querying repository ${repoName} with: ${query}`);
     return `Query result for ${repoName} at ${repoPath}`;
+  }
+
+  async queryAI(messages: BaseMessage[]): Promise<BaseMessage> {
+    return await this.aiModel.invoke(messages);
   }
 }
