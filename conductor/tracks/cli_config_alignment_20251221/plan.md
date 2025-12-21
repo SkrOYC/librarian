@@ -9,7 +9,7 @@
 - [x] Task: Create migration path for existing configuration files [29d8090]
 - [x] Task: Conductor - User Manual Verification 'Phase 1: Updated Configuration Schema and Validation' (Protocol in workflow.md) [738c919]
 
-## Phase 2: CLI Command Implementation - Explore and List
+## Phase 2: CLI Command Implementation - Explore and List [checkpoint: 89c1ede]
 - [x] Task: Write unit tests for the new 'explore' command with --tech and --group flags [66550be]
 - [x] Task: Write unit tests for the new 'list' command with optional --group flag [b390192]
 - [x] Task: Implement the 'explore' command in CLI with proper argument parsing [49c7573]
@@ -17,10 +17,10 @@
 - [x] Task: Add --tech flag functionality for specifying individual technologies [53447f8]
 - [x] Task: Add --group flag functionality for specifying technology groups [49c7573]
 - [x] Task: Update help text and documentation for new commands [74c068b]
-- [~] Task: Conductor - User Manual Verification 'Phase 2: CLI Command Implementation - Explore and List' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 2: CLI Command Implementation - Explore and List' (Protocol in workflow.md) [89c1ede]
 
 ## Phase 3: Repository Path Structure and Sandboxing
-- [ ] Task: Write unit tests for the new repository path resolution logic
+- [~] Task: Write unit tests for the new repository path resolution logic
 - [ ] Task: Update repository management to use {repos_path}/{group}/{technology} structure
 - [ ] Task: Implement path resolution for --tech commands (operating in {repos_path}/{group}/{technology})
 - [ ] Task: Implement path resolution for --group commands (operating in {repos_path}/{group})
