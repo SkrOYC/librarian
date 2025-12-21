@@ -36,7 +36,7 @@ export class Librarian {
   }
 
   async cloneRepository(repoName: string, repoUrl: string): Promise<string> {
-    const repoPath = path.join(this.config.workingDir, repoName);
+    const repoPath = this.getSecureRepoPath(repoName);
     
     // Check if repository already exists
     if (fs.existsSync(repoPath)) {
@@ -65,8 +65,29 @@ export class Librarian {
     return repoPath;
   }
 
+  private getSecureRepoPath(repoName: string): string {
+    // Check for path traversal attempts in the repoName before sanitizing
+    if (repoName.includes('../') || repoName.includes('..\\') || repoName.startsWith('..')) {
+      throw new Error(`Repository name "${repoName}" contains invalid path characters`);
+    }
+    
+    // Sanitize the repoName to prevent directory traversal
+    const sanitizedRepoName = path.basename(repoName);
+    const repoPath = path.join(this.config.workingDir, sanitizedRepoName);
+    
+    // Verify that the resulting path is within the working directory (sandboxing)
+    const resolvedWorkingDir = path.resolve(this.config.workingDir);
+    const resolvedRepoPath = path.resolve(repoPath);
+    
+    if (!resolvedRepoPath.startsWith(resolvedWorkingDir)) {
+      throw new Error(`Repository name "${repoName}" attempts to escape the working directory sandbox`);
+    }
+    
+    return repoPath;
+  }
+
   async updateRepository(repoName: string): Promise<void> {
-    const repoPath = path.join(this.config.workingDir, repoName);
+    const repoPath = this.getSecureRepoPath(repoName);
     const gitPath = path.join(repoPath, '.git');
     
     if (!fs.existsSync(repoPath)) {
@@ -102,7 +123,7 @@ export class Librarian {
       throw new Error(`Repository ${repoName} not found in configuration`);
     }
 
-    const repoPath = path.join(this.config.workingDir, repoName);
+    const repoPath = this.getSecureRepoPath(repoName);
     
     if (fs.existsSync(repoPath)) {
       // Repository exists, update it
