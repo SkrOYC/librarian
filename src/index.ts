@@ -40,7 +40,14 @@ export class Librarian {
     
     // Check if repository already exists
     if (fs.existsSync(repoPath)) {
-      console.log(`Repository ${repoName} already exists at ${repoPath}, skipping clone`);
+      // Check if it's a git repository by checking for .git folder
+      const gitPath = path.join(repoPath, '.git');
+      if (fs.existsSync(gitPath)) {
+        console.log(`Repository ${repoName} already exists at ${repoPath}, updating instead of cloning`);
+        await this.updateRepository(repoName);
+      } else {
+        console.log(`Directory ${repoName} exists but is not a git repo, skipping update`);
+      }
       return repoPath;
     }
 
@@ -58,6 +65,56 @@ export class Librarian {
     return repoPath;
   }
 
+  async updateRepository(repoName: string): Promise<void> {
+    const repoPath = path.join(this.config.workingDir, repoName);
+    const gitPath = path.join(repoPath, '.git');
+    
+    if (!fs.existsSync(repoPath)) {
+      throw new Error(`Repository ${repoName} does not exist at ${repoPath}. Cannot update.`);
+    }
+    
+    if (!fs.existsSync(gitPath)) {
+      throw new Error(`Directory ${repoName} exists at ${repoPath} but is not a git repository. Cannot update.`);
+    }
+
+    console.log(`Updating repository ${repoName} at ${repoPath}`);
+    
+    // Fetch updates from the remote
+    await fetch({
+      fs,
+      http,
+      dir: repoPath,
+      singleBranch: true,
+    });
+    
+    // Checkout the latest version
+    await checkout({
+      fs,
+      dir: repoPath,
+      ref: 'origin/main', // or 'origin/master' depending on the repository
+    });
+  }
+
+  async syncRepository(repoName: string): Promise<string> {
+    const repoUrl = this.config.repositories[repoName];
+    
+    if (!repoUrl) {
+      throw new Error(`Repository ${repoName} not found in configuration`);
+    }
+
+    const repoPath = path.join(this.config.workingDir, repoName);
+    
+    if (fs.existsSync(repoPath)) {
+      // Repository exists, update it
+      await this.updateRepository(repoName);
+    } else {
+      // Repository doesn't exist, clone it
+      return await this.cloneRepository(repoName, repoUrl);
+    }
+    
+    return repoPath;
+  }
+
   async queryRepository(repoName: string, query: string): Promise<string> {
     const repoUrl = this.config.repositories[repoName];
     
@@ -65,8 +122,8 @@ export class Librarian {
       throw new Error(`Repository ${repoName} not found in configuration`);
     }
 
-    // Clone or update the repository first
-    const repoPath = await this.cloneRepository(repoName, repoUrl);
+    // Clone or sync the repository first
+    const repoPath = await this.syncRepository(repoName);
     
     console.log(`Querying repository ${repoName} with: ${query}`);
     return `Query result for ${repoName} at ${repoPath}`;
