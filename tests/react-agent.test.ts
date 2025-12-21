@@ -3,11 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { fileListTool } from '../src/tools/file-listing.tool';
 import { fileReadTool as fileReadToolModern } from '../src/tools/file-reading.tool';
-import { GrepContentTool } from '../src/tools/grep-content.tool';
+import { grepContentTool as grepContentToolModern } from '../src/tools/grep-content.tool';
 import { FileFindTool } from '../src/tools/file-finding.tool';
 import { ReactAgent } from '../src/agents/react-agent';
 const fileReadTool = fileReadToolModern;
-const grepContentTool = new GrepContentTool();
+const grepContentTool = grepContentToolModern;
 const fileFindTool = new FileFindTool();
 
 // Test FileListTool
@@ -74,10 +74,10 @@ test('GrepContentTool should search for content in files', async () => {
   const testContent = 'This is a test file with some specific content to search for.\nAnother line with more content.';
   fs.writeFileSync(testFile, testContent);
   
-  const result = await grepContentTool._call(JSON.stringify({ 
+  const result = await grepContentTool.invoke({ 
     searchPath: testDir,
     query: 'specific content'
-  }));
+  });
   
   expect(result).to.include('Found');
   expect(result).to.include('grep_test.txt');
@@ -89,10 +89,10 @@ test('GrepContentTool should search for content in files', async () => {
 });
 
 test('GrepContentTool should handle invalid search paths', async () => {
-  const result = await grepContentTool._call(JSON.stringify({ 
+  const result = await grepContentTool.invoke({ 
     searchPath: '../invalid_dir',
     query: 'test'
-  }));
+  });
   expect(result).to.include('contains invalid path characters');
 });
 

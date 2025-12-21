@@ -1,4 +1,5 @@
-import { Tool } from "@langchain/core/tools";
+import { tool } from "langchain";
+import * as z from "zod";
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -86,36 +87,20 @@ async function findFiles(dirPath: string, pattern: string, recursive: boolean = 
   return foundFiles;
 }
 
-interface GrepContentInput {
-  searchPath: string;
-  query: string;
-  patterns?: string[];
-  caseSensitive?: boolean;
-  regex?: boolean;
-  recursive?: boolean;
-  maxResults?: number;
-}
-
-export class GrepContentTool extends Tool {
-  name = "grep_content";
-  description = "Search for content patterns in files. Use this to find specific text or code patterns across multiple files.";
-  private workingDir: string;
-
-  constructor(workingDir: string = process.cwd()) {
-    super();
-    this.workingDir = workingDir;
-  }
-
-  async _call(input: string): Promise<string> {
+// Create the modernized tool using the tool() function
+export const grepContentTool = tool(
+  async ({ 
+    searchPath = '.', 
+    query, 
+    patterns = ['*'], 
+    caseSensitive = false, 
+    regex = false, 
+    recursive = true, 
+    maxResults = 100 
+  }, config) => {
     try {
-      const parsedInput: Partial<GrepContentInput> = JSON.parse(input);
-      const searchPath = parsedInput.searchPath || '.';
-      const query = parsedInput.query;
-      const patterns = parsedInput.patterns || ['*'];
-      const caseSensitive = parsedInput.caseSensitive ?? false;
-      const isRegex = parsedInput.regex ?? false;
-      const recursive = parsedInput.recursive ?? true;
-      const maxResults = parsedInput.maxResults ?? 100;
+      // Get working directory from config context or default to process.cwd()
+      const workingDir = config?.context?.workingDir || process.cwd();
 
       if (!query) {
         throw new Error('The "query" parameter is required');
@@ -125,8 +110,8 @@ export class GrepContentTool extends Tool {
         throw new Error(`Search path "${searchPath}" contains invalid path characters`);
       }
 
-      const resolvedPath = path.resolve(this.workingDir, searchPath);
-      const resolvedWorkingDir = path.resolve(this.workingDir);
+      const resolvedPath = path.resolve(workingDir, searchPath);
+      const resolvedWorkingDir = path.resolve(workingDir);
 
       if (!resolvedPath.startsWith(resolvedWorkingDir)) {
         throw new Error(`Search path "${searchPath}" attempts to escape the working directory sandbox`);
@@ -140,7 +125,7 @@ export class GrepContentTool extends Tool {
       let searchRegex: RegExp;
       const flags = caseSensitive ? 'gm' : 'gim';
       
-      if (isRegex) {
+      if (regex) {
         try {
           searchRegex = new RegExp(query, flags);
         } catch (e) {
@@ -194,5 +179,18 @@ export class GrepContentTool extends Tool {
     } catch (error) {
       return `Error searching content: ${(error as Error).message}`;
     }
+  },
+  {
+    name: "grep_content",
+    description: "Search for content patterns in files. Use this to find specific text or code patterns across multiple files.",
+    schema: z.object({
+      searchPath: z.string().optional().default('.').describe("The directory path to search in, relative to the working directory"),
+      query: z.string().describe("The search query - the text or pattern to look for in files"),
+      patterns: z.array(z.string()).optional().default(['*']).describe("File patterns to search in (e.g., ['*.js', '*.ts'])"),
+      caseSensitive: z.boolean().optional().default(false).describe("Whether the search should be case-sensitive"),
+      regex: z.boolean().optional().default(false).describe("Whether the query should be treated as a regular expression"),
+      recursive: z.boolean().optional().default(true).describe("Whether to search recursively in subdirectories"),
+      maxResults: z.number().optional().default(100).describe("Maximum number of matches to return"),
+    }),
   }
-}
+);
