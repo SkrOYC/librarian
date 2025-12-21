@@ -10,7 +10,7 @@
 - **LangChain** - Comprehensive framework for AI applications with multiple provider support (OpenAI, Anthropic, Google, etc.)
 - **LangGraph** - For memory management with MemorySaver
 - Provider-specific LangChain integrations:
-  - `@langchain/openai` - OpenAI provider integration
+  - `@langchain/openai` - OpenAI and OpenAI-compatible provider integration
   - `@langchain/anthropic` - Anthropic provider integration
   - `@langchain/google-genai` - Google provider integration
 

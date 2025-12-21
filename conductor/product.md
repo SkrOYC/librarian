@@ -28,10 +28,11 @@ The primary target audience consists of software engineers who work with AI codi
 ## Features
 - **Deep Repository Exploration**: AI-powered ReAct agent analysis that understands complex codebases and provides context-aware responses
 - **Specialized FileExplorer Tools**: Dedicated tools for listing directories, reading files, searching content, and finding files by pattern to enable comprehensive codebase exploration
-- **Flexible Repository Support**: Works with any Git repository that users configure, with special focus on popular open-source frameworks and libraries (React, Node.js, LangChain, etc.)
-- **Multi-Provider AI Integration**: Support for multiple AI providers (OpenAI, Anthropic, Google) through unified abstraction, allowing users to configure their preferred provider based on their specific needs
+- **Grouped Technology Management**: Organize tech stacks by groups (default, langchain, etc.) for easier management and group-wide exploration
+- **Flexible Repository Support**: Works with any Git repository, supporting branch selection and descriptions for each technology
+- **Multi-Provider AI Integration**: Support for OpenAI, Anthropic, Google, and OpenAI-compatible providers through unified abstraction
 - **Repository Management**: Auto-clone and sync from Git before each query to ensure up-to-date information
-- **Secure Sandboxed Operations**: Isolated working directories with secure file operations for safe exploration
+- **Hierarchical Sandboxing**: Securely isolated working directories structured as `{repos_path}/{group}/{technology}`
 - **Streaming Responses**: Real-time markdown responses with technical insights and explanations
 
 ## Value Proposition
