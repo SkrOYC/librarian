@@ -1,4 +1,4 @@
-# Phase 1: Project Setup and Basic CLI Structure
+# Phase 1: Project Setup and Basic CLI Structure [checkpoint: 8c9ff2f]
 - [x] Task: Initialize project with package.json and TypeScript configuration [c92ad0c]
 - [x] Task: Set up basic CLI structure using Commander.js with skeleton commands [c92ad0c]
 - [x] Task: Implement configuration loading from YAML files with Zod validation [c92ad0c]
