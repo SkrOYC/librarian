@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'bun:test';
 import fs from 'fs';
 import path from 'path';
-import { loadConfig } from '../src/config';
+import { loadConfig } from '../src/config.js';
 import { stringify } from 'yaml';
 
 const TEST_CONFIG_PATH = path.join(process.cwd(), 'test-config.yaml');
@@ -33,10 +33,9 @@ describe('Config Schema Alignment', () => {
                 }
             },
             repos_path: './my-repos',
-            aiProvider: {
-                type: 'openai',
-                apiKey: 'test-key'
-            }
+            llm_provider: 'openai',
+            llm_model: 'gpt-4',
+            apiKey: 'test-key'
         };
 
         fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
@@ -59,17 +58,15 @@ describe('Config Schema Alignment', () => {
                 }
             },
             repos_path: './libs',
-            aiProvider: {
-                type: 'openai-compatible',
-                apiKey: 'sk-test',
-                model: 'llama-3-local'
-            }
+            llm_provider: 'openai-compatible',
+            llm_model: 'llama-3-local',
+            apiKey: 'sk-test'
         };
 
         fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
 
         const loaded: any = await loadConfig(TEST_CONFIG_PATH);
-        expect(loaded.aiProvider.type).toBe('openai-compatible');
+        expect(loaded.llm_provider).toBe('openai-compatible');
     });
 
     it('should migrate old configuration with repositories map', async () => {
@@ -78,10 +75,9 @@ describe('Config Schema Alignment', () => {
                 react: 'https://github.com/facebook/react.git',
                 node: 'https://github.com/nodejs/node.git'
             },
-            aiProvider: {
-                type: 'openai',
-                apiKey: 'old-key'
-            }
+            llm_provider: 'openai',
+            llm_model: 'gpt-4',
+            apiKey: 'old-key'
         };
 
         fs.writeFileSync(TEST_CONFIG_PATH, stringify(oldConfig));

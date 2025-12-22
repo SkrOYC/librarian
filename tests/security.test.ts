@@ -1,4 +1,4 @@
-import { expect } from 'chai';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { Librarian, LibrarianConfig } from '../src/index.js';
 import fs from 'fs';
 import path from 'path';
@@ -42,7 +42,7 @@ describe('Security and Path Resolution', () => {
       
       expect(() => {
         (librarian as any).getSecureRepoPath(maliciousRepoName);
-      }).to.throw(/contains invalid path characters/);
+      }).toThrow(/contains invalid path characters/);
     });
 
     it('should properly sanitize repository names', async () => {
@@ -53,7 +53,7 @@ describe('Security and Path Resolution', () => {
       const repoName = '../../../../etc/passwd';
       const sanitizedRepoName = path.basename(repoName); // Should be 'passwd'
       
-      expect(sanitizedRepoName).to.equal('passwd');
+      expect(sanitizedRepoName).toBe('passwd');
     });
 
     it('should allow valid repository names', async () => {
@@ -64,7 +64,7 @@ describe('Security and Path Resolution', () => {
       
       expect(() => {
         (librarian as any).getSecureRepoPath(validRepoName);
-      }).to.not.throw();
+      }).not.toThrow();
     });
   });
 
@@ -77,7 +77,7 @@ describe('Security and Path Resolution', () => {
       const resolvedWorkingDir = path.resolve(testWorkingDir);
       const resolvedRepoPath = path.resolve(repoPath);
       
-      expect(resolvedRepoPath.startsWith(resolvedWorkingDir)).to.be.true;
+      expect(resolvedRepoPath.startsWith(resolvedWorkingDir)).toBe(true);
     });
   });
 });

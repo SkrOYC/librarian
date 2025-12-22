@@ -1,4 +1,4 @@
-import { expect } from 'chai';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { Librarian, LibrarianConfig } from '../src/index.js';
 import fs from 'fs';
 import path from 'path';
@@ -37,7 +37,7 @@ describe('AI Provider Integration', () => {
       const librarian = new Librarian(mockConfig);
       // We can't easily test the actual AI model creation without real API keys,
       // but we can verify that the constructor doesn't throw an error
-      expect(librarian).to.be.an.instanceOf(Librarian);
+      expect(librarian).toBeInstanceOf(Librarian);
     });
 
     it('should support OpenAI provider configuration', () => {
@@ -51,7 +51,7 @@ describe('AI Provider Integration', () => {
       };
       
       const librarian = new Librarian(config);
-      expect(librarian).to.be.an.instanceOf(Librarian);
+      expect(librarian).toBeInstanceOf(Librarian);
     });
 
     it('should support Anthropic provider configuration', () => {
@@ -65,7 +65,7 @@ describe('AI Provider Integration', () => {
       };
       
       const librarian = new Librarian(config);
-      expect(librarian).to.be.an.instanceOf(Librarian);
+      expect(librarian).toBeInstanceOf(Librarian);
     });
 
     it('should support Google provider configuration', () => {
@@ -74,12 +74,12 @@ describe('AI Provider Integration', () => {
         aiProvider: {
           type: 'google',
           apiKey: 'test-key',
-          model: 'models/gemini-pro'  // Google requires the "models/" prefix
+          model: 'models/gemini-pro'  // Google requires "models/" prefix
         }
       };
       
       const librarian = new Librarian(config);
-      expect(librarian).to.be.an.instanceOf(Librarian);
+      expect(librarian).toBeInstanceOf(Librarian);
     });
 
     it('should throw an error for unsupported provider type', () => {
@@ -91,7 +91,7 @@ describe('AI Provider Integration', () => {
         }
       };
       
-      expect(() => new Librarian(config)).to.throw('Unsupported AI provider type: unsupported');
+      expect(() => new Librarian(config)).toThrow('Unsupported AI provider type: unsupported');
     });
   });
 
@@ -99,7 +99,7 @@ describe('AI Provider Integration', () => {
     it('should initialize without errors', async () => {
       const librarian = new Librarian(mockConfig);
       const result = await librarian.initialize();
-      expect(result).to.be.undefined;
+      expect(result).toBeUndefined();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { expect } from 'chai';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { Librarian, LibrarianConfig } from '../src/index.js';
 import fs from 'fs';
 import path from 'path';
@@ -37,7 +37,7 @@ describe('Repository Management', () => {
       const librarian = new Librarian(mockConfig);
       await librarian.initialize();
       
-      expect(fs.existsSync(testWorkingDir)).to.be.true;
+      expect(fs.existsSync(testWorkingDir)).toBe(true);
     });
   });
 
@@ -50,7 +50,7 @@ describe('Repository Management', () => {
       // For this test, we'll just verify that the method constructs the right path
       // @ts-ignore
       const repoPath = librarian.getSecureRepoPath('test-repo', 'default');
-      expect(repoPath).to.equal(path.join(testWorkingDir, 'default', 'test-repo'));
+      expect(repoPath).toBe(path.join(testWorkingDir, 'default', 'test-repo'));
     });
 
     it('should not perform git operations if directory exists but is not a git repo', async () => {
@@ -63,7 +63,7 @@ describe('Repository Management', () => {
       
       // This should return the existing path without attempting git operations
       const resultPath = await librarian.cloneRepository('test-repo', 'https://github.com/test/repo.git', 'default');
-      expect(resultPath).to.equal(repoPath);
+      expect(resultPath).toBe(repoPath);
     });
   });
 
@@ -76,7 +76,7 @@ describe('Repository Management', () => {
         await librarian.updateRepository('nonexistent-repo');
         expect.fail('Expected error was not thrown');
       } catch (error) {
-        expect((error as Error).message).to.include('does not exist');
+        expect((error as Error).message).toContain('does not exist');
       }
     });
   });
@@ -91,7 +91,7 @@ describe('Repository Management', () => {
       const repoPath = path.join(testWorkingDir, 'test-repo');
       
       // We'll check that the directory is prepared for cloning
-      expect(fs.existsSync(repoPath)).to.be.false;
+      expect(fs.existsSync(repoPath)).toBe(false);
     });
 
     it('should handle error when trying to update an invalid git repo', async () => {
@@ -111,7 +111,7 @@ describe('Repository Management', () => {
       } catch (error) {
         // The error is expected since we're trying to perform git operations on a fake repo
         // Just verify it's a git-related error
-        expect((error as Error).message).to.exist;
+        expect((error as Error).message).toBeDefined();
       }
     }); // Increased timeout removed due to chai incompatibility
   });
@@ -124,7 +124,7 @@ describe('Repository Management', () => {
         await librarian.queryRepository('nonexistent-repo', 'test query');
         expect.fail('Expected error was not thrown');
       } catch (error) {
-        expect((error as Error).message).to.include('not found in configuration');
+        expect((error as Error).message).toContain('not found in configuration');
       }
     });
   });
@@ -140,7 +140,7 @@ describe('Repository Management', () => {
           expect.fail('Should have thrown error for nonexistent repository');
         }
       } catch (error) {
-        expect((error as Error).message).to.include('not found in configuration');
+        expect((error as Error).message).toContain('not found in configuration');
       }
     });
 
@@ -149,7 +149,7 @@ describe('Repository Management', () => {
       
       // Test that method returns an async generator
       const stream = librarian.streamRepository('test-repo', 'test query');
-      expect(typeof stream[Symbol.asyncIterator]).to.equal('function');
+      expect(typeof stream[Symbol.asyncIterator]).toBe('function');
       
       // Should throw error for nonexistent repository during sync
       try {
@@ -159,7 +159,7 @@ describe('Repository Management', () => {
         }
       } catch (error) {
         // Expected to fail during git operations
-        expect(error).to.be.instanceOf(Error);
+        expect(error).toBeInstanceOf(Error);
       }
     });
 
@@ -191,7 +191,7 @@ describe('Repository Management', () => {
       const stream = librarian.streamRepository('test-repo', 'test query');
       
       // Verify it's an async generator
-      expect(typeof stream[Symbol.asyncIterator]).to.equal('function');
+      expect(typeof stream[Symbol.asyncIterator]).toBe('function');
       
       // Restore original method
       librarian['syncRepository'] = originalSyncRepository;

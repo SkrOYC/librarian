@@ -16,34 +16,45 @@ export class GitIgnoreService {
    * Check if a file should be ignored based on .gitignore rules
    */
   async shouldIgnore(filePath: string): Promise<boolean> {
-    const gitignorePath = this.findClosestGitignore(filePath);
-    
-    if (!gitignorePath) {
-      return false;
+    const gitignorePaths = this.findAllApplicableGitignores(filePath);
+
+    for (const gitignorePath of gitignorePaths) {
+      const patterns = await this.getGitignorePatterns(gitignorePath);
+      const relativePath = path.relative(path.dirname(gitignorePath), filePath);
+
+      if (this.matchesGitignorePattern(relativePath, patterns)) {
+        return true;
+      }
     }
-    
-    const patterns = await this.getGitignorePatterns(gitignorePath);
-    const relativePath = path.relative(path.dirname(gitignorePath), filePath);
-    
-    return this.matchesGitignorePattern(relativePath, patterns);
+
+    return false;
+  }
+
+  /**
+   * Find all applicable .gitignore files for a given path (from closest to root)
+   */
+  private findAllApplicableGitignores(filePath: string): string[] {
+    const gitignorePaths: string[] = [];
+    let currentDir = path.dirname(filePath);
+    const projectRoot = path.resolve(this.projectRoot);
+
+    while (currentDir !== path.dirname(currentDir) && currentDir.startsWith(projectRoot)) {
+      const gitignorePath = path.join(currentDir, '.gitignore');
+      if (require('fs').existsSync(gitignorePath)) {
+        gitignorePaths.push(gitignorePath);
+      }
+      currentDir = path.dirname(currentDir);
+    }
+
+    return gitignorePaths;
   }
 
   /**
    * Find the closest .gitignore file for a given path
    */
   private findClosestGitignore(filePath: string): string | null {
-    let currentDir = path.dirname(filePath);
-    const projectRoot = path.resolve(this.projectRoot);
-    
-    while (currentDir !== path.dirname(currentDir) && currentDir.startsWith(projectRoot)) {
-      const gitignorePath = path.join(currentDir, '.gitignore');
-      if (require('fs').existsSync(gitignorePath)) {
-        return gitignorePath;
-      }
-      currentDir = path.dirname(currentDir);
-    }
-    
-    return null;
+    const gitignores = this.findAllApplicableGitignores(filePath);
+    return gitignores.length > 0 ? gitignores[0]! : null;
   }
 
   /**
@@ -81,15 +92,29 @@ export class GitIgnoreService {
   }
 
   /**
-   * Simple glob pattern matching for .gitignore rules
+   * Improved glob pattern matching for .gitignore rules
    */
   private simpleGlobMatch(path: string, pattern: string): boolean {
-    // Simple implementation - in a real project we'd want a more robust solution
+    // Handle directory patterns (ending with /)
+    if (pattern.endsWith('/')) {
+      const dirPattern = pattern.slice(0, -1);
+      const escapedDirPattern = dirPattern
+        .replace(/\./g, '\\.') // Escape dots
+        .replace(/\*/g, '.*')  // Replace * with .*
+        .replace(/\?/g, '.'); // Replace ? with .
+
+      // Match if path starts with the directory pattern
+      const regex = new RegExp(`^${escapedDirPattern}(/|$)`);
+      return regex.test(path);
+    }
+
+    // Handle wildcard patterns
     const escapedPattern = pattern
       .replace(/\./g, '\\.') // Escape dots
       .replace(/\*/g, '.*')  // Replace * with .*
       .replace(/\?/g, '.'); // Replace ? with .
-    
+
+    // Match exact file/directory names or files within directories
     const regex = new RegExp(`^${escapedPattern}$|^${escapedPattern}/|/${escapedPattern}$|/${escapedPattern}/`);
     return regex.test(path);
   }
