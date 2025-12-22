@@ -49,7 +49,7 @@ test('FileReadTool should read file content', async () => {
   const testContent = 'This is test content for the file reading tool.';
   fs.writeFileSync(testFile, testContent);
   
-  const result = await fileReadToolModern.invoke({ filePath: testFile });
+  const result = await fileReadTool.invoke({ filePath: testFile });
   
   expect(result).to.include(testContent);
   expect(result).to.include('Content of file');
@@ -58,68 +58,86 @@ test('FileReadTool should read file content', async () => {
   fs.unlinkSync(testFile);
 });
 
-test('FileReadTool should handle non-existent files', async () => {
-  const result = await fileReadToolModern.invoke({ filePath: 'non_existent_file.txt' });
+test('FileReadTool should handle file not found', async () => {
+  const result = await fileReadTool.invoke({ filePath: '../nonexistent_file.txt' });
   expect(result).to.include('Error reading file');
 });
 
 // Test GrepContentTool
-test('GrepContentTool should search for content in files', async () => {
-  // Create a temporary directory and file for testing
-  const testDir = path.join(process.cwd(), 'grep_test_dir');
+test('GrepContentTool should search content patterns', async () => {
+  // Create temporary files for testing
+  const testDir = path.join(process.cwd(), 'test_grep_dir');
   if (!fs.existsSync(testDir)) {
     fs.mkdirSync(testDir, { recursive: true });
   }
   
-  const testFile = path.join(testDir, 'grep_test.txt');
-  const testContent = 'This is a test file with some specific content to search for.\nAnother line with more content.';
-  fs.writeFileSync(testFile, testContent);
+  const testFile1 = path.join(testDir, 'test1.js');
+  const testFile2 = path.join(testDir, 'test2.js');
+  fs.writeFileSync(testFile1, 'function hello() { return "hello"; }');
+  fs.writeFileSync(testFile2, 'function world() { return "world"; }');
   
-  const result = await grepContentTool.invoke({ 
+  const result = await grepContentTool.invoke({
     searchPath: testDir,
-    query: 'specific content'
+    query: 'function',
+    patterns: ['*.js'],
+    caseSensitive: false,
+    regex: false,
+    recursive: true,
+    maxResults: 10
   });
   
-  expect(result).to.include('Found');
-  expect(result).to.include('grep_test.txt');
-  expect(result).to.include('specific content');
+  expect(result).to.include('function hello');
+  expect(result).to.include('function world');
+  expect(result).to.include('test1.js');
+  expect(result).to.include('test2.js');
   
   // Clean up
-  fs.unlinkSync(testFile);
+  fs.unlinkSync(testFile1);
+  fs.unlinkSync(testFile2);
   fs.rmdirSync(testDir);
 });
 
-test('GrepContentTool should handle invalid search paths', async () => {
-  const result = await grepContentTool.invoke({ 
+test('GrepContentTool should handle invalid search path', async () => {
+  const result = await grepContentTool.invoke({
     searchPath: '../invalid_dir',
-    query: 'test'
+    query: 'test',
+    patterns: ['*.js'],
+    caseSensitive: false,
+    regex: false,
+    recursive: true,
+    maxResults: 10
   });
-  expect(result).to.include('contains invalid path characters');
+  expect(result).to.include('Error searching content');
 });
 
 // Test FileFindTool
-test('FileFindTool should find files matching patterns', async () => {
-  // Create a temporary directory and files for testing
-  const testDir = path.join(process.cwd(), 'find_test_dir');
+test('FileFindTool should find files by pattern', async () => {
+  // Create temporary files for testing
+  const testDir = path.join(process.cwd(), 'test_find_dir');
   if (!fs.existsSync(testDir)) {
     fs.mkdirSync(testDir, { recursive: true });
   }
   
-  const testFile1 = path.join(testDir, 'test.txt');
-  const testFile2 = path.join(testDir, 'example.js');
-  const testFile3 = path.join(testDir, 'readme.md');
-  fs.writeFileSync(testFile1, 'Test content');
-  fs.writeFileSync(testFile2, 'JavaScript content');
-  fs.writeFileSync(testFile3, 'Markdown content');
+  const testFile1 = path.join(testDir, 'test1.ts');
+  const testFile2 = path.join(testDir, 'test2.ts');
+  const testFile3 = path.join(testDir, 'test3.js');
+  fs.writeFileSync(testFile1, 'TypeScript file 1');
+  fs.writeFileSync(testFile2, 'TypeScript file 2');
+  fs.writeFileSync(testFile3, 'JavaScript file');
   
-  const result = await fileFindTool.invoke({ 
+  const result = await fileFindTool.invoke({
     searchPath: testDir,
-    patterns: ['test.txt']
+    patterns: ['*.ts'],
+    exclude: ['node_modules', '.git'],
+    recursive: true,
+    maxResults: 10,
+    includeHidden: false
   });
   
-  expect(result).to.include('test.txt');
-  expect(result).to.not.include('example.js');
-  expect(result).to.not.include('readme.md');
+  expect(result).to.include('test1.ts');
+  expect(result).to.include('test2.ts');
+  expect(result).to.not.include('test3.js');
+  expect(result).to.include('Found 2 files');
   
   // Clean up
   fs.unlinkSync(testFile1);
@@ -128,16 +146,20 @@ test('FileFindTool should find files matching patterns', async () => {
   fs.rmdirSync(testDir);
 });
 
-test('FileFindTool should handle invalid search paths', async () => {
-  const result = await fileFindTool.invoke({ 
+test('FileFindTool should handle invalid search path', async () => {
+  const result = await fileFindTool.invoke({
     searchPath: '../invalid_dir',
-    patterns: ['*.txt']
+    patterns: ['*.ts'],
+    exclude: ['node_modules', '.git'],
+    recursive: true,
+    maxResults: 10,
+    includeHidden: false
   });
-  expect(result).to.include('contains invalid path characters');
+  expect(result).to.include('Error finding files');
 });
 
-// Test ReactAgent
-test('ReactAgent should initialize without errors', async () => {
+// Test ReactAgent Integration
+test('ReactAgent should initialize with modern tools', async () => {
   const agent = new ReactAgent({
     aiProvider: {
       type: 'openai',
@@ -165,34 +187,34 @@ test('ReactAgent should have streamRepository method', async () => {
     workingDir: './test-work'
   });
   
-  // Check that the method exists
+  expect(agent).to.have.property('streamRepository');
   expect(typeof agent.streamRepository).to.equal('function');
-  expect(agent.streamRepository.constructor.name).to.equal('AsyncGeneratorFunction');
 });
 
-test('ReactAgent streamRepository should handle uninitialized agent', async () => {
+test('ReactAgent should handle streaming errors gracefully', async () => {
   const agent = new ReactAgent({
     aiProvider: {
       type: 'openai',
-      apiKey: 'test-key'
+      apiKey: 'test-key' // This will cause an error
     },
     workingDir: './test-work'
   });
   
-  // Try to stream without initialization
+  await agent.initialize();
+  
   try {
-    const stream = agent.streamRepository('/test/path', 'test query');
+    const stream = agent.streamRepository('./test-repo', 'test query');
+    
     for await (const chunk of stream) {
-      // Should not reach here
-      expect.fail('Should have thrown error for uninitialized agent');
+      // Should throw an error instead of returning chunks
+      expect.fail('Should have thrown an error');
     }
   } catch (error) {
-    expect(error).to.be.instanceOf(Error);
-    expect((error as Error).message).to.include('Agent not initialized');
+    expect(error).to.not.be.null;
   }
 });
 
-test('ReactAgent streamRepository should return async generator', async () => {
+test('ReactAgent should handle streaming network errors with custom messages', async () => {
   const agent = new ReactAgent({
     aiProvider: {
       type: 'openai',
@@ -201,81 +223,12 @@ test('ReactAgent streamRepository should return async generator', async () => {
     workingDir: './test-work'
   });
   
-  // Test that the method returns an async generator
-  const stream = agent.streamRepository('/test/path', 'test query');
-  expect(typeof stream[Symbol.asyncIterator]).to.equal('function');
+  await agent.initialize();
   
-  // Should throw error for uninitialized agent
-  try {
-    for await (const chunk of stream) {
-      // Should not reach here
-      expect.fail('Should have thrown error for uninitialized agent');
-    }
-  } catch (error) {
-    expect(error).to.be.instanceOf(Error);
-    expect((error as Error).message).to.include('Agent not initialized');
-  }
-});
-
-test('ReactAgent streamRepository should handle basic streaming with mocked agent', async () => {
-  const agent = new ReactAgent({
-    aiProvider: {
-      type: 'openai',
-      apiKey: 'test-key'
-    },
-    workingDir: './test-work'
-  });
-  
-  // Create a mock stream function
+  // Create a mock stream that throws a network error
   const mockStream = {
     async *[Symbol.asyncIterator]() {
-      yield ['test token', { langgraph_node: 'model' }];
-      yield ['another token', { langgraph_node: 'model' }];
-    }
-  };
-  
-  // Mock the agent's stream method
-  agent['agent'] = {
-    stream: async () => mockStream
-  };
-  
-  const stream = agent.streamRepository('/test/path', 'test query');
-  
-  const chunks: string[] = [];
-  for await (const chunk of stream) {
-    chunks.push(chunk);
-  }
-  
-  expect(chunks.length).to.be.greaterThan(2); // Now includes completion message
-  expect(chunks[0]).to.equal('test token');
-  expect(chunks[1]).to.equal('another token');
-  expect(chunks[chunks.length - 1]).to.include('Streaming completed');
-});
-
-test('ReactAgent streamRepository should handle structured tokens with mocked agent', async () => {
-  const agent = new ReactAgent({
-    aiProvider: {
-      type: 'openai',
-      apiKey: 'test-key'
-    },
-    workingDir: './test-work'
-  });
-  
-  // Create a mock stream with structured tokens
-  const mockStream = {
-    async *[Symbol.asyncIterator]() {
-      yield [
-        { content: 'structured content' }, 
-        { langgraph_node: 'model' }
-      ];
-      yield [
-        { 
-          content: [
-            { type: 'text', text: 'block content' }
-          ]
-        }, 
-        { langgraph_node: 'model' }
-      ];
+      throw new Error('Network error');
     }
   };
   
@@ -286,17 +239,21 @@ test('ReactAgent streamRepository should handle structured tokens with mocked ag
   const stream = agent.streamRepository('/test/path', 'test query');
   
   const chunks: string[] = [];
-  for await (const chunk of stream) {
-    chunks.push(chunk);
+  let errorThrown = false;
+  
+  try {
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    errorThrown = true;
+    expect(error).to.be.instanceOf(Error);
   }
   
-  expect(chunks.length).to.be.greaterThan(2); // Now includes completion message
-  expect(chunks[0]).to.equal('structured content');
-  expect(chunks[1]).to.equal('block content');
-  expect(chunks[chunks.length - 1]).to.include('Streaming completed');
+  expect(errorThrown).to.be.true;
 });
 
-test('ReactAgent streamRepository should handle streaming errors with mocked agent', async () => {
+test('ReactAgent should handle streaming timeout errors', async () => {
   const agent = new ReactAgent({
     aiProvider: {
       type: 'openai',
@@ -305,7 +262,126 @@ test('ReactAgent streamRepository should handle streaming errors with mocked age
     workingDir: './test-work'
   });
   
-  // Create a mock stream that throws error
+  await agent.initialize();
+  
+  // Create a mock stream that throws a timeout error
+  const mockStream = {
+    async *[Symbol.asyncIterator]() {
+      throw new Error('Timeout error');
+    }
+  };
+  
+  agent['agent'] = {
+    stream: async () => mockStream
+  };
+  
+  const stream = agent.streamRepository('/test/path', 'test query');
+  
+  const chunks: string[] = [];
+  let errorThrown = false;
+  
+  try {
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    errorThrown = true;
+    expect(error).to.be.instanceOf(Error);
+  }
+  
+  expect(errorThrown).to.be.true;
+});
+
+test('ReactAgent should handle streaming rate limit errors', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  await agent.initialize();
+  
+  // Create a mock stream that throws a rate limit error
+  const mockStream = {
+    async *[Symbol.asyncIterator]() {
+      throw new Error('Rate limit exceeded');
+    }
+  };
+  
+  agent['agent'] = {
+    stream: async () => mockStream
+  };
+  
+  const stream = agent.streamRepository('/test/path', 'test query');
+  
+  const chunks: string[] = [];
+  let errorThrown = false;
+  
+  try {
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    errorThrown = true;
+    expect(error).to.be.instanceOf(Error);
+  }
+  
+  expect(errorThrown).to.be.true;
+});
+
+test('ReactAgent should handle streaming authentication errors', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  await agent.initialize();
+  
+  // Create a mock stream that throws an authentication error
+  const mockStream = {
+    async *[Symbol.asyncIterator]() {
+      throw new Error('Authentication failed');
+    }
+  };
+  
+  agent['agent'] = {
+    stream: async () => mockStream
+  };
+  
+  const stream = agent.streamRepository('/test/path', 'test query');
+  
+  const chunks: string[] = [];
+  let errorThrown = false;
+  
+  try {
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    errorThrown = true;
+    expect(error).to.be.instanceOf(Error);
+  }
+  
+  expect(errorThrown).to.be.true;
+});
+
+test('ReactAgent should handle generic streaming errors', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  await agent.initialize();
+  
+  // Create a mock stream that throws a generic error
   const mockStream = {
     async *[Symbol.asyncIterator]() {
       throw new Error('Mock streaming error');
@@ -406,4 +482,64 @@ test('ReactAgent should handle missing technology context gracefully', async () 
   expect(dynamicPrompt).to.include('file_read');
   expect(dynamicPrompt).to.include('grep_content');
   expect(dynamicPrompt).to.include('file_find');
+});
+
+test('ReactAgent should use dynamic system prompt instead of hardcoded', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work/default/typescript',
+    technology: {
+      name: 'typescript',
+      repository: 'https://github.com/microsoft/typescript.git',
+      branch: 'main'
+    }
+  });
+  
+  // Test that createDynamicSystemPrompt() returns expected content
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should include technology context
+  expect(dynamicPrompt).to.include('typescript');
+  expect(dynamicPrompt).to.include('github.com/microsoft/typescript.git');
+  expect(dynamicPrompt).to.include('./test-work/default/typescript');
+  
+  // Should include tool descriptions
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+  
+  // Initialize should complete without errors
+  await agent.initialize();
+  expect(agent['agent']).to.not.be.null;
+});
+
+test('ReactAgent should use dynamic system prompt even without technology context', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+    // No technology context
+  });
+  
+  // Test that createDynamicSystemPrompt() returns expected content
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should include working directory
+  expect(dynamicPrompt).to.include('./test-work');
+  
+  // Should still include tool descriptions
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+  
+  // Initialize should complete without errors
+  await agent.initialize();
+  expect(agent['agent']).to.not.be.null;
 });

@@ -128,26 +128,11 @@ Always provide specific file paths and line numbers when referencing code in you
   }
 
   async initialize(): Promise<void> {
-    // Create the agent using LangChain's createAgent function
+    // Create the agent using LangChain's createAgent function with dynamic system prompt
     this.agent = createAgent({
       model: this.aiModel,
       tools: this.tools,
-      systemPrompt: `You are a sophisticated AI research assistant that can explore and analyze code repositories using specialized tools. 
-      
-Your available tools are:
-- file_list: List directory contents with metadata
-- file_read: Read the contents of a specific file
-- grep_content: Search for content patterns across multiple files
-- file_find: Find files matching specific patterns
-
-When analyzing a repository:
-1. Start by using file_list to understand the repository structure
-2. Use file_find to locate specific files of interest
-3. Use file_read to examine file contents in detail
-4. Use grep_content to search for specific code patterns or text
-5. Synthesize all gathered information to provide comprehensive answers
-
-Always provide specific file paths and line numbers when referencing code in your responses.`
+      systemPrompt: this.createDynamicSystemPrompt()
     });
   }
 
