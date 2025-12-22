@@ -2,7 +2,7 @@ import { createAgent } from "langchain";
 import { fileListTool } from "../tools/file-listing.tool";
 import { fileReadTool } from "../tools/file-reading.tool";
 import { grepContentTool } from "../tools/grep-content.tool";
-import { FileFindTool } from "../tools/file-finding.tool";
+import { fileFindTool } from "../tools/file-finding.tool";
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -34,7 +34,7 @@ export class ReactAgent {
       fileListTool,
       fileReadTool,
       grepContentTool,
-      new FileFindTool(config.workingDir)
+      fileFindTool
     ];
   }
 

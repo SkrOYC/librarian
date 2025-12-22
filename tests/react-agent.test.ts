@@ -4,11 +4,12 @@ import path from 'path';
 import { fileListTool } from '../src/tools/file-listing.tool';
 import { fileReadTool as fileReadToolModern } from '../src/tools/file-reading.tool';
 import { grepContentTool as grepContentToolModern } from '../src/tools/grep-content.tool';
+import { fileFindTool as fileFindToolModern } from '../src/tools/file-finding.tool';
 import { FileFindTool } from '../src/tools/file-finding.tool';
 import { ReactAgent } from '../src/agents/react-agent';
 const fileReadTool = fileReadToolModern;
 const grepContentTool = grepContentToolModern;
-const fileFindTool = new FileFindTool();
+const fileFindTool = fileFindToolModern;
 
 // Test FileListTool
 test('FileListTool should list directory contents', async () => {
@@ -111,10 +112,10 @@ test('FileFindTool should find files matching patterns', async () => {
   fs.writeFileSync(testFile2, 'JavaScript content');
   fs.writeFileSync(testFile3, 'Markdown content');
   
-  const result = await fileFindTool._call(JSON.stringify({ 
+  const result = await fileFindTool.invoke({ 
     searchPath: testDir,
     patterns: ['test.txt']
-  }));
+  });
   
   expect(result).to.include('test.txt');
   expect(result).to.not.include('example.js');
@@ -128,10 +129,10 @@ test('FileFindTool should find files matching patterns', async () => {
 });
 
 test('FileFindTool should handle invalid search paths', async () => {
-  const result = await fileFindTool._call(JSON.stringify({ 
+  const result = await fileFindTool.invoke({ 
     searchPath: '../invalid_dir',
     patterns: ['*.txt']
-  }));
+  });
   expect(result).to.include('contains invalid path characters');
 });
 
