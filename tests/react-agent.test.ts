@@ -544,6 +544,120 @@ test('ReactAgent should use dynamic system prompt even without technology contex
   expect(agent['agent']).to.not.be.null;
 });
 
+test('ReactAgent should handle technology context with special characters', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work',
+    technology: {
+      name: 'react-native',
+      repository: 'https://github.com/facebook/react-native.git',
+      branch: 'main'
+    }
+  });
+  
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should handle technology name with hyphen
+  expect(dynamicPrompt).to.include('react-native');
+  expect(dynamicPrompt).to.include('github.com/facebook/react-native.git');
+  expect(dynamicPrompt).to.include('./test-work');
+  
+  // Should include tool descriptions
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+});
+
+test('ReactAgent should handle technology context with empty repository name', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work/unknown',
+    technology: {
+      name: '',
+      repository: 'https://github.com/example/repo.git',
+      branch: 'main'
+    }
+  });
+  
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should still include repository info even with empty name
+  expect(dynamicPrompt).to.include('https://github.com/example/repo.git');
+  expect(dynamicPrompt).to.include('./test-work/unknown');
+  expect(dynamicPrompt).to.include('main');
+  
+  // Should include tool descriptions
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+});
+
+test('ReactAgent should handle technology context with long repository URL', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work',
+    technology: {
+      name: 'test-repo',
+      repository: 'https://github.com/some-very-long-organization-name/complex-repository-name-with-many-components.git',
+      branch: 'feature/very-long-branch-name-with-many-components'
+    }
+  });
+  
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should handle long repository URL
+  expect(dynamicPrompt).to.include('test-repo');
+  expect(dynamicPrompt).to.include('https://github.com/some-very-long-organization-name/complex-repository-name-with-many-components.git');
+  expect(dynamicPrompt).to.include('feature/very-long-branch-name-with-many-components');
+  expect(dynamicPrompt).to.include('./test-work');
+  
+  // Should include tool descriptions
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+});
+
+test('ReactAgent should handle different working directory formats', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: '/absolute/path/to/workspace',
+    technology: {
+      name: 'vue',
+      repository: 'https://github.com/vuejs/vue.git',
+      branch: 'v3'
+    }
+  });
+  
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should handle different working directory format
+  expect(dynamicPrompt).to.include('vue');
+  expect(dynamicPrompt).to.include('https://github.com/vuejs/vue.git');
+  expect(dynamicPrompt).to.include('v3');
+  expect(dynamicPrompt).to.include('/absolute/path/to/workspace');
+  
+  // Should include tool descriptions
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+});
+
 test('ReactAgent query flow should not override dynamic system prompt', async () => {
   const agent = new ReactAgent({
     aiProvider: {
