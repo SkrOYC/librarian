@@ -21,7 +21,7 @@
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Streaming Implementation' (Protocol in workflow.md) [a406950]
 
 ## Phase 3: Dynamic System Prompt Construction
-- [~] Task: Update ReactAgent constructor to accept technology context
+- [x] Task: Update ReactAgent constructor to accept technology context [75a31c9]
 - [ ] Task: Implement `createDynamicSystemPrompt()` method based on working directory and technology
 - [ ] Task: Remove hardcoded system prompt from createAgent initialization
 - [ ] Task: Update query flow to use dynamic system prompt instead of fixed
