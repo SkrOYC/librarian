@@ -1,8 +1,8 @@
 import { createAgent } from "langchain";
-import { fileListTool } from "../tools/file-listing.tool";
-import { fileReadTool } from "../tools/file-reading.tool";
-import { grepContentTool } from "../tools/grep-content.tool";
-import { fileFindTool } from "../tools/file-finding.tool";
+import { fileListTool } from "../tools/file-listing.tool.js";
+import { fileReadTool } from "../tools/file-reading.tool.js";
+import { grepContentTool } from "../tools/grep-content.tool.js";
+import { fileFindTool } from "../tools/file-finding.tool.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
