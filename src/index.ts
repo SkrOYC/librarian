@@ -276,6 +276,73 @@ export class Librarian {
     return await agent.queryRepository(repoPath, query);
   }
 
+  async *streamRepository(repoName: string, query: string): AsyncGenerator<string, void, unknown> {
+    const tech = this.resolveTechnology(repoName);
+    
+    if (!tech) {
+      throw new Error(`Repository ${repoName} not found in configuration`);
+    }
+
+    // Set up interruption handling at Librarian level
+    let isInterrupted = false;
+    const cleanup = () => {
+      isInterrupted = true;
+    };
+
+    // Listen for interruption signals (Ctrl+C)
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+    try {
+      // Clone or sync repository first
+      const repoPath = await this.syncRepository(repoName);
+      
+      // Check for interruption after sync
+      if (isInterrupted) {
+        yield '[Repository sync interrupted by user]';
+        return;
+      }
+
+      // Initialize agent
+      const agent = new ReactAgent({
+        aiProvider: this.config.aiProvider,
+        workingDir: repoPath
+      });
+      await agent.initialize();
+
+      // Check for interruption after initialization
+      if (isInterrupted) {
+        yield '[Agent initialization interrupted by user]';
+        return;
+      }
+      
+      // Execute streaming query using agent
+      yield* agent.streamRepository(repoPath, query);
+    } catch (error) {
+      // Handle repository-level errors
+      let errorMessage = 'Unknown error';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('not found in configuration')) {
+          errorMessage = error.message;
+        } else if (error.message.includes('git') || error.message.includes('clone')) {
+          errorMessage = `Repository operation failed: ${error.message}`;
+        } else if (error.message.includes('timeout')) {
+          errorMessage = 'Repository operation timed out';
+        } else {
+          errorMessage = `Repository error: ${error.message}`;
+        }
+      }
+      
+      yield `\n[Error: ${errorMessage}]`;
+      throw error;
+    } finally {
+      // Clean up event listeners
+      process.removeListener('SIGINT', cleanup);
+      process.removeListener('SIGTERM', cleanup);
+    }
+  }
+
   private readRepositoryContents(repoPath: string): string {
     try {
       const files = this.walkDirectory(repoPath);

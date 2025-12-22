@@ -5,7 +5,7 @@ import { fileListTool } from '../src/tools/file-listing.tool';
 import { fileReadTool as fileReadToolModern } from '../src/tools/file-reading.tool';
 import { grepContentTool as grepContentToolModern } from '../src/tools/grep-content.tool';
 import { fileFindTool as fileFindToolModern } from '../src/tools/file-finding.tool';
-import { FileFindTool } from '../src/tools/file-finding.tool';
+
 import { ReactAgent } from '../src/agents/react-agent';
 const fileReadTool = fileReadToolModern;
 const grepContentTool = grepContentToolModern;
@@ -153,4 +153,183 @@ test('ReactAgent should initialize without errors', async () => {
     // Expected to fail due to invalid API key, which is fine for this test
     expect(error).to.not.be.null;
   }
+});
+
+// Test ReactAgent Streaming
+test('ReactAgent should have streamRepository method', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  // Check that the method exists
+  expect(typeof agent.streamRepository).to.equal('function');
+  expect(agent.streamRepository.constructor.name).to.equal('AsyncGeneratorFunction');
+});
+
+test('ReactAgent streamRepository should handle uninitialized agent', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  // Try to stream without initialization
+  try {
+    const stream = agent.streamRepository('/test/path', 'test query');
+    for await (const chunk of stream) {
+      // Should not reach here
+      expect.fail('Should have thrown error for uninitialized agent');
+    }
+  } catch (error) {
+    expect(error).to.be.instanceOf(Error);
+    expect((error as Error).message).to.include('Agent not initialized');
+  }
+});
+
+test('ReactAgent streamRepository should return async generator', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  // Test that the method returns an async generator
+  const stream = agent.streamRepository('/test/path', 'test query');
+  expect(typeof stream[Symbol.asyncIterator]).to.equal('function');
+  
+  // Should throw error for uninitialized agent
+  try {
+    for await (const chunk of stream) {
+      // Should not reach here
+      expect.fail('Should have thrown error for uninitialized agent');
+    }
+  } catch (error) {
+    expect(error).to.be.instanceOf(Error);
+    expect((error as Error).message).to.include('Agent not initialized');
+  }
+});
+
+test('ReactAgent streamRepository should handle basic streaming with mocked agent', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  // Create a mock stream function
+  const mockStream = {
+    async *[Symbol.asyncIterator]() {
+      yield ['test token', { langgraph_node: 'model' }];
+      yield ['another token', { langgraph_node: 'model' }];
+    }
+  };
+  
+  // Mock the agent's stream method
+  agent['agent'] = {
+    stream: async () => mockStream
+  };
+  
+  const stream = agent.streamRepository('/test/path', 'test query');
+  
+  const chunks: string[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  
+  expect(chunks.length).to.be.greaterThan(2); // Now includes completion message
+  expect(chunks[0]).to.equal('test token');
+  expect(chunks[1]).to.equal('another token');
+  expect(chunks[chunks.length - 1]).to.include('Streaming completed');
+});
+
+test('ReactAgent streamRepository should handle structured tokens with mocked agent', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  // Create a mock stream with structured tokens
+  const mockStream = {
+    async *[Symbol.asyncIterator]() {
+      yield [
+        { content: 'structured content' }, 
+        { langgraph_node: 'model' }
+      ];
+      yield [
+        { 
+          content: [
+            { type: 'text', text: 'block content' }
+          ]
+        }, 
+        { langgraph_node: 'model' }
+      ];
+    }
+  };
+  
+  agent['agent'] = {
+    stream: async () => mockStream
+  };
+  
+  const stream = agent.streamRepository('/test/path', 'test query');
+  
+  const chunks: string[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  
+  expect(chunks.length).to.be.greaterThan(2); // Now includes completion message
+  expect(chunks[0]).to.equal('structured content');
+  expect(chunks[1]).to.equal('block content');
+  expect(chunks[chunks.length - 1]).to.include('Streaming completed');
+});
+
+test('ReactAgent streamRepository should handle streaming errors with mocked agent', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+  });
+  
+  // Create a mock stream that throws error
+  const mockStream = {
+    async *[Symbol.asyncIterator]() {
+      throw new Error('Mock streaming error');
+    }
+  };
+  
+  agent['agent'] = {
+    stream: async () => mockStream
+  };
+  
+  const stream = agent.streamRepository('/test/path', 'test query');
+  
+  const chunks: string[] = [];
+  let errorThrown = false;
+  
+  try {
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    errorThrown = true;
+    expect(error).to.be.instanceOf(Error);
+    expect((error as Error).message).to.include('Mock streaming error');
+  }
+  
+  expect(errorThrown).to.be.true;
 });

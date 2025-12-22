@@ -117,4 +117,98 @@ Always provide specific file paths and line numbers when referencing code in you
 
     return result.content as string;
   }
+
+  async *streamRepository(repoPath: string, query: string): AsyncGenerator<string, void, unknown> {
+    if (!this.agent) {
+      throw new Error("Agent not initialized. Call initialize() first.");
+    }
+
+    // Create a system message with repository context
+    const systemMessage = `You are analyzing a repository located at "${repoPath}". 
+    Use the available tools to explore the repository structure and content to answer the user's question. 
+    All file operations should be performed relative to this repository path.`;
+    
+    // Prepare the messages for the agent
+    const messages = [
+      new SystemMessage(systemMessage),
+      new HumanMessage(query)
+    ];
+
+    // Set up interruption handling
+    let isInterrupted = false;
+    const cleanup = () => {
+      isInterrupted = true;
+    };
+
+    // Listen for interruption signals (Ctrl+C)
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+    try {
+      // Stream the agent response with LLM token streaming
+      const stream = await this.agent.stream({
+        messages
+      }, {
+        streamMode: "messages"
+      });
+
+      // Process stream chunks and yield content
+      for await (const [token, metadata] of stream) {
+        // Check for interruption
+        if (isInterrupted) {
+          yield '\n\n[Streaming interrupted by user]';
+          break;
+        }
+
+        // Handle both string tokens and structured content
+        if (typeof token === 'string') {
+          yield token;
+        } else if (token && typeof token === 'object') {
+          // Handle structured token content
+          if (token.content) {
+            if (typeof token.content === 'string') {
+              yield token.content;
+            } else if (Array.isArray(token.content)) {
+              // Handle content blocks (common in LangChain)
+              for (const block of token.content) {
+                if (block.type === 'text' && block.text) {
+                  yield block.text;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // If we completed without interruption, yield completion indicator
+      if (!isInterrupted) {
+        yield '\n[Streaming completed]';
+      }
+    } catch (error) {
+      // Enhanced error handling for different error types
+      let errorMessage = 'Unknown streaming error';
+      
+      if (error instanceof Error) {
+        // Handle common streaming errors with specific messages
+        if (error.message.includes('timeout')) {
+          errorMessage = 'Streaming timeout - request took too long to complete';
+        } else if (error.message.includes('network') || error.message.includes('ENOTFOUND')) {
+          errorMessage = 'Network error - unable to connect to AI provider';
+        } else if (error.message.includes('rate limit')) {
+          errorMessage = 'Rate limit exceeded - please try again later';
+        } else if (error.message.includes('authentication') || error.message.includes('unauthorized')) {
+          errorMessage = 'Authentication error - check your API credentials';
+        } else {
+          errorMessage = `Streaming error: ${error.message}`;
+        }
+      }
+      
+      yield `\n\n[Error: ${errorMessage}]`;
+      throw error;
+    } finally {
+      // Clean up event listeners
+      process.removeListener('SIGINT', cleanup);
+      process.removeListener('SIGTERM', cleanup);
+    }
+  }
 }

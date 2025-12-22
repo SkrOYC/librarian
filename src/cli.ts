@@ -20,6 +20,7 @@ export function createProgram() {
     .option('-t, --tech <technology>', 'Specific technology to explore')
     .option('-g, --group <group>', 'Technology group to explore')
     .option('-c, --config <path>', 'Path to configuration file')
+    .option('-s, --stream', 'Enable streaming output for real-time responses')
     .action(async (query, options) => {
       try {
         const config = await loadConfig(options.config);
@@ -31,8 +32,31 @@ export function createProgram() {
           if (!techDetails) {
             throw new Error(`Technology ${options.tech} not found in configuration`);
           }
-          const result = await librarian.queryRepository(techDetails.name, query);
-          console.log(result);
+          
+          if (options.stream) {
+            // Use streaming for real-time output
+            console.log(`Streaming analysis for ${techDetails.name}...`);
+            console.log('---');
+            
+            try {
+              const stream = librarian.streamRepository(techDetails.name, query);
+              
+              for await (const chunk of stream) {
+                // Output each chunk as it arrives
+                process.stdout.write(chunk);
+              }
+            } catch (error) {
+              console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');
+              process.exit(1);
+            }
+            
+            console.log('\n---');
+            console.log('Streaming complete.');
+          } else {
+            // Use traditional synchronous query
+            const result = await librarian.queryRepository(techDetails.name, query);
+            console.log(result);
+          }
         } else if (options.group) {
           console.log(`Exploring all technologies in group: ${options.group}`);
           // This will be fully implemented when the agent supports multi-repo exploration
@@ -43,8 +67,26 @@ export function createProgram() {
           }
           for (const techName of Object.keys(technologies)) {
             console.log(`\n--- ${techName} ---`);
-            const result = await librarian.queryRepository(techName, query);
-            console.log(result);
+            
+            if (options.stream) {
+              console.log(`Streaming analysis for ${techName}...`);
+              
+              try {
+                const stream = librarian.streamRepository(techName, query);
+                
+                for await (const chunk of stream) {
+                  process.stdout.write(chunk);
+                }
+              } catch (error) {
+                console.error(`\nStreaming interrupted or failed for ${techName}:`, error instanceof Error ? error.message : 'Unknown error');
+                continue; // Continue with next technology
+              }
+              
+              console.log('\nStreaming complete for', techName);
+            } else {
+              const result = await librarian.queryRepository(techName, query);
+              console.log(result);
+            }
           }
         } else {
           console.error('Error: Either --tech or --group must be specified');

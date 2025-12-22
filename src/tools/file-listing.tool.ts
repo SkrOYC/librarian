@@ -146,29 +146,3 @@ export const fileListTool = tool(
   }
 );
 
-// Legacy FileListTool class for backward compatibility
-export class FileListTool {
-  name = "file_list";
-  description = "List the contents of a directory with metadata. Use this to understand the structure of a repository or directory.";
-  private workingDir: string;
-
-  constructor(workingDir: string = process.cwd()) {
-    this.workingDir = workingDir;
-  }
-
-  async _call(input: string): Promise<string> {
-    try {
-      // Parse the input JSON string
-      const parsedInput = JSON.parse(input);
-      const { directoryPath = '.', includeHidden = false } = parsedInput;
-
-      // Use the modern tool implementation
-      return await fileListTool.invoke(
-        { directoryPath, includeHidden },
-        { context: { workingDir: this.workingDir } }
-      );
-    } catch (error) {
-      return `Error listing directory: ${(error as Error).message}`;
-    }
-  }
-}
