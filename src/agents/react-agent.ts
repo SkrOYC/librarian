@@ -6,7 +6,7 @@ import { fileFindTool } from "../tools/file-finding.tool";
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import { HumanMessage } from "@langchain/core/messages";
 
 // Import the Librarian config interface
 import { LibrarianConfig } from "../index";
@@ -141,14 +141,8 @@ Always provide specific file paths and line numbers when referencing code in you
       throw new Error("Agent not initialized. Call initialize() first.");
     }
 
-    // Create a system message with repository context
-    const systemMessage = `You are analyzing a repository located at "${repoPath}". 
-    Use the available tools to explore the repository structure and content to answer the user's question. 
-    All file operations should be performed relative to this repository path.`;
-    
-    // Prepare the messages for the agent
+    // Prepare the messages for the agent - system prompt already set during initialization
     const messages = [
-      new SystemMessage(systemMessage),
       new HumanMessage(query)
     ];
 
@@ -165,14 +159,8 @@ Always provide specific file paths and line numbers when referencing code in you
       throw new Error("Agent not initialized. Call initialize() first.");
     }
 
-    // Create a system message with repository context
-    const systemMessage = `You are analyzing a repository located at "${repoPath}". 
-    Use the available tools to explore the repository structure and content to answer the user's question. 
-    All file operations should be performed relative to this repository path.`;
-    
-    // Prepare the messages for the agent
+    // Prepare messages for the agent - system prompt already set during initialization
     const messages = [
-      new SystemMessage(systemMessage),
       new HumanMessage(query)
     ];
 

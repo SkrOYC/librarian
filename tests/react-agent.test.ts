@@ -543,3 +543,93 @@ test('ReactAgent should use dynamic system prompt even without technology contex
   await agent.initialize();
   expect(agent['agent']).to.not.be.null;
 });
+
+test('ReactAgent query flow should not override dynamic system prompt', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work/default/typescript',
+    technology: {
+      name: 'typescript',
+      repository: 'https://github.com/microsoft/typescript.git',
+      branch: 'main'
+    }
+  });
+  
+  await agent.initialize();
+  
+  // Mock agent.invoke to capture messages passed
+  let capturedMessages: any[] = [];
+  agent['agent'] = {
+    invoke: async (params: { messages: any[] }) => {
+      capturedMessages = params.messages;
+      return { content: 'test response' };
+    }
+  };
+  
+  await agent.queryRepository('./test-repo', 'test query');
+  
+  // Should have 1 message: only human (system prompt already set during initialization)
+  expect(capturedMessages).to.have.length(1);
+  
+  // The message should be human message
+  const humanMessage = capturedMessages[0];
+  expect(humanMessage.constructor.name).to.equal('HumanMessage');
+  
+  // Verify dynamic prompt was set during initialization by checking createDynamicSystemPrompt()
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  expect(dynamicPrompt).to.include('typescript');
+  expect(dynamicPrompt).to.include('github.com/microsoft/typescript.git');
+  expect(dynamicPrompt).to.include('./test-work/default/typescript');
+});
+
+test('ReactAgent stream flow should not override dynamic system prompt', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work/default/react',
+    technology: {
+      name: 'react',
+      repository: 'https://github.com/facebook/react.git',
+      branch: 'main'
+    }
+  });
+  
+  await agent.initialize();
+  
+  // Mock agent.stream to capture messages passed
+  let capturedMessages: any[] = [];
+  agent['agent'] = {
+    stream: async (params: { messages: any[] }) => {
+      capturedMessages = params.messages;
+      // Return a mock stream
+      return (async function* () {
+        yield { content: 'test chunk' };
+      })();
+    }
+  };
+  
+  const stream = agent.streamRepository('./test-repo', 'test query');
+  
+  // Consume stream to trigger logic
+  for await (const chunk of stream) {
+    break; // Just need to trigger the method
+  }
+  
+  // Should have 1 message: only human (system prompt already set during initialization)
+  expect(capturedMessages).to.have.length(1);
+  
+  // The message should be human message
+  const humanMessage = capturedMessages[0];
+  expect(humanMessage.constructor.name).to.equal('HumanMessage');
+  
+  // Verify dynamic prompt was set during initialization by checking createDynamicSystemPrompt()
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  expect(dynamicPrompt).to.include('react');
+  expect(dynamicPrompt).to.include('github.com/facebook/react.git');
+  expect(dynamicPrompt).to.include('./test-work/default/react');
+});

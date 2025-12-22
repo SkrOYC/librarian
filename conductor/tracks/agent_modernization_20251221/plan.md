@@ -24,7 +24,7 @@
 - [x] Task: Update ReactAgent constructor to accept technology context [75a31c9]
 - [x] Task: Implement `createDynamicSystemPrompt()` method based on working directory and technology [75a31c9]
 - [x] Task: Remove hardcoded system prompt from createAgent initialization [e65f628]
-- [ ] Task: Update query flow to use dynamic system prompt instead of fixed
+- [~] Task: Update query flow to use dynamic system prompt instead of fixed
 - [ ] Task: Add tests for dynamic prompt construction with different technology contexts
 - [ ] Task: Conductor - User Manual Verification 'Phase 3: Dynamic System Prompt Construction' (Protocol in workflow.md)
 
