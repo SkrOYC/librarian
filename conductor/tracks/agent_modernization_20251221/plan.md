@@ -30,7 +30,7 @@
 
 ## Phase 4: Integration Testing and Validation
 - [x] Task: Create E2E tests that validate real agent-tool communication [3dcaf97]
-- [x] Task: Remove mocking of ReactAgent in integration tests
+- [x] Task: Remove mocking of ReactAgent in integration tests [3147ed1]
 - [ ] Task: Test streaming functionality end-to-end with real LangChain calls
 - [ ] Task: Validate dynamic system prompt construction works correctly
 - [ ] Task: Test modern tool pattern with structured parameters
