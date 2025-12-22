@@ -333,3 +333,77 @@ test('ReactAgent streamRepository should handle streaming errors with mocked age
   
   expect(errorThrown).to.be.true;
 });
+
+// Test Dynamic System Prompt Construction - Phase 3
+test('ReactAgent constructor should accept technology context', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work',
+    technology: {
+      name: 'typescript',
+      repository: 'https://github.com/microsoft/typescript.git',
+      branch: 'main'
+    }
+  });
+  
+  // Should be able to create agent with technology context
+  expect(agent).to.not.be.null;
+  expect(agent).to.have.property('createDynamicSystemPrompt');
+});
+
+test('ReactAgent should create dynamic system prompt with technology context', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work/default/typescript',
+    technology: {
+      name: 'typescript',
+      repository: 'https://github.com/microsoft/typescript.git',
+      branch: 'main'
+    }
+  });
+  
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should include technology name
+  expect(dynamicPrompt).to.include('typescript');
+  
+  // Should include working directory
+  expect(dynamicPrompt).to.include('./test-work/default/typescript');
+  
+  // Should include repository information
+  expect(dynamicPrompt).to.include('github.com/microsoft/typescript.git');
+  
+  // Should maintain core functionality description
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+});
+
+test('ReactAgent should handle missing technology context gracefully', async () => {
+  const agent = new ReactAgent({
+    aiProvider: {
+      type: 'openai',
+      apiKey: 'test-key'
+    },
+    workingDir: './test-work'
+    // No technology context provided
+  });
+  
+  const dynamicPrompt = agent.createDynamicSystemPrompt();
+  
+  // Should still create a valid prompt with working directory
+  expect(dynamicPrompt).to.include('./test-work');
+  
+  // Should maintain core functionality
+  expect(dynamicPrompt).to.include('file_list');
+  expect(dynamicPrompt).to.include('file_read');
+  expect(dynamicPrompt).to.include('grep_content');
+  expect(dynamicPrompt).to.include('file_find');
+});

@@ -11,22 +11,35 @@ import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 // Import the Librarian config interface
 import { LibrarianConfig } from "../index";
 
+/**
+ * Configuration interface for ReactAgent
+ */
 export interface ReactAgentConfig {
+  /** AI provider configuration including type, API key, and optional model/base URL */
   aiProvider: {
     type: 'openai' | 'anthropic' | 'google' | 'openai-compatible';
     apiKey: string;
     model?: string;
     baseURL?: string;
   };
+  /** Working directory where the agent operates */
   workingDir: string;
+  /** Optional technology context for dynamic system prompt construction */
+  technology?: {
+    name: string;
+    repository: string;
+    branch: string;
+  };
 }
 
 export class ReactAgent {
   private aiModel: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
   private tools: any[];
   private agent: any;
+  private config: ReactAgentConfig;
 
   constructor(config: ReactAgentConfig) {
+    this.config = config;
     this.aiModel = this.createAIModel(config.aiProvider);
     
     // Initialize tools - modernized tool pattern
@@ -36,6 +49,50 @@ export class ReactAgent {
       grepContentTool,
       fileFindTool
     ];
+  }
+
+  /**
+   * Creates a dynamic system prompt based on current configuration and technology context
+   * @returns A context-aware system prompt string
+   */
+  createDynamicSystemPrompt(): string {
+    const { workingDir, technology } = this.config;
+    
+    let prompt = `You are a sophisticated AI research assistant that can explore and analyze code repositories using specialized tools.
+`;
+    
+    // Add technology context if available
+    if (technology) {
+      prompt += `
+You are currently exploring the **${technology.name}** technology repository.
+Repository: ${technology.repository}
+Branch: ${technology.branch}
+Working Directory: ${workingDir}
+
+Focus your analysis on understanding the architecture, key components, and usage patterns specific to this technology.
+`;
+    } else {
+      prompt += `
+Working Directory: ${workingDir}
+`;
+    }
+    
+    prompt += `Your available tools are:
+- file_list: List directory contents with metadata
+- file_read: Read the contents of a specific file
+- grep_content: Search for content patterns across multiple files
+- file_find: Find files matching specific patterns
+
+When analyzing a repository:
+1. Start by using file_list to understand the repository structure
+2. Use file_find to locate specific files of interest
+3. Use file_read to examine file contents in detail
+4. Use grep_content to search for specific code patterns or text
+5. Synthesize all gathered information to provide comprehensive answers
+
+Always provide specific file paths and line numbers when referencing code in your responses.`;
+
+    return prompt;
   }
 
   private createAIModel(aiProvider: ReactAgentConfig['aiProvider']): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
