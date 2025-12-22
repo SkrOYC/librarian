@@ -4,5 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-## [ ] Track: Agent Modernization
+## [~] Track: Agent Modernization
 *Link: [./conductor/tracks/agent_modernization_20251221/](./conductor/tracks/agent_modernization_20251221/)*
