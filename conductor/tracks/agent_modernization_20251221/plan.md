@@ -20,7 +20,7 @@
 - [x] Task: Ensure backward compatibility with non-streaming usage
 - [x] Task: Conductor - User Manual Verification 'Phase 2: Streaming Implementation' (Protocol in workflow.md) [a406950]
 
-## Phase 3: Dynamic System Prompt Construction
+## Phase 3: Dynamic System Prompt Construction [checkpoint: 7fde0d8]
 - [x] Task: Update ReactAgent constructor to accept technology context [75a31c9]
 - [x] Task: Implement `createDynamicSystemPrompt()` method based on working directory and technology [75a31c9]
 - [x] Task: Remove hardcoded system prompt from createAgent initialization [e65f628]
