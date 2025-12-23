@@ -45,7 +45,13 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
 
   // Check if config file exists
   if (!fs.existsSync(actualPath)) {
-    throw new Error(`Configuration file not found: ${actualPath}`);
+    try {
+      await createDefaultConfig(actualPath);
+      // Silent - no console output as requested
+    } catch (error) {
+      console.error(`Failed to create default config at ${actualPath}: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    }
   }
 
   // Read and parse the YAML file
@@ -115,22 +121,18 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
 }
 
 export async function createDefaultConfig(configPath: string): Promise<void> {
-  const defaultConfig: LibrarianConfig = {
-    technologies: {
-      default: {
-        'react': { repo: 'https://github.com/facebook/react.git', description: 'React UI Library' },
-        'node': { repo: 'https://github.com/nodejs/node.git', description: 'Node.js Runtime' }
-      }
-    },
-    aiProvider: {
-      type: 'openai',
-      apiKey: 'your-api-key-here',
-      model: 'gpt-4o'
-    },
-    workingDir: './librarian_work',
-    repos_path: './repositories'
+  const defaultConfig = {
+    repos_path: "~/.local/share/librarian/repos",
+    llm_provider: "openai-compatible",
+    llm_model: "grok-code",
+    base_url: "https://opencode.ai/zen/v1"
   };
 
+  // Ensure directory exists
+  const configDir = path.dirname(configPath);
+  fs.mkdirSync(configDir, { recursive: true });
+
+  // Write YAML file
   const yamlString = stringify(defaultConfig);
   fs.writeFileSync(configPath, yamlString);
 }

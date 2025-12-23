@@ -1,8 +1,10 @@
 import { describe, it, expect, afterEach } from 'bun:test';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { parse, stringify } from 'yaml';
 import { loadConfig } from '../src/config.js';
-import { stringify } from 'yaml';
+import { createDefaultConfig } from '../src/config.js';
 
 const TEST_CONFIG_PATH = path.join(process.cwd(), 'test-config.yaml');
 
@@ -86,5 +88,62 @@ describe('Config Schema Alignment', () => {
 
         expect(loaded.technologies.default.react.repo).toBe('https://github.com/facebook/react.git');
         expect(loaded.technologies.default.node.repo).toBe('https://github.com/nodejs/node.git');
+    });
+
+    it('should auto-create default config when file missing', async () => {
+        const nonExistentPath = path.join(process.cwd(), `test-auto-config-${Date.now()}.yaml`);
+
+        try {
+            const config: any = await loadConfig(nonExistentPath);
+
+            expect(fs.existsSync(nonExistentPath)).toBe(true);
+            expect(config.aiProvider.type).toBe('openai-compatible');
+            expect(config.aiProvider.model).toBe('grok-code');
+            expect(config.aiProvider.baseURL).toBe('https://opencode.ai/zen/v1');
+            expect(config.repos_path).toBe(path.join(os.homedir(), '.local/share/librarian/repos'));
+        } finally {
+            if (fs.existsSync(nonExistentPath)) {
+                fs.unlinkSync(nonExistentPath);
+            }
+        }
+    });
+
+    it('should create config directory if missing', async () => {
+        const deepPath = path.join(process.cwd(), `test-level1-${Date.now()}`, 'level2', 'config.yaml');
+        const testDir = path.dirname(deepPath);
+
+        try {
+            await loadConfig(deepPath);
+
+            expect(fs.existsSync(testDir)).toBe(true);
+            expect(fs.existsSync(deepPath)).toBe(true);
+        } finally {
+            // Cleanup
+            const level1 = path.join(process.cwd(), `test-level1-${Date.now()}`);
+            if (fs.existsSync(level1)) {
+                fs.rmSync(level1, { recursive: true, force: true });
+            }
+        }
+    });
+
+    it('should create proper YAML syntax', async () => {
+        const testPath = path.join(process.cwd(), `test-yaml-${Date.now()}.yaml`);
+
+        try {
+            await createDefaultConfig(testPath);
+            const content = fs.readFileSync(testPath, 'utf8');
+            const parsed = parse(content);
+
+            expect(parsed).toBeDefined();
+            expect(parsed.repos_path).toBe('~/.local/share/librarian/repos');
+            expect(parsed.llm_provider).toBe('openai-compatible');
+            expect(parsed.llm_model).toBe('grok-code');
+            expect(parsed.base_url).toBe('https://opencode.ai/zen/v1');
+            expect(parsed.technologies).toBeUndefined();
+        } finally {
+            if (fs.existsSync(testPath)) {
+                fs.unlinkSync(testPath);
+            }
+        }
     });
 });
