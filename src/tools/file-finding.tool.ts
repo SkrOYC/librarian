@@ -154,17 +154,19 @@ export const fileFindTool = tool(
       logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
       // Validate the path to prevent directory traversal
-      if (searchPath.includes('..')) {
-        logger.error('PATH', 'Search path contains invalid path characters', undefined, { searchPath });
-        throw new Error(`Search path "${searchPath}" contains invalid path characters`);
-      }
-
       const resolvedPath = path.resolve(workingDir, searchPath);
       const resolvedWorkingDir = path.resolve(workingDir);
-      logger.debug('TOOL', 'Path validation', { resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'), validated: resolvedPath.startsWith(resolvedWorkingDir) });
+      const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
-      if (!resolvedPath.startsWith(resolvedWorkingDir)) {
-        logger.error('PATH', 'Search path escapes working directory sandbox', undefined, { searchPath });
+      logger.debug('TOOL', 'Path validation', {
+        resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'),
+        resolvedWorkingDir: resolvedWorkingDir.replace(process.env.HOME || '', '~'),
+        relativePath,
+        validated: !relativePath.startsWith('..')
+      });
+
+      if (relativePath.startsWith('..')) {
+        logger.error('PATH', 'Search path escapes working directory sandbox', undefined, { searchPath, relativePath });
         throw new Error(`Search path "${searchPath}" attempts to escape the working directory sandbox`);
       }
 

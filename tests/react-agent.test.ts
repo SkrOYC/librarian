@@ -54,7 +54,7 @@ describe('React Agent and Tools Integration', () => {
 
     it('should handle invalid directory paths', async () => {
       const result = await fileListTool.invoke({ directoryPath: '../invalid_dir' });
-      expect(result).toContain('contains invalid path characters');
+      expect(result).toContain('attempts to escape');
     });
 
     it('should handle empty directories', async () => {

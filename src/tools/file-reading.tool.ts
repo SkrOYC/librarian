@@ -74,17 +74,19 @@ export const fileReadTool = tool(
       logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
       // Validate the path to prevent directory traversal
-      if (filePath.includes('../') || filePath.includes('..\\') || filePath.startsWith('..')) {
-        logger.error('PATH', 'File path contains invalid path characters', undefined, { filePath });
-        throw new Error(`File path "${filePath}" contains invalid path characters`);
-      }
-
       const resolvedPath = path.resolve(workingDir, filePath);
       const resolvedWorkingDir = path.resolve(workingDir);
-      logger.debug('TOOL', 'Path validation', { resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'), validated: resolvedPath.startsWith(resolvedWorkingDir) });
+      const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
-      if (!resolvedPath.startsWith(resolvedWorkingDir)) {
-        logger.error('PATH', 'File path escapes working directory sandbox', undefined, { filePath });
+      logger.debug('TOOL', 'Path validation', {
+        resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'),
+        resolvedWorkingDir: resolvedWorkingDir.replace(process.env.HOME || '', '~'),
+        relativePath,
+        validated: !relativePath.startsWith('..')
+      });
+
+      if (relativePath.startsWith('..')) {
+        logger.error('PATH', 'File path escapes working directory sandbox', undefined, { filePath, relativePath });
         throw new Error(`File path "${filePath}" attempts to escape the working directory sandbox`);
       }
 

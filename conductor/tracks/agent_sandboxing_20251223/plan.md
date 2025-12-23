@@ -47,7 +47,7 @@
 
 - [x] Task: Conductor - User Manual Verification 'Phase 3' (Protocol in workflow.md)
 
-## Phase 4: CLI Invocation Layer Updates
+## Phase 4: CLI Invocation Layer Updates [checkpoint: 181b120]
 
 - [x] Task: Write tests for CLI working directory resolution [6b7d3c5]
   - [x] Test path resolution for group-level operations
@@ -55,64 +55,39 @@
   - [x] Test with various repository configurations
   - [x] Test error handling for missing groups/technologies
 
-- [~] Task: Implement working directory calculation in CLI
+- [x] Task: Implement working directory calculation in CLI [181b120]
   - [x] Add function to resolve working directory from config (reposPath + group + technology)
   - [x] Update CLI command handlers to calculate working directory
   - [x] Construct context object with resolved working directory, group, technology
   - [x] Pass context to agent invocation
 
-- [ ] Task: Conductor - User Manual Verification 'Phase 4' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 4' (Protocol in workflow.md) [181b120]
 
-## Phase 5: File Explorer Tools Sandboxing
+## Phase 5: File Explorer Tools Sandboxing [checkpoint: TBD]
 
-- [ ] Task: Write tests for file-listing tool sandboxing
-  - [ ] Test that paths are resolved relative to working directory
-  - [ ] Test that directory traversal attempts are rejected
-  - [ ] Test that valid paths within sandbox are accepted
-  - [ ] Test with edge cases (empty paths, root directory, nested paths)
+- [x] Task: Verify all File Explorer tools have sandboxing implemented [a5f3a2]
+  - [x] Verify file-listing.tool.ts has context and security validation
+  - [x] Verify file-reading.tool.ts has context and security validation
+  - [x] Verify file-finding.tool.ts has context and security validation
+  - [x] Verify grep-content.tool.ts has context and security validation
 
-- [ ] Task: Implement sandboxing in file-listing tool
-  - [ ] Add ToolRuntime parameter to tool function
-  - [ ] Extract workingDirectory from runtime.context
-  - [ ] Implement path resolution with path.resolve()
-  - [ ] Implement security validation with path.relative()
-  - [ ] Throw error for directory traversal attempts
+- [x] Task: Write comprehensive tests for tool sandboxing
+  - [x] Test that paths are resolved relative to working directory
+  - [x] Test that directory traversal attempts are rejected
+  - [x] Test that valid paths within sandbox are accepted
+  - [x] Test with edge cases (empty paths, root directory, nested paths)
+  - [x] Test all four tools (file-list, file-read, file-find, grep-content)
 
-- [ ] Task: Write tests for file-reading tool sandboxing
-  - [ ] Test that file reads are confined to working directory
-  - [ ] Test security validation for path traversal
-  - [ ] Test valid file reads within sandbox
-  - [ ] Test error messages for unauthorized access
+- [x] Task: Fix directory traversal security vulnerability in File Explorer tools
+  - [x] Replace pre-resolution path checks with post-resolution path.relative() checks
+  - [x] Apply security fix to file-listing.tool.ts
+  - [x] Apply security fix to file-reading.tool.ts
+  - [x] Apply security fix to file-finding.tool.ts
+  - [x] Apply security fix to grep-content.tool.ts
+  - [x] Update test expectations to match new validation behavior
+  - [x] Run verification script to confirm sandboxing enforcement
 
-- [ ] Task: Implement sandboxing in file-reading tool
-  - [ ] Add ToolRuntime parameter to tool function
-  - [ ] Extract workingDirectory from runtime.context
-  - [ ] Implement path resolution and security validation
-  - [ ] Apply sandboxing to file read operations
-
-- [ ] Task: Write tests for file-finding tool sandboxing
-  - [ ] Test pattern matching within sandbox only
-  - [ ] Test that results outside sandbox are excluded
-  - [ ] Test security validation
-
-- [ ] Task: Implement sandboxing in file-finding tool
-  - [ ] Add ToolRuntime parameter to tool function
-  - [ ] Extract workingDirectory from runtime.context
-  - [ ] Implement path resolution for pattern matching
-  - [ ] Apply security validation to all found paths
-
-- [ ] Task: Write tests for grep-content tool sandboxing
-  - [ ] Test that grep operations only search within sandbox
-  - [ ] Test security validation for path arguments
-  - [ ] Test results are from sandbox only
-
-- [ ] Task: Implement sandboxing in grep-content tool
-  - [ ] Add ToolRuntime parameter to tool function
-  - [ ] Extract workingDirectory from runtime.context
-  - [ ] Implement path resolution and validation
-  - [ ] Apply sandboxing to grep search operations
-
-- [ ] Task: Conductor - User Manual Verification 'Phase 5' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 5' (Protocol in workflow.md)
 
 ## Phase 6: Integration Testing and Verification
 

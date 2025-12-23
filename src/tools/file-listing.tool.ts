@@ -113,19 +113,22 @@ export const fileListTool = tool(
       const workingDir = config?.context?.workingDir || process.cwd();
       logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
-      // Validate the path to prevent directory traversal
-      if (directoryPath.includes('../') || directoryPath.includes('..\\') || directoryPath.startsWith('..')) {
-        logger.error('PATH', 'Directory path contains invalid path characters', undefined, { directoryPath });
-        throw new Error(`Directory path "${directoryPath}" contains invalid path characters`);
-      }
-
+      // Validate path to prevent directory traversal
       const resolvedPath = path.resolve(workingDir, directoryPath);
       const resolvedWorkingDir = path.resolve(workingDir);
-      logger.debug('TOOL', 'Path validation', { resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'), validated: resolvedPath.startsWith(resolvedWorkingDir) });
+      const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
-      if (!resolvedPath.startsWith(resolvedWorkingDir)) {
-        logger.error('PATH', 'Directory path escapes working directory sandbox', undefined, { directoryPath });
-        throw new Error(`Directory path "${directoryPath}" attempts to escape the working directory sandbox`);
+      logger.debug('TOOL', 'Path validation', {
+        resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'),
+        resolvedWorkingDir: resolvedWorkingDir.replace(process.env.HOME || '', '~'),
+        relativePath,
+        validated: !relativePath.startsWith('..')
+      });
+
+      // Check if resolved path escapes working directory
+      if (relativePath.startsWith('..')) {
+        logger.error('PATH', 'Directory path escapes working directory sandbox', undefined, { directoryPath, relativePath });
+        throw new Error(`Directory path "${directoryPath}" attempts to escape working directory sandbox`);
       }
 
       // List the directory
