@@ -2,6 +2,7 @@ import { tool } from "langchain";
 import * as z from "zod";
 import fs from 'fs/promises';
 import path from 'path';
+import { logger } from '../utils/logger.js';
 
 // Define types for file system operations
 interface FileSystemEntry {
@@ -23,7 +24,7 @@ interface DirectoryListing {
 // Simplified function to check if a file should be ignored (basic .gitignore handling)
 async function shouldIgnoreFile(filePath: string): Promise<boolean> {
   const basename = path.basename(filePath);
-  
+
   // Basic checks for common files/directories to ignore
   if (basename.startsWith('.') && basename !== '.env') {
     // Check for common gitignored items
@@ -32,13 +33,13 @@ async function shouldIgnoreFile(filePath: string): Promise<boolean> {
       return true;
     }
   }
-  
+
   // Check for common build/output directories
   const commonBuildDirs = ['dist', 'build', 'out', 'target', 'coverage'];
   if (commonBuildDirs.includes(basename) && (await fs.stat(filePath).then(s => s.isDirectory()).catch(() => false))) {
     return true;
   }
-  
+
   return false;
 }
 
@@ -67,6 +68,8 @@ async function listDirectory(
 
       const stats = await fs.stat(fullPath);
       const name = path.basename(fullPath);
+
+      logger.debug('TOOL', 'Processing file entry', { name, isDirectory: stats.isDirectory() });
 
       const metadata: FileSystemEntry = {
         name,
@@ -101,29 +104,37 @@ async function listDirectory(
 // Create the modernized tool using the tool() function
 export const fileListTool = tool(
   async ({ directoryPath = '.', includeHidden = false }, config) => {
+    const timingId = logger.timingStart('fileList');
+
+    logger.info('TOOL', 'file_list called', { directoryPath, includeHidden });
+
     try {
       // Get working directory from config context or default to process.cwd()
       const workingDir = config?.context?.workingDir || process.cwd();
+      logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
       // Validate the path to prevent directory traversal
       if (directoryPath.includes('../') || directoryPath.includes('..\\') || directoryPath.startsWith('..')) {
+        logger.error('PATH', 'Directory path contains invalid path characters', undefined, { directoryPath });
         throw new Error(`Directory path "${directoryPath}" contains invalid path characters`);
       }
 
       const resolvedPath = path.resolve(workingDir, directoryPath);
       const resolvedWorkingDir = path.resolve(workingDir);
+      logger.debug('TOOL', 'Path validation', { resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'), validated: resolvedPath.startsWith(resolvedWorkingDir) });
 
       if (!resolvedPath.startsWith(resolvedWorkingDir)) {
+        logger.error('PATH', 'Directory path escapes working directory sandbox', undefined, { directoryPath });
         throw new Error(`Directory path "${directoryPath}" attempts to escape the working directory sandbox`);
       }
 
       // List the directory
       const listing = await listDirectory(resolvedPath, includeHidden);
-      
+
       // Format the result for the AI
       let result = `Contents of directory: ${resolvedPath}\n\n`;
       result += `Total entries: ${listing.totalCount}\n\n`;
-      
+
       for (const entry of listing.entries) {
         const type = entry.isDirectory ? 'DIR' : 'FILE';
         const size = entry.size ? ` (${entry.size} bytes)` : '';
@@ -131,8 +142,12 @@ export const fileListTool = tool(
         result += `${type}  ${entry.name}${size}${lineCount}\n`;
       }
 
+      logger.timingEnd(timingId, 'TOOL', 'file_list completed');
+      logger.debug('TOOL', 'Directory listing successful', { directoryPath, entryCount: listing.totalCount, dirCount: listing.entries.filter(e => e.isDirectory).length, fileCount: listing.entries.filter(e => !e.isDirectory).length });
+
       return result;
     } catch (error) {
+      logger.error('TOOL', 'file_list failed', error instanceof Error ? error : new Error(String(error)), { directoryPath });
       return `Error listing directory: ${(error as Error).message}`;
     }
   },

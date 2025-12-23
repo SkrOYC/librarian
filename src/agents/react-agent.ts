@@ -7,9 +7,8 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
-
-// Import the Librarian config interface
-import { LibrarianConfig } from "../index";
+import { logger } from "../utils/logger.js";
+import os from "os";
 
 /**
  * Configuration interface for ReactAgent
@@ -41,7 +40,7 @@ export class ReactAgent {
   constructor(config: ReactAgentConfig) {
     this.config = config;
     this.aiModel = this.createAIModel(config.aiProvider);
-    
+
     // Initialize tools - modernized tool pattern
     this.tools = [
       fileListTool,
@@ -49,6 +48,13 @@ export class ReactAgent {
       grepContentTool,
       fileFindTool
     ];
+
+    logger.info('AGENT', 'Initializing ReactAgent', {
+      aiProviderType: config.aiProvider.type,
+      model: config.aiProvider.model,
+      workingDir: config.workingDir.replace(os.homedir(), '~'),
+      toolCount: this.tools.length
+    });
   }
 
   /**
@@ -57,10 +63,10 @@ export class ReactAgent {
    */
   createDynamicSystemPrompt(): string {
     const { workingDir, technology } = this.config;
-    
+
     let prompt = `You are a sophisticated AI research assistant that can explore and analyze code repositories using specialized tools.
 `;
-    
+
     // Add technology context if available
     if (technology) {
       prompt += `
@@ -76,7 +82,7 @@ Focus your analysis on understanding the architecture, key components, and usage
 Working Directory: ${workingDir}
 `;
     }
-    
+
     prompt += `Your available tools are:
 - file_list: List directory contents with metadata
 - file_read: Read the contents of a specific file
@@ -92,20 +98,27 @@ When analyzing a repository:
 
 Always provide specific file paths and line numbers when referencing code in your responses.`;
 
+    logger.debug('AGENT', 'Dynamic system prompt generated', {
+      hasTechnologyContext: !!technology,
+      promptLength: prompt.length
+    });
+
     return prompt;
   }
 
   private createAIModel(aiProvider: ReactAgentConfig['aiProvider']): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
     const { type, apiKey, model, baseURL } = aiProvider;
-    
+
+    logger.debug('AGENT', 'Creating AI model instance', { type, model, hasBaseURL: !!baseURL });
+
     switch (type) {
       case 'openai':
-        return new ChatOpenAI({ 
+        return new ChatOpenAI({
           apiKey,
           modelName: model || 'gpt-4o',
         });
       case 'openai-compatible':
-        return new ChatOpenAI({ 
+        return new ChatOpenAI({
           apiKey,
           modelName: model || 'gpt-4o',
           configuration: {
@@ -113,16 +126,17 @@ Always provide specific file paths and line numbers when referencing code in you
           }
         });
       case 'anthropic':
-        return new ChatAnthropic({ 
+        return new ChatAnthropic({
           apiKey,
           modelName: model || 'claude-3-sonnet-20240229',
         });
       case 'google':
-        return new ChatGoogleGenerativeAI({ 
+        return new ChatGoogleGenerativeAI({
           apiKey,
           model: model || 'gemini-pro',
         });
       default:
+        logger.error('AGENT', 'Unsupported AI provider type', new Error(`Unsupported AI provider type: ${type}`), { type });
         throw new Error(`Unsupported AI provider type: ${type}`);
     }
   }
@@ -134,10 +148,17 @@ Always provide specific file paths and line numbers when referencing code in you
       tools: this.tools,
       systemPrompt: this.createDynamicSystemPrompt()
     });
+
+    logger.info('AGENT', 'Agent initialized successfully', { toolCount: this.tools.length });
   }
 
   async queryRepository(repoPath: string, query: string): Promise<string> {
+    logger.info('AGENT', 'Query started', { queryLength: query.length });
+
+    const timingId = logger.timingStart('agentQuery');
+
     if (!this.agent) {
+      logger.error('AGENT', 'Agent not initialized', new Error("Agent not initialized. Call initialize() first."));
       throw new Error("Agent not initialized. Call initialize() first.");
     }
 
@@ -146,16 +167,26 @@ Always provide specific file paths and line numbers when referencing code in you
       new HumanMessage(query)
     ];
 
+    logger.debug('AGENT', 'Invoking agent with messages', { messageCount: messages.length });
+
     // Execute the agent
     const result = await this.agent.invoke({
       messages
     });
 
+    logger.timingEnd(timingId, 'AGENT', 'Query completed');
+    logger.info('AGENT', 'Query result received', { responseLength: String(result.content).length });
+
     return result.content as string;
   }
 
   async *streamRepository(repoPath: string, query: string): AsyncGenerator<string, void, unknown> {
+    logger.info('AGENT', 'Stream started', { queryLength: query.length });
+
+    const timingId = logger.timingStart('agentStream');
+
     if (!this.agent) {
+      logger.error('AGENT', 'Agent not initialized', new Error("Agent not initialized. Call initialize() first."));
       throw new Error("Agent not initialized. Call initialize() first.");
     }
 
@@ -164,6 +195,8 @@ Always provide specific file paths and line numbers when referencing code in you
       new HumanMessage(query)
     ];
 
+    logger.debug('AGENT', 'Invoking agent stream with messages', { messageCount: messages.length });
+
     // Set up interruption handling
     let isInterrupted = false;
     const cleanup = () => {
@@ -171,6 +204,7 @@ Always provide specific file paths and line numbers when referencing code in you
     };
 
     // Listen for interruption signals (Ctrl+C)
+    logger.debug('AGENT', 'Setting up interruption handlers for streaming');
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 
@@ -182,42 +216,55 @@ Always provide specific file paths and line numbers when referencing code in you
         streamMode: "messages"
       });
 
+      logger.debug('AGENT', 'Streaming response started');
+
       // Process stream chunks and yield content
+      let tokenCount = 0;
       for await (const [token, metadata] of stream) {
         // Check for interruption
         if (isInterrupted) {
+          logger.warn('AGENT', 'Streaming interrupted by user');
           yield '\n\n[Streaming interrupted by user]';
           break;
         }
 
         // Handle both string tokens and structured content
         if (typeof token === 'string') {
+          tokenCount++;
           yield token;
         } else if (token && typeof token === 'object') {
           // Handle structured token content
           if (token.content) {
             if (typeof token.content === 'string') {
+              tokenCount++;
               yield token.content;
             } else if (Array.isArray(token.content)) {
               // Handle content blocks (common in LangChain)
               for (const block of token.content) {
                 if (block.type === 'text' && block.text) {
+                  tokenCount++;
                   yield block.text;
                 }
               }
             }
           }
         }
+
+        // Log token progress periodically
+        if (tokenCount > 0 && tokenCount % 100 === 0) {
+          logger.debug('AGENT', 'Streaming progress', { tokenCount });
+        }
       }
 
       // If we completed without interruption, yield completion indicator
       if (!isInterrupted) {
+        logger.debug('AGENT', 'Streaming completed', { tokenCount });
         yield '\n[Streaming completed]';
       }
     } catch (error) {
       // Enhanced error handling for different error types
       let errorMessage = 'Unknown streaming error';
-      
+
       if (error instanceof Error) {
         // Handle common streaming errors with specific messages
         if (error.message.includes('timeout')) {
@@ -232,13 +279,15 @@ Always provide specific file paths and line numbers when referencing code in you
           errorMessage = `Streaming error: ${error.message}`;
         }
       }
-      
+
+      logger.error('AGENT', 'Streaming error', error instanceof Error ? error : new Error(errorMessage));
       yield `\n\n[Error: ${errorMessage}]`;
       throw error;
     } finally {
       // Clean up event listeners
       process.removeListener('SIGINT', cleanup);
       process.removeListener('SIGTERM', cleanup);
+      logger.timingEnd(timingId, 'AGENT', 'Streaming completed');
     }
   }
 }

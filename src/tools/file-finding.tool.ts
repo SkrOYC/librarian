@@ -2,6 +2,7 @@ import { tool } from "langchain";
 import * as z from "zod";
 import fs from 'fs/promises';
 import path from 'path';
+import { logger } from '../utils/logger.js';
 
 // Find files matching glob patterns in a directory
 async function findFiles(
@@ -135,33 +136,42 @@ function simpleMatch(str: string, pattern: string): boolean {
 
 // Create the modernized tool using the tool() function
 export const fileFindTool = tool(
-  async ({ 
+  async ({
     searchPath = '.',
-    patterns, 
-    exclude = [], 
-    recursive = true, 
-    maxResults = 1000, 
-    includeHidden = false 
+    patterns,
+    exclude = [],
+    recursive = true,
+    maxResults = 1000,
+    includeHidden = false
   }, config) => {
+    const timingId = logger.timingStart('fileFind');
+
+    logger.info('TOOL', 'file_find called', { searchPath, patterns, exclude, recursive, maxResults, includeHidden });
+
     try {
       // Get working directory from config context or default to process.cwd()
       const workingDir = config?.context?.workingDir || process.cwd();
+      logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
       // Validate the path to prevent directory traversal
       if (searchPath.includes('..')) {
+        logger.error('PATH', 'Search path contains invalid path characters', undefined, { searchPath });
         throw new Error(`Search path "${searchPath}" contains invalid path characters`);
       }
 
       const resolvedPath = path.resolve(workingDir, searchPath);
       const resolvedWorkingDir = path.resolve(workingDir);
+      logger.debug('TOOL', 'Path validation', { resolvedPath: resolvedPath.replace(process.env.HOME || '', '~'), validated: resolvedPath.startsWith(resolvedWorkingDir) });
 
       if (!resolvedPath.startsWith(resolvedWorkingDir)) {
+        logger.error('PATH', 'Search path escapes working directory sandbox', undefined, { searchPath });
         throw new Error(`Search path "${searchPath}" attempts to escape the working directory sandbox`);
       }
 
       // Validate that the search path exists and is a directory
       const stats = await fs.stat(resolvedPath);
       if (!stats.isDirectory()) {
+        logger.error('TOOL', 'Search path is not a directory', undefined, { searchPath });
         throw new Error(`Search path "${searchPath}" is not a directory`);
       }
 
@@ -173,13 +183,16 @@ export const fileFindTool = tool(
         includeHidden
       });
 
+      logger.timingEnd(timingId, 'TOOL', 'file_find completed');
+      logger.debug('TOOL', 'File search successful', { searchPath, foundCount: foundFiles.length, patterns });
+
       if (foundFiles.length === 0) {
         return `No files found matching patterns: ${patterns?.join(', ') || '*'}`;
       }
 
       // Format results
       let output = `Found ${foundFiles.length} files matching patterns [${patterns?.join(', ') || '*'}]:\n\n`;
-      
+
       for (const file of foundFiles) {
         const relativePath = path.relative(resolvedPath, file);
         output += `${relativePath}\n`;
@@ -187,6 +200,7 @@ export const fileFindTool = tool(
 
       return output;
     } catch (error) {
+      logger.error('TOOL', 'file_find failed', error instanceof Error ? error : new Error(String(error)), { searchPath, patterns });
       return `Error finding files: ${(error as Error).message}`;
     }
   },

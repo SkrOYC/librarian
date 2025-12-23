@@ -12,8 +12,10 @@ import path from 'path';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { BaseMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
+import { BaseMessage } from '@langchain/core/messages';
 import { ReactAgent } from './agents/react-agent.js';
+import { logger } from './utils/logger.js';
+import os from 'os';
 
 export interface LibrarianConfig {
   technologies: {
@@ -42,10 +44,21 @@ export class Librarian {
   constructor(config: LibrarianConfig) {
     this.config = config;
     this.aiModel = this.createAIModel();
+
+    logger.info('LIBRARIAN', 'Initializing librarian', {
+      aiProviderType: config.aiProvider.type,
+      model: config.aiProvider.model,
+      workingDir: config.workingDir.replace(os.homedir(), '~'),
+      reposPath: config.repos_path ? config.repos_path.replace(os.homedir(), '~') : 'workingDir'
+    });
   }
 
   private createAIModel(): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
+    logger.debug('LIBRARIAN', 'Creating AI model instance');
+
     const { type, apiKey, model, baseURL } = this.config.aiProvider;
+
+    logger.debug('LIBRARIAN', 'AI provider configuration', { type, model, hasBaseURL: !!baseURL });
     
     switch (type) {
       case 'openai':
@@ -80,11 +93,18 @@ export class Librarian {
     // Create working directory if it doesn't exist
     const workDir = this.config.repos_path || this.config.workingDir;
     if (!fs.existsSync(workDir)) {
+      logger.info('LIBRARIAN', 'Creating working directory', { path: workDir.replace(os.homedir(), '~') });
       fs.mkdirSync(workDir, { recursive: true });
+    } else {
+      logger.debug('LIBRARIAN', 'Working directory already exists', { path: workDir.replace(os.homedir(), '~') });
     }
+
+    logger.info('LIBRARIAN', 'Initialization complete');
   }
 
   public resolveTechnology(qualifiedName: string): { name: string, group: string, repo: string, branch: string } | undefined {
+    logger.debug('LIBRARIAN', 'Resolving technology', { qualifiedName });
+
     let group: string | undefined;
     let name: string;
 
@@ -100,21 +120,29 @@ export class Librarian {
       const groupTechs = this.config.technologies[group];
       const tech = groupTechs ? groupTechs[name] : undefined;
       if (tech) {
-        return { name, group, repo: tech.repo, branch: tech.branch || 'main' };
+        const result = { name, group, repo: tech.repo, branch: tech.branch || 'main' };
+        logger.debug('LIBRARIAN', 'Technology resolved with explicit group', { name, group, repoHost: tech.repo.split('/')[2] || 'unknown' });
+        return result;
       }
     } else {
       for (const [groupName, techs] of Object.entries(this.config.technologies)) {
         const tech = techs[name];
         if (tech) {
-          return { name, group: groupName, repo: tech.repo, branch: tech.branch || 'main' };
+          const result = { name, group: groupName, repo: tech.repo, branch: tech.branch || 'main' };
+          logger.debug('LIBRARIAN', 'Technology resolved by search', { name, group: groupName, repoHost: tech.repo.split('/')[2] || 'unknown' });
+          return result;
         }
       }
     }
+    logger.debug('LIBRARIAN', 'Technology not found in configuration', { qualifiedName });
     return undefined;
   }
 
   private getSecureGroupPath(groupName: string): string {
+    logger.debug('PATH', 'Validating group path', { groupName });
+
     if (groupName.includes('../') || groupName.includes('..\\') || groupName.startsWith('..')) {
+      logger.error('PATH', 'Group name contains path traversal characters', undefined, { groupName });
       throw new Error(`Group name "${groupName}" contains invalid path characters`);
     }
 
@@ -126,15 +154,20 @@ export class Librarian {
     const resolvedGroupPath = path.resolve(groupPath);
 
     if (!resolvedGroupPath.startsWith(resolvedWorkingDir)) {
+      logger.error('PATH', 'Group path escapes working directory sandbox', undefined, { groupName });
       throw new Error(`Group name "${groupName}" attempts to escape the working directory sandbox`);
     }
 
+    logger.debug('PATH', 'Group path validated', { groupName, path: groupPath.replace(os.homedir(), '~') });
     return groupPath;
   }
 
   private getSecureRepoPath(repoName: string, groupName: string = 'default'): string {
+    logger.debug('PATH', 'Validating repo path', { repoName, groupName });
+
     // Check for path traversal attempts in the repoName before sanitizing
     if (repoName.includes('../') || repoName.includes('..\\') || repoName.startsWith('..')) {
+      logger.error('PATH', 'Repo name contains path traversal characters', undefined, { repoName, groupName });
       throw new Error(`Repository name "${repoName}" contains invalid path characters`);
     }
     
@@ -148,41 +181,53 @@ export class Librarian {
     const resolvedRepoPath = path.resolve(repoPath);
     
     if (!resolvedRepoPath.startsWith(resolvedGroupDir)) {
+      logger.error('PATH', 'Repo path escapes group sandbox', undefined, { repoName, groupName });
       throw new Error(`Repository name "${repoName}" attempts to escape the group sandbox`);
     }
-    
+
+    logger.debug('PATH', 'Repo path validated', { repoName, groupName, path: repoPath.replace(os.homedir(), '~') });
     return repoPath;
   }
 
   async updateRepository(repoName: string, groupName: string = 'default'): Promise<void> {
+    logger.info('GIT', 'Updating repository', { repoName, groupName });
+
+    const timingId = logger.timingStart('updateRepository');
+
     const repoPath = this.getSecureRepoPath(repoName, groupName);
     const gitPath = path.join(repoPath, '.git');
-    
+
     if (!fs.existsSync(repoPath)) {
+      logger.error('GIT', 'Repository path does not exist', undefined, { repoName, repoPath: repoPath.replace(os.homedir(), '~') });
       throw new Error(`Repository ${repoName} does not exist at ${repoPath}. Cannot update.`);
     }
-    
+
     if (!fs.existsSync(gitPath)) {
+      logger.error('GIT', 'Directory is not a git repository', undefined, { repoName, repoPath: repoPath.replace(os.homedir(), '~') });
       throw new Error(`Directory ${repoName} exists at ${repoPath} but is not a git repository. Cannot update.`);
     }
 
     // Fetch updates from the remote
+    logger.debug('GIT', 'Fetching updates from remote');
     await fetch({
       fs,
       http,
       dir: repoPath,
       singleBranch: true,
     });
-    
+
     const tech = this.resolveTechnology(groupName + ':' + repoName) || this.resolveTechnology(repoName);
     const branch = tech?.branch || 'main';
-    
+
     // Checkout the latest version
+    logger.debug('GIT', 'Checking out branch', { branch });
     await checkout({
       fs,
       dir: repoPath,
       ref: `origin/${branch}`,
     });
+
+    logger.timingEnd(timingId, 'GIT', `Repository updated: ${repoName}`);
   }
 
   private getRepoBranch(repoName: string): string {
@@ -196,44 +241,56 @@ export class Librarian {
   }
 
   async syncRepository(repoName: string): Promise<string> {
+    logger.info('GIT', 'Syncing repository', { repoName });
+
     const tech = this.resolveTechnology(repoName);
-    
+
     if (!tech) {
+      logger.error('GIT', 'Technology not found in configuration', undefined, { repoName });
       throw new Error(`Repository ${repoName} not found in configuration`);
     }
 
     const repoPath = this.getSecureRepoPath(tech.name, tech.group);
-    
+
     if (fs.existsSync(repoPath)) {
       // Repository exists, update it
+      logger.debug('GIT', 'Repository exists, performing update');
       await this.updateRepository(tech.name, tech.group);
     } else {
       // Repository doesn't exist, clone it
+      logger.debug('GIT', 'Repository does not exist, performing clone');
       return await this.cloneRepository(tech.name, tech.repo, tech.group, tech.branch);
     }
-    
+
     return repoPath;
   }
 
   async cloneRepository(repoName: string, repoUrl: string, groupName: string = 'default', branch: string = 'main'): Promise<string> {
+    logger.info('GIT', 'Cloning repository', { repoName, repoHost: repoUrl.split('/')[2] || 'unknown', branch, groupName });
+
+    const timingId = logger.timingStart('cloneRepository');
+
     const repoPath = this.getSecureRepoPath(repoName, groupName);
-    
+
     // Check if repository already exists
     if (fs.existsSync(repoPath)) {
       // Check if it's a git repository by checking for .git folder
       const gitPath = path.join(repoPath, '.git');
       if (fs.existsSync(gitPath)) {
+        logger.debug('GIT', 'Repository already exists as git repo, updating instead');
         await this.updateRepository(repoName, groupName);
+        return repoPath;
       }
-      return repoPath;
     }
 
     // Ensure group directory exists
     const groupPath = this.getSecureGroupPath(groupName);
     if (!fs.existsSync(groupPath)) {
+      logger.debug('GIT', 'Creating group directory', { groupName, path: groupPath.replace(os.homedir(), '~') });
       fs.mkdirSync(groupPath, { recursive: true });
     }
 
+    logger.debug('GIT', 'Starting shallow clone', { depth: 1 });
     await clone({
       fs,
       http,
@@ -244,34 +301,72 @@ export class Librarian {
       depth: 1, // Shallow clone for faster operation
     });
 
+    // Count files cloned
+    let fileCount = 0;
+    const countFiles = (dir: string) => {
+      try {
+        const files = fs.readdirSync(dir, { withFileTypes: true });
+        for (const file of files) {
+          if (file.name === '.git') continue;
+          if (file.isDirectory()) {
+            countFiles(path.join(dir, file.name));
+          } else {
+            fileCount++;
+          }
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+    countFiles(repoPath);
+
+    logger.debug('GIT', 'Clone completed', { fileCount });
+
+    logger.timingEnd(timingId, 'GIT', `Repository cloned: ${repoName}`);
     return repoPath;
   }
 
   async queryRepository(repoName: string, query: string): Promise<string> {
+    logger.info('LIBRARIAN', 'Querying repository', { repoName, queryLength: query.length });
+
+    const timingId = logger.timingStart('queryRepository');
+
     const tech = this.resolveTechnology(repoName);
-    
+
     if (!tech) {
+      logger.error('LIBRARIAN', 'Technology not found in configuration', undefined, { repoName });
       throw new Error(`Repository ${repoName} not found in configuration`);
     }
 
     // Clone or sync the repository first
     const repoPath = await this.syncRepository(repoName);
-    
+
     // Initialize the agent
+    logger.debug('LIBRARIAN', 'Initializing agent for query');
     const agent = new ReactAgent({
       aiProvider: this.config.aiProvider,
       workingDir: repoPath
     });
     await agent.initialize();
-    
+
     // Execute the query using the agent
-    return await agent.queryRepository(repoPath, query);
+    const result = await agent.queryRepository(repoPath, query);
+
+    logger.timingEnd(timingId, 'LIBRARIAN', `Query completed: ${repoName}`);
+    logger.info('LIBRARIAN', 'Query result received', { repoName, responseLength: result.length });
+
+    return result;
   }
 
   async *streamRepository(repoName: string, query: string): AsyncGenerator<string, void, unknown> {
+    logger.info('LIBRARIAN', 'Streaming repository query', { repoName, queryLength: query.length });
+
+    const timingId = logger.timingStart('streamRepository');
+
     const tech = this.resolveTechnology(repoName);
-    
+
     if (!tech) {
+      logger.error('LIBRARIAN', 'Technology not found in configuration', undefined, { repoName });
       throw new Error(`Repository ${repoName} not found in configuration`);
     }
 
@@ -282,20 +377,23 @@ export class Librarian {
     };
 
     // Listen for interruption signals (Ctrl+C)
+    logger.debug('LIBRARIAN', 'Setting up interruption handlers');
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 
     try {
       // Clone or sync repository first
       const repoPath = await this.syncRepository(repoName);
-      
+
       // Check for interruption after sync
       if (isInterrupted) {
+        logger.warn('LIBRARIAN', 'Repository sync interrupted by user', { repoName });
         yield '[Repository sync interrupted by user]';
         return;
       }
 
       // Initialize agent
+      logger.debug('LIBRARIAN', 'Initializing agent for streaming query');
       const agent = new ReactAgent({
         aiProvider: this.config.aiProvider,
         workingDir: repoPath
@@ -304,16 +402,18 @@ export class Librarian {
 
       // Check for interruption after initialization
       if (isInterrupted) {
+        logger.warn('LIBRARIAN', 'Agent initialization interrupted by user', { repoName });
         yield '[Agent initialization interrupted by user]';
         return;
       }
-      
+
       // Execute streaming query using agent
+      logger.debug('LIBRARIAN', 'Starting stream from agent');
       yield* agent.streamRepository(repoPath, query);
     } catch (error) {
       // Handle repository-level errors
       let errorMessage = 'Unknown error';
-      
+
       if (error instanceof Error) {
         if (error.message.includes('not found in configuration')) {
           errorMessage = error.message;
@@ -325,19 +425,26 @@ export class Librarian {
           errorMessage = `Repository error: ${error.message}`;
         }
       }
-      
+
+      logger.error('LIBRARIAN', 'Stream error', error instanceof Error ? error : new Error(errorMessage), { repoName });
       yield `\n[Error: ${errorMessage}]`;
       throw error;
     } finally {
       // Clean up event listeners
       process.removeListener('SIGINT', cleanup);
       process.removeListener('SIGTERM', cleanup);
+      logger.timingEnd(timingId, 'LIBRARIAN', `Stream completed: ${repoName}`);
     }
   }
 
   async queryGroup(groupName: string, query: string): Promise<string> {
+    logger.info('LIBRARIAN', 'Querying group', { groupName, queryLength: query.length });
+
+    const timingId = logger.timingStart('queryGroup');
+
     // Validate group exists
     if (!this.config.technologies[groupName]) {
+      logger.error('LIBRARIAN', 'Group not found in configuration', undefined, { groupName });
       throw new Error(`Group ${groupName} not found in configuration`);
     }
 
@@ -347,12 +454,15 @@ export class Librarian {
     // Sync all technologies in the group first
     const technologies = this.config.technologies[groupName];
     if (technologies) {
-      for (const techName of Object.keys(technologies)) {
+      const techNames = Object.keys(technologies);
+      logger.info('LIBRARIAN', 'Syncing all technologies in group', { groupName, techCount: techNames.length });
+      for (const techName of techNames) {
         await this.syncRepository(techName);
       }
     }
 
     // Initialize the agent with the group directory as working directory
+    logger.debug('LIBRARIAN', 'Initializing agent for group query');
     const agent = new ReactAgent({
       aiProvider: this.config.aiProvider,
       workingDir: groupPath
@@ -360,12 +470,22 @@ export class Librarian {
     await agent.initialize();
 
     // Execute the query using the agent
-    return await agent.queryRepository(groupPath, query);
+    const result = await agent.queryRepository(groupPath, query);
+
+    logger.timingEnd(timingId, 'LIBRARIAN', `Group query completed: ${groupName}`);
+    logger.info('LIBRARIAN', 'Group query result received', { groupName, responseLength: result.length });
+
+    return result;
   }
 
   async *streamGroup(groupName: string, query: string): AsyncGenerator<string, void, unknown> {
+    logger.info('LIBRARIAN', 'Streaming group query', { groupName, queryLength: query.length });
+
+    const timingId = logger.timingStart('streamGroup');
+
     // Validate group exists
     if (!this.config.technologies[groupName]) {
+      logger.error('LIBRARIAN', 'Group not found in configuration', undefined, { groupName });
       throw new Error(`Group ${groupName} not found in configuration`);
     }
 
@@ -379,6 +499,7 @@ export class Librarian {
     };
 
     // Listen for interruption signals (Ctrl+C)
+    logger.debug('LIBRARIAN', 'Setting up interruption handlers for group');
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 
@@ -386,18 +507,22 @@ export class Librarian {
       // Sync all technologies in the group first
       const technologies = this.config.technologies[groupName];
       if (technologies) {
-        for (const techName of Object.keys(technologies)) {
+        const techNames = Object.keys(technologies);
+        logger.info('LIBRARIAN', 'Syncing all technologies in group for streaming', { groupName, techCount: techNames.length });
+        for (const techName of techNames) {
           await this.syncRepository(techName);
         }
       }
 
       // Check for interruption after sync
       if (isInterrupted) {
+        logger.warn('LIBRARIAN', 'Group sync interrupted by user', { groupName });
         yield '[Repository sync interrupted by user]';
         return;
       }
 
       // Initialize the agent with the group directory as working directory
+      logger.debug('LIBRARIAN', 'Initializing agent for group streaming');
       const agent = new ReactAgent({
         aiProvider: this.config.aiProvider,
         workingDir: groupPath
@@ -406,11 +531,13 @@ export class Librarian {
 
       // Check for interruption after initialization
       if (isInterrupted) {
+        logger.warn('LIBRARIAN', 'Agent initialization interrupted by user for group', { groupName });
         yield '[Agent initialization interrupted by user]';
         return;
       }
 
       // Execute streaming query using agent
+      logger.debug('LIBRARIAN', 'Starting stream from agent for group');
       yield* agent.streamRepository(groupPath, query);
     } catch (error) {
       // Handle group-level errors
@@ -428,12 +555,14 @@ export class Librarian {
         }
       }
 
+      logger.error('LIBRARIAN', 'Group stream error', error instanceof Error ? error : new Error(errorMessage), { groupName });
       yield `\n[Error: ${errorMessage}]`;
       throw error;
     } finally {
       // Clean up event listeners
       process.removeListener('SIGINT', cleanup);
       process.removeListener('SIGTERM', cleanup);
+      logger.timingEnd(timingId, 'LIBRARIAN', `Group stream completed: ${groupName}`);
     }
   }
 
@@ -469,6 +598,9 @@ export class Librarian {
   }
 
   async queryAI(messages: BaseMessage[]): Promise<BaseMessage> {
-    return await this.aiModel.invoke(messages);
+    logger.debug('LLM', 'Sending request to AI model', { messageCount: messages.length });
+    const result = await this.aiModel.invoke(messages);
+    logger.debug('LLM', 'Received response from AI model', { responseLength: String(result.content).length });
+    return result;
   }
 }
