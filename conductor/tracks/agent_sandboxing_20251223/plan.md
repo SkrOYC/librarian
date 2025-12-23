@@ -49,17 +49,17 @@
 
 ## Phase 4: CLI Invocation Layer Updates
 
-- [ ] Task: Write tests for CLI working directory resolution
-  - [ ] Test path resolution for group-level operations
-  - [ ] Test path resolution for tech-level operations
-  - [ ] Test with various repository configurations
-  - [ ] Test error handling for missing groups/technologies
+- [x] Task: Write tests for CLI working directory resolution [6b7d3c5]
+  - [x] Test path resolution for group-level operations
+  - [x] Test path resolution for tech-level operations
+  - [x] Test with various repository configurations
+  - [x] Test error handling for missing groups/technologies
 
-- [ ] Task: Implement working directory calculation in CLI
-  - [ ] Add function to resolve working directory from config (reposPath + group + technology)
-  - [ ] Update CLI command handlers to calculate working directory
-  - [ ] Construct context object with resolved working directory, group, technology
-  - [ ] Pass context to agent invocation
+- [~] Task: Implement working directory calculation in CLI
+  - [x] Add function to resolve working directory from config (reposPath + group + technology)
+  - [x] Update CLI command handlers to calculate working directory
+  - [x] Construct context object with resolved working directory, group, technology
+  - [x] Pass context to agent invocation
 
 - [ ] Task: Conductor - User Manual Verification 'Phase 4' (Protocol in workflow.md)
 

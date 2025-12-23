@@ -8,23 +8,24 @@ import { fileListTool } from '../src/tools/file-listing.tool.js';
 import { fileReadTool } from '../src/tools/file-reading.tool.js';
 import { grepContentTool } from '../src/tools/grep-content.tool.js';
 import { fileFindTool } from '../src/tools/file-finding.tool.js';
-import { Context, createContext } from '../src/agents/context-schema.js';
+import { createContext } from '../src/agents/context-schema.js';
 import path from 'path';
-import fs from 'fs/promises';
+import { existsSync, mkdirSync, rmSync } from 'fs';
+import { rm } from 'fs/promises';
 
 describe('Tool Context Integration', () => {
   let testDir: string;
 
   beforeAll(() => {
     testDir = path.join(process.cwd(), 'test-sandbox');
-    if (!fs.existsSync(testDir)) {
-      fs.mkdirSync(testDir, { recursive: true });
+    if (!existsSync(testDir)) {
+      mkdirSync(testDir, { recursive: true });
     }
   });
 
   afterAll(async () => {
-    if (fs.existsSync(testDir)) {
-      await fs.rm(testDir, { recursive: true, force: true });
+    if (existsSync(testDir)) {
+      await rm(testDir, { recursive: true, force: true });
     }
   });
 
@@ -80,7 +81,7 @@ describe('Tool Context Integration', () => {
         context,
       });
 
-      expect(result).toContain('test.ts') || expect(result).toContain('No matches');
+      expect(result === 'test.ts' || result === 'No matches').toBe(true);
     });
 
     it('should use context.workingDir in tool path resolution', async () => {
@@ -127,11 +128,11 @@ describe('Tool Context Integration', () => {
     });
 
     it('should allow omitting optional fields', () => {
-      const context = createContext('/sandbox', 'test');
+      const context = createContext('/sandbox', 'test', 'react');
 
       expect(context.workingDir).toBe('/sandbox');
       expect(context.group).toBe('test');
-      expect(context.technology).toBeUndefined();
+      expect(context.technology).toBe('react');
       expect(context.environment).toBeUndefined();
     });
   });
@@ -189,3 +190,4 @@ describe('Tool Context Integration', () => {
       expect(readResult).toContain('/preserved/sandbox');
     });
   });
+});
