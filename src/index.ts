@@ -13,7 +13,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { BaseMessage } from '@langchain/core/messages';
-import { ReactAgent } from './agents/react-agent.js';
+import { ReactAgent, AgentContext } from './agents/react-agent.js';
 import { logger } from './utils/logger.js';
 import os from 'os';
 
@@ -341,16 +341,28 @@ export class Librarian {
     // Clone or sync the repository first
     const repoPath = await this.syncRepository(repoName);
 
+    // Construct context object with working directory
+    const context: AgentContext = {
+      workingDir: repoPath,
+      group: tech.group,
+      technology: tech.name,
+    };
+
+    logger.debug('LIBRARIAN', 'Initializing agent for query with context', {
+      workingDir: context.workingDir.replace(os.homedir(), '~'),
+      group: context.group,
+      technology: context.technology
+    });
+
     // Initialize the agent
-    logger.debug('LIBRARIAN', 'Initializing agent for query');
     const agent = new ReactAgent({
       aiProvider: this.config.aiProvider,
       workingDir: repoPath
     });
     await agent.initialize();
 
-    // Execute the query using the agent
-    const result = await agent.queryRepository(repoPath, query);
+    // Execute the query using the agent with context
+    const result = await agent.queryRepository(repoPath, query, context);
 
     logger.timingEnd(timingId, 'LIBRARIAN', `Query completed: ${repoName}`);
     logger.info('LIBRARIAN', 'Query result received', { repoName, responseLength: result.length });
@@ -392,8 +404,20 @@ export class Librarian {
         return;
       }
 
+      // Construct context object with working directory
+      const context: AgentContext = {
+        workingDir: repoPath,
+        group: tech.group,
+        technology: tech.name,
+      };
+
+      logger.debug('LIBRARIAN', 'Initializing agent for streaming query with context', {
+        workingDir: context.workingDir.replace(os.homedir(), '~'),
+        group: context.group,
+        technology: context.technology
+      });
+
       // Initialize agent
-      logger.debug('LIBRARIAN', 'Initializing agent for streaming query');
       const agent = new ReactAgent({
         aiProvider: this.config.aiProvider,
         workingDir: repoPath
@@ -407,9 +431,9 @@ export class Librarian {
         return;
       }
 
-      // Execute streaming query using agent
+      // Execute streaming query using agent with context
       logger.debug('LIBRARIAN', 'Starting stream from agent');
-      yield* agent.streamRepository(repoPath, query);
+      yield* agent.streamRepository(repoPath, query, context);
     } catch (error) {
       // Handle repository-level errors
       let errorMessage = 'Unknown error';
@@ -461,16 +485,27 @@ export class Librarian {
       }
     }
 
+    // Construct context object for group-level query
+    const context: AgentContext = {
+      workingDir: groupPath,
+      group: groupName,
+      technology: '', // No specific technology for group-level queries
+    };
+
+    logger.debug('LIBRARIAN', 'Initializing agent for group query with context', {
+      workingDir: context.workingDir.replace(os.homedir(), '~'),
+      group: context.group
+    });
+
     // Initialize the agent with the group directory as working directory
-    logger.debug('LIBRARIAN', 'Initializing agent for group query');
     const agent = new ReactAgent({
       aiProvider: this.config.aiProvider,
       workingDir: groupPath
     });
     await agent.initialize();
 
-    // Execute the query using the agent
-    const result = await agent.queryRepository(groupPath, query);
+    // Execute the query using the agent with context
+    const result = await agent.queryRepository(groupPath, query, context);
 
     logger.timingEnd(timingId, 'LIBRARIAN', `Group query completed: ${groupName}`);
     logger.info('LIBRARIAN', 'Group query result received', { groupName, responseLength: result.length });
@@ -521,8 +556,19 @@ export class Librarian {
         return;
       }
 
+      // Construct context object for group-level query
+      const context: AgentContext = {
+        workingDir: groupPath,
+        group: groupName,
+        technology: '', // No specific technology for group-level queries
+      };
+
+      logger.debug('LIBRARIAN', 'Initializing agent for group streaming with context', {
+        workingDir: context.workingDir.replace(os.homedir(), '~'),
+        group: context.group
+      });
+
       // Initialize the agent with the group directory as working directory
-      logger.debug('LIBRARIAN', 'Initializing agent for group streaming');
       const agent = new ReactAgent({
         aiProvider: this.config.aiProvider,
         workingDir: groupPath
@@ -536,9 +582,9 @@ export class Librarian {
         return;
       }
 
-      // Execute streaming query using agent
+      // Execute streaming query using agent with context
       logger.debug('LIBRARIAN', 'Starting stream from agent for group');
-      yield* agent.streamRepository(groupPath, query);
+      yield* agent.streamRepository(groupPath, query, context);
     } catch (error) {
       // Handle group-level errors
       let errorMessage = 'Unknown error';
