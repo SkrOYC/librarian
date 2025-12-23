@@ -77,7 +77,6 @@ export class Librarian {
   }
 
   async initialize(): Promise<void> {
-    console.log('Librarian initialized');
     // Create working directory if it doesn't exist
     const workDir = this.config.repos_path || this.config.workingDir;
     if (!fs.existsSync(workDir)) {
@@ -167,8 +166,6 @@ export class Librarian {
       throw new Error(`Directory ${repoName} exists at ${repoPath} but is not a git repository. Cannot update.`);
     }
 
-    console.log(`Updating repository ${repoName} at ${repoPath}`);
-    
     // Fetch updates from the remote
     await fetch({
       fs,
@@ -226,10 +223,7 @@ export class Librarian {
       // Check if it's a git repository by checking for .git folder
       const gitPath = path.join(repoPath, '.git');
       if (fs.existsSync(gitPath)) {
-        console.log(`Repository ${repoName} already exists at ${repoPath}, updating instead of cloning`);
         await this.updateRepository(repoName, groupName);
-      } else {
-        console.log(`Directory ${repoName} exists but is not a git repo, skipping update`);
       }
       return repoPath;
     }
@@ -240,8 +234,6 @@ export class Librarian {
       fs.mkdirSync(groupPath, { recursive: true });
     }
 
-    console.log(`Cloning repository ${repoName} from ${repoUrl} (branch: ${branch}) to ${repoPath}`);
-    
     await clone({
       fs,
       http,
@@ -251,7 +243,7 @@ export class Librarian {
       singleBranch: true,
       depth: 1, // Shallow clone for faster operation
     });
-    
+
     return repoPath;
   }
 
@@ -334,6 +326,108 @@ export class Librarian {
         }
       }
       
+      yield `\n[Error: ${errorMessage}]`;
+      throw error;
+    } finally {
+      // Clean up event listeners
+      process.removeListener('SIGINT', cleanup);
+      process.removeListener('SIGTERM', cleanup);
+    }
+  }
+
+  async queryGroup(groupName: string, query: string): Promise<string> {
+    // Validate group exists
+    if (!this.config.technologies[groupName]) {
+      throw new Error(`Group ${groupName} not found in configuration`);
+    }
+
+    // Get the group directory path
+    const groupPath = this.getSecureGroupPath(groupName);
+
+    // Sync all technologies in the group first
+    const technologies = this.config.technologies[groupName];
+    if (technologies) {
+      for (const techName of Object.keys(technologies)) {
+        await this.syncRepository(techName);
+      }
+    }
+
+    // Initialize the agent with the group directory as working directory
+    const agent = new ReactAgent({
+      aiProvider: this.config.aiProvider,
+      workingDir: groupPath
+    });
+    await agent.initialize();
+
+    // Execute the query using the agent
+    return await agent.queryRepository(groupPath, query);
+  }
+
+  async *streamGroup(groupName: string, query: string): AsyncGenerator<string, void, unknown> {
+    // Validate group exists
+    if (!this.config.technologies[groupName]) {
+      throw new Error(`Group ${groupName} not found in configuration`);
+    }
+
+    // Get the group directory path
+    const groupPath = this.getSecureGroupPath(groupName);
+
+    // Set up interruption handling
+    let isInterrupted = false;
+    const cleanup = () => {
+      isInterrupted = true;
+    };
+
+    // Listen for interruption signals (Ctrl+C)
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+    try {
+      // Sync all technologies in the group first
+      const technologies = this.config.technologies[groupName];
+      if (technologies) {
+        for (const techName of Object.keys(technologies)) {
+          await this.syncRepository(techName);
+        }
+      }
+
+      // Check for interruption after sync
+      if (isInterrupted) {
+        yield '[Repository sync interrupted by user]';
+        return;
+      }
+
+      // Initialize the agent with the group directory as working directory
+      const agent = new ReactAgent({
+        aiProvider: this.config.aiProvider,
+        workingDir: groupPath
+      });
+      await agent.initialize();
+
+      // Check for interruption after initialization
+      if (isInterrupted) {
+        yield '[Agent initialization interrupted by user]';
+        return;
+      }
+
+      // Execute streaming query using agent
+      yield* agent.streamRepository(groupPath, query);
+    } catch (error) {
+      // Handle group-level errors
+      let errorMessage = 'Unknown error';
+
+      if (error instanceof Error) {
+        if (error.message.includes('not found in configuration')) {
+          errorMessage = error.message;
+        } else if (error.message.includes('git') || error.message.includes('clone')) {
+          errorMessage = `Repository operation failed: ${error.message}`;
+        } else if (error.message.includes('timeout')) {
+          errorMessage = 'Repository operation timed out';
+        } else {
+          errorMessage = `Group error: ${error.message}`;
+        }
+      }
+
       yield `\n[Error: ${errorMessage}]`;
       throw error;
     } finally {

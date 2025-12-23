@@ -106,11 +106,53 @@ describe('CLI Integration', () => {
 
       // Should attempt to initialize and may start cloning
       expect([0, 1]).toContain(result.exitCode);
-      if (result.exitCode === 1) {
-        expect(result.stdout).toContain('Librarian initialized') || expect(result.stderr).toContain('API key');
+      if (result.exitCode ==== 1) {
+        expect(result.stderr).toContain('API key');
       } else {
-        expect(result.stdout).toContain('Cloning repository');
+        // Non-streaming will just output the AI response or error
+        // We can't easily test the actual response without a real API
+        expect(result.exitCode).toBe(0);
       }
+    });
+
+    it('should handle explore with group', async () => {
+      const result = await runCLICommand([
+        'explore',
+        'How does LangChain handle memory?',
+        '--group',
+        'langchain'
+      ], mockConfig);
+
+      // Should fail gracefully due to missing API key, but not crash
+      expect([0, 1]).toContain(result.exitCode);
+    });
+
+    it('should validate required query argument', async () => {
+      const result = await runCLICommand(['explore'], mockConfig);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('error: missing required argument');
+    });
+
+    it('should validate required tech or group flag', async () => {
+      const result = await runCLICommand([
+        'explore',
+        'test query'
+      ], mockConfig);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('--tech') || expect(result.stderr).toContain('--group');
+    });
+
+    it('should prevent using both tech and group flags', async () => {
+      const result = await runCLICommand([
+        'explore',
+        'test query',
+        '--tech', 'react',
+        '--group', 'default'
+      ], mockConfig);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Cannot use both --tech and --group flags simultaneously');
     });
 
     it('should handle explore with group', async () => {
@@ -143,13 +185,14 @@ describe('CLI Integration', () => {
 
     it('should prevent using both tech and group flags', async () => {
       const result = await runCLICommand([
-        'explore', 
+        'explore',
         'test query',
         '--tech', 'react',
         '--group', 'default'
       ], mockConfig);
-      
+
       expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Cannot use both --tech and --group flags simultaneously');
     });
   });
 
@@ -202,7 +245,7 @@ describe('CLI Integration', () => {
       ], mockConfig);
 
       expect(result.exitCode).toBe(1);
-      expect(result.stdout).toContain('Exploring all technologies in group');
+      expect(result.stderr).toContain('not found in configuration');
     });
 
     it('should handle malformed repository URLs', async () => {
@@ -337,7 +380,7 @@ describe('CLI Integration', () => {
 
       // Path traversal should be prevented at the technology resolution level
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('not found in configuration') || expect(result.stdout).toContain('Librarian initialized');
+      expect(result.stderr).toContain('not found in configuration');
     });
 
     it('should sanitize repository URLs', async () => {

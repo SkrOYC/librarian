@@ -45,10 +45,14 @@ export class TestCLIHelper {
   setConfig(config: ReadmeConfig): void {
     const configDir = path.join(this.testDir, '.config', 'librarian');
     fs.mkdirSync(configDir, { recursive: true });
-    
+
     this.configPath = path.join(configDir, 'config.yaml');
     const yamlContent = this.configToYaml(config);
     fs.writeFileSync(this.configPath, yamlContent);
+
+    // Create .env file with test API key
+    const envPath = path.join(configDir, '.env');
+    fs.writeFileSync(envPath, 'LIBRARIAN_API_KEY=test-api-key-for-testing');
   }
 
   /**
@@ -66,23 +70,23 @@ export class TestCLIHelper {
       for (const [techName, techConfig] of Object.entries(technologies)) {
         yamlSections.push(`    ${techName}:`);
         yamlSections.push(`      repo: "${techConfig.repo}"`);
-        if (techConfig.branch) {
+        if (techConfig.branch !== undefined) {
           yamlSections.push(`      branch: "${techConfig.branch}"`);
         }
-        if (techConfig.description) {
+        if (techConfig.description !== undefined) {
           yamlSections.push(`      description: "${techConfig.description}"`);
         }
       }
     }
-    
+
     yamlSections.push('');
     yamlSections.push(`llm_provider: ${config.llm_provider}`);
-    
-    if (config.llm_model) {
+
+    if (config.llm_model !== undefined) {
       yamlSections.push(`llm_model: ${config.llm_model}`);
     }
-    
-    if (config.base_url) {
+
+    if (config.base_url !== undefined) {
       yamlSections.push(`base_url: "${config.base_url}"`);
     }
     

@@ -3,7 +3,6 @@ import path from 'path';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { LibrarianConfig } from './index.js';
-
 import os from 'os';
 
 const TechnologySchema = z.object({
@@ -20,7 +19,7 @@ const ConfigSchema = z.object({
   repositories: z.record(z.string(), z.string()).optional(), // For backward compatibility
   aiProvider: z.object({
     type: z.enum(['openai', 'anthropic', 'google', 'openai-compatible']),
-    apiKey: z.string(),
+    apiKey: z.string().optional(), // Optional - will be loaded from .env
     model: z.string().optional(),
     baseURL: z.string().optional(),
   }).optional(),
@@ -39,9 +38,116 @@ function expandTilde(filePath: string): string {
   return filePath;
 }
 
+/**
+ * Load environment variables from a .env file using Bun native APIs
+ * Supports simple KEY=VALUE format, comments (#), and quoted values
+ */
+async function loadEnvFile(envPath: string): Promise<Record<string, string>> {
+  const envFile = Bun.file(envPath);
+
+  // Check if .env file exists
+  if (!(await envFile.exists())) {
+    return {};
+  }
+
+  // Read file content
+  const content = await envFile.text();
+  const env: Record<string, string> = {};
+
+  // Parse line by line
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+
+    // Skip empty lines and comments
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    // Parse KEY=VALUE
+    const equalsIndex = trimmed.indexOf('=');
+    if (equalsIndex === -1) {
+      continue; // Skip malformed lines
+    }
+
+    const key = trimmed.slice(0, equalsIndex).trim();
+    let value = trimmed.slice(equalsIndex + 1).trim();
+
+    // Remove quotes from value
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    env[key] = value;
+  }
+
+  return env;
+}
+
+/**
+ * Validate the configuration and exit with error if invalid
+ */
+function validateConfig(config: LibrarianConfig, envPath: string): void {
+  const errors: string[] = [];
+
+  // Validate API key is present and non-empty
+  if (!config.aiProvider.apiKey || config.aiProvider.apiKey.trim() === '') {
+    errors.push(`API key is missing or empty. Please set LIBRARIAN_API_KEY in ${envPath}`);
+  }
+
+  // Validate base_url for openai-compatible providers
+  if (config.aiProvider.type === 'openai-compatible' && !config.aiProvider.baseURL) {
+    errors.push('base_url is required for openai-compatible providers');
+  }
+
+  // Validate repos_path is present
+  if (!config.repos_path) {
+    errors.push('repos_path is required in configuration');
+  }
+
+  // Validate at least one technology exists
+  const hasTechnologies = config.technologies && Object.keys(config.technologies).length > 0;
+  if (!hasTechnologies) {
+    errors.push('No technologies defined in configuration');
+  }
+
+  // Validate each technology has a valid repo URL
+  if (config.technologies) {
+    for (const [groupName, group] of Object.entries(config.technologies)) {
+      // Validate group name doesn't contain path traversal
+      if (groupName.includes('..')) {
+        errors.push(`Group name "${groupName}" contains invalid path characters`);
+      }
+
+      for (const [techName, tech] of Object.entries(group)) {
+        if (!tech.repo) {
+          errors.push(`Technology "${techName}" in group "${groupName}" is missing required "repo" field`);
+          continue;
+        }
+
+        // Validate repo URL format
+        if (!tech.repo.startsWith('http://') && !tech.repo.startsWith('https://')) {
+          errors.push(`Technology "${techName}" has invalid repo URL: ${tech.repo}. Must start with http:// or https://`);
+        }
+      }
+    }
+  }
+
+  // Output errors and exit if any found
+  if (errors.length > 0) {
+    console.error('Configuration validation failed:');
+    errors.forEach(err => console.error(`  - ${err}`));
+    process.exit(1);
+  }
+}
+
 export async function loadConfig(configPath?: string): Promise<LibrarianConfig> {
   const defaultPath = path.join(os.homedir(), '.config', 'librarian', 'config.yaml');
   const actualPath = configPath ? expandTilde(configPath) : defaultPath;
+
+  // Load environment variables from .env file
+  const envPath = path.join(os.homedir(), '.config', 'librarian', '.env');
+  const envVars = await loadEnvFile(envPath);
 
   // Check if config file exists
   if (!fs.existsSync(actualPath)) {
@@ -96,7 +202,7 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
   if (!aiProvider && validatedConfig.llm_provider) {
     aiProvider = {
       type: validatedConfig.llm_provider,
-      apiKey: (process.env.LIBRARIAN_API_KEY || process.env.OPENAI_API_KEY || ''), 
+      apiKey: envVars.LIBRARIAN_API_KEY || '', // Load from .env file
       model: validatedConfig.llm_model,
       baseURL: validatedConfig.base_url
     };
@@ -106,18 +212,28 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
     // Default fallback if nothing provided
     aiProvider = {
       type: 'openai',
-      apiKey: process.env.OPENAI_API_KEY || '',
+      apiKey: envVars.LIBRARIAN_API_KEY || '',
       model: 'gpt-4o'
     };
   }
 
-  return {
+  // Set API key from .env if not already set
+  if (!aiProvider.apiKey && envVars.LIBRARIAN_API_KEY) {
+    aiProvider.apiKey = envVars.LIBRARIAN_API_KEY;
+  }
+
+  const config = {
     ...validatedConfig,
     technologies,
     aiProvider,
     repos_path: validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined,
     workingDir: expandTilde(validatedConfig.workingDir)
   } as LibrarianConfig;
+
+  // Validate configuration
+  validateConfig(config, envPath);
+
+  return config;
 }
 
 export async function createDefaultConfig(configPath: string): Promise<void> {

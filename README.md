@@ -51,12 +51,12 @@ technologies:
 			repo: "https://github.com/nodejs/node.git"
 			branch: "main"
 			description: "JavaScript runtime environment"
-	langchain
+	langchain:
 		langchain-javascript:
-			name: "https://github.com/langchain-ai/langchainjs"
+			repo: "https://github.com/langchain-ai/langchainjs"
 			description: "LangChain is a framework for building LLM-powered..."
 		langgraph-javascript:
-			name: "https://github.com/langchain-ai/langgraphjs"
+			repo: "https://github.com/langchain-ai/langgraphjs"
 			description: "LangGraph is low-level orchestration framework..."
 llm_provider: openai
 llm_model: gpt-5.2

@@ -1,9 +1,18 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { Command } from 'commander';
 import { Librarian } from './index.js';
 import { loadConfig } from './config.js';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+function expandTilde(filePath: string): string {
+  if (filePath.startsWith('~/')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  return filePath;
+}
 
 export function createProgram() {
   const program = new Command();
@@ -23,6 +32,12 @@ export function createProgram() {
     .option('-s, --stream', 'Enable streaming output for real-time responses')
     .action(async (query, options) => {
       try {
+        // Validate: only one of --tech or --group should be specified
+        if (options.tech && options.group) {
+          console.error('Error: Cannot use both --tech and --group flags simultaneously');
+          process.exit(1);
+        }
+
         const config = await loadConfig(options.config);
         const librarian = new Librarian(config);
         await librarian.initialize();
@@ -32,15 +47,12 @@ export function createProgram() {
           if (!techDetails) {
             throw new Error(`Technology ${options.tech} not found in configuration`);
           }
-          
+
           if (options.stream) {
             // Use streaming for real-time output
-            console.log(`Streaming analysis for ${techDetails.name}...`);
-            console.log('---');
-            
             try {
               const stream = librarian.streamRepository(techDetails.name, query);
-              
+
               for await (const chunk of stream) {
                 // Output each chunk as it arrives
                 process.stdout.write(chunk);
@@ -49,44 +61,27 @@ export function createProgram() {
               console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');
               process.exit(1);
             }
-            
-            console.log('\n---');
-            console.log('Streaming complete.');
           } else {
             // Use traditional synchronous query
             const result = await librarian.queryRepository(techDetails.name, query);
             console.log(result);
           }
         } else if (options.group) {
-          console.log(`Exploring all technologies in group: ${options.group}`);
-          // This will be fully implemented when the agent supports multi-repo exploration
-          // For now, let's just find the technologies in the group and query them
-          const technologies = config.technologies[options.group];
-          if (!technologies) {
-            throw new Error(`Group ${options.group} not found in configuration`);
-          }
-          for (const techName of Object.keys(technologies)) {
-            console.log(`\n--- ${techName} ---`);
-            
-            if (options.stream) {
-              console.log(`Streaming analysis for ${techName}...`);
-              
-              try {
-                const stream = librarian.streamRepository(techName, query);
-                
-                for await (const chunk of stream) {
-                  process.stdout.write(chunk);
-                }
-              } catch (error) {
-                console.error(`\nStreaming interrupted or failed for ${techName}:`, error instanceof Error ? error.message : 'Unknown error');
-                continue; // Continue with next technology
+          // Query the entire group using a single agent
+          if (options.stream) {
+            try {
+              const stream = librarian.streamGroup(options.group, query);
+
+              for await (const chunk of stream) {
+                process.stdout.write(chunk);
               }
-              
-              console.log('\nStreaming complete for', techName);
-            } else {
-              const result = await librarian.queryRepository(techName, query);
-              console.log(result);
+            } catch (error) {
+              console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');
+              process.exit(1);
             }
+          } else {
+            const result = await librarian.queryGroup(options.group, query);
+            console.log(result);
           }
         } else {
           console.error('Error: Either --tech or --group must be specified');
@@ -144,9 +139,13 @@ export function createProgram() {
     .command('config')
     .description('Display or update configuration')
     .option('-p, --path', 'Show config file path')
+    .option('-c, --config <path>', 'Path to configuration file')
     .action((options) => {
       if (options.path) {
-        console.log('Config file path: ./librarian.yaml');
+        const configPath = options.config
+          ? path.resolve(expandTilde(options.config))
+          : path.join(os.homedir(), '.config', 'librarian', 'config.yaml');
+        console.log(`Config file path: ${configPath}`);
       }
     });
 
