@@ -1,0 +1,8 @@
+technologies:
+  default:
+    demo:
+      repo: http://example.com
+repos_path: ./libs
+llm_provider: openai-compatible
+llm_model: llama-3-local
+apiKey: sk-test

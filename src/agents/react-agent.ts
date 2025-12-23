@@ -11,6 +11,16 @@ import { logger } from "../utils/logger.js";
 import os from "os";
 
 /**
+ * Type for context object passed to agent
+ */
+export type AgentContext = {
+  workingDir: string;
+  environment?: string;
+  group: string;
+  technology: string;
+}
+
+/**
  * Configuration interface for ReactAgent
  */
 export interface ReactAgentConfig {
@@ -29,6 +39,8 @@ export interface ReactAgentConfig {
     repository: string;
     branch: string;
   };
+  /** Optional context schema for runtime context validation */
+  contextSchema?: any;
 }
 
 export class ReactAgent {
@@ -36,9 +48,11 @@ export class ReactAgent {
   private tools: any[];
   private agent: any;
   private config: ReactAgentConfig;
+  private contextSchema?: any;
 
   constructor(config: ReactAgentConfig) {
     this.config = config;
+    this.contextSchema = config.contextSchema;
     this.aiModel = this.createAIModel(config.aiProvider);
 
     // Initialize tools - modernized tool pattern
@@ -53,7 +67,8 @@ export class ReactAgent {
       aiProviderType: config.aiProvider.type,
       model: config.aiProvider.model,
       workingDir: config.workingDir.replace(os.homedir(), '~'),
-      toolCount: this.tools.length
+      toolCount: this.tools.length,
+      hasContextSchema: !!this.contextSchema
     });
   }
 
@@ -65,7 +80,7 @@ export class ReactAgent {
     const { workingDir, technology } = this.config;
 
     let prompt = `You are a sophisticated AI research assistant that can explore and analyze code repositories using specialized tools.
-`;
+ `;
 
     // Add technology context if available
     if (technology) {
@@ -142,18 +157,30 @@ Always provide specific file paths and line numbers when referencing code in you
   }
 
   async initialize(): Promise<void> {
-    // Create the agent using LangChain's createAgent function with dynamic system prompt
+    // Create the agent using LangChain's createAgent function with dynamic system prompt and context schema
     this.agent = createAgent({
       model: this.aiModel,
       tools: this.tools,
-      systemPrompt: this.createDynamicSystemPrompt()
+      systemPrompt: this.createDynamicSystemPrompt(),
+      contextSchema: this.contextSchema,
     });
 
-    logger.info('AGENT', 'Agent initialized successfully', { toolCount: this.tools.length });
+    logger.info('AGENT', 'Agent initialized successfully', {
+      toolCount: this.tools.length,
+      hasContextSchema: !!this.contextSchema
+    });
   }
 
-  async queryRepository(repoPath: string, query: string): Promise<string> {
-    logger.info('AGENT', 'Query started', { queryLength: query.length });
+  /**
+   * Query repository with a given query and optional context
+   *
+   * @param repoPath - The repository path (deprecated, for compatibility)
+   * @param query - The query string
+   * @param context - Optional context object containing working directory and metadata
+   * @returns The agent's response as a string
+   */
+  async queryRepository(repoPath: string, query: string, context?: AgentContext): Promise<string> {
+    logger.info('AGENT', 'Query started', { queryLength: query.length, hasContext: !!context });
 
     const timingId = logger.timingStart('agentQuery');
 
@@ -167,12 +194,15 @@ Always provide specific file paths and line numbers when referencing code in you
       new HumanMessage(query)
     ];
 
-    logger.debug('AGENT', 'Invoking agent with messages', { messageCount: messages.length });
+    logger.debug('AGENT', 'Invoking agent with messages', {
+      messageCount: messages.length,
+      hasContext: !!context
+    });
 
-    // Execute the agent
+    // Execute the agent with optional context
     const result = await this.agent.invoke({
       messages
-    });
+    }, context ? { context } : {});
 
     logger.timingEnd(timingId, 'AGENT', 'Query completed');
     logger.info('AGENT', 'Query result received', { responseLength: String(result.content).length });
@@ -180,8 +210,16 @@ Always provide specific file paths and line numbers when referencing code in you
     return result.content as string;
   }
 
-  async *streamRepository(repoPath: string, query: string): AsyncGenerator<string, void, unknown> {
-    logger.info('AGENT', 'Stream started', { queryLength: query.length });
+  /**
+   * Stream repository query with optional context
+   *
+   * @param repoPath - The repository path (deprecated, for compatibility)
+   * @param query - The query string
+   * @param context - Optional context object containing working directory and metadata
+   * @returns Async generator yielding string chunks
+   */
+  async *streamRepository(repoPath: string, query: string, context?: AgentContext): AsyncGenerator<string, void, unknown> {
+    logger.info('AGENT', 'Stream started', { queryLength: query.length, hasContext: !!context });
 
     const timingId = logger.timingStart('agentStream');
 
@@ -195,7 +233,10 @@ Always provide specific file paths and line numbers when referencing code in you
       new HumanMessage(query)
     ];
 
-    logger.debug('AGENT', 'Invoking agent stream with messages', { messageCount: messages.length });
+    logger.debug('AGENT', 'Invoking agent stream with messages', {
+      messageCount: messages.length,
+      hasContext: !!context
+    });
 
     // Set up interruption handling
     let isInterrupted = false;
@@ -212,9 +253,7 @@ Always provide specific file paths and line numbers when referencing code in you
       // Stream the agent response with LLM token streaming
       const stream = await this.agent.stream({
         messages
-      }, {
-        streamMode: "messages"
-      });
+      }, context ? { context } : {});
 
       logger.debug('AGENT', 'Streaming response started');
 
@@ -249,11 +288,11 @@ Always provide specific file paths and line numbers when referencing code in you
             }
           }
         }
+      }
 
-        // Log token progress periodically
-        if (tokenCount > 0 && tokenCount % 100 === 0) {
-          logger.debug('AGENT', 'Streaming progress', { tokenCount });
-        }
+      // Log token progress periodically
+      if (tokenCount > 0 && tokenCount % 100 === 0) {
+        logger.debug('AGENT', 'Streaming progress', { tokenCount });
       }
 
       // If we completed without interruption, yield completion indicator
