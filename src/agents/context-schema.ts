@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Context Schema for Agent Runtime
  *
- * Defines context object that is passed to the agent during invocation.
+ * Defines context object that is passed to agent during invocation.
  * This provides static runtime context that tools can access via ToolRuntime.
  */
 export const contextSchema = z.object({
@@ -22,6 +22,51 @@ export const contextSchema = z.object({
  * Use this type for context objects throughout the application
  */
 export type Context = z.infer<typeof contextSchema>;
+
+/**
+ * Creates a context object with the given parameters.
+ *
+ * @param workingDir - The absolute path to sandbox directory
+ * @param group - The technology group name
+ * @param technology - The technology/repo name
+ * @param environment - Optional environment identifier
+ * @returns A validated context object
+ */
+export function createContext(
+  workingDir: string,
+  group: string,
+  technology: string,
+  environment?: string
+): Context {
+  return contextSchema.parse({
+    workingDir,
+    group,
+    technology,
+    environment,
+  });
+}
+
+/**
+ * Agent Context type passed during invocation.
+ * This matches the structure that LangChain tools expect (config.context.workingDir).
+ */
+export type AgentContext = {
+  workingDir: string;
+  environment?: string;
+  group: string;
+  technology: string;
+}
+
+/**
+ * Agent Context type passed during invocation.
+ * This matches the structure that the agent expects.
+ */
+export type AgentContext = {
+  workingDir: string;
+  environment?: string;
+  group: string;
+  technology: string;
+}
 
 /**
  * Creates a context object with the given parameters.
