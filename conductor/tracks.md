@@ -9,5 +9,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-## [ ] Track: Agent Directory Sandboxing with contextSchema and ToolRuntime
+## [~] Track: Agent Directory Sandboxing with contextSchema and ToolRuntime
 *Link: [./conductor/tracks/agent_sandboxing_20251223/](./conductor/tracks/agent_sandboxing_20251223/)*

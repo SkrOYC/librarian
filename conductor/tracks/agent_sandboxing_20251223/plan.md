@@ -2,19 +2,19 @@
 
 ## Phase 1: Setup and Preparation
 
-- [ ] Task: Review current architecture and identify all files requiring changes
-  - [ ] Examine `src/agents/react-agent.ts` to understand current agent implementation
-  - [ ] Review all File Explorer tools in `src/tools/` directory
-  - [ ] Analyze CLI command handlers in `src/cli.ts` for invocation patterns
-  - [ ] Document the current tool signatures and invocation flow
+- [x] Task: Review current architecture and identify all files requiring changes
+  - [x] Examine `src/agents/react-agent.ts` to understand current agent implementation
+  - [x] Review all File Explorer tools in `src/tools/` directory
+  - [x] Analyze CLI command handlers in `src/cli.ts` for invocation patterns
+  - [x] Document the current tool signatures and invocation flow
 
-- [ ] Task: Create comprehensive test coverage plan
-  - [ ] List all existing tests related to agents and tools
-  - [ ] Identify gaps in test coverage for sandboxing behavior
-  - [ ] Define test scenarios for security enforcement (directory traversal attempts)
-  - [ ] Document expected behavior for group-level vs tech-level sandboxing
+- [x] Task: Create comprehensive test coverage plan
+  - [x] List all existing tests related to agents and tools
+  - [x] Identify gaps in test coverage for sandboxing behavior
+  - [x] Define test scenarios for security enforcement (directory traversal attempts)
+  - [x] Document expected behavior for group-level vs tech-level sandboxing
 
-- [ ] Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)
+- [~] Task: Conductor - User Manual Verification 'Phase 1' (Protocol in workflow.md)
 
 ## Phase 2: Context Schema Definition and Type Infrastructure
 
