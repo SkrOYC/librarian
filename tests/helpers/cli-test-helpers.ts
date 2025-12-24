@@ -93,67 +93,7 @@ export class TestCLIHelper {
     return yamlSections.join('\n');
   }
 
-  /**
- * Run CLI command and capture output
- */
-export async function runCLICommand(
-  args: string[],
-  config?: ReadmeConfig
-): Promise<TestResult> {
-  return new Promise((resolve) => {
-    const startTime = Date.now();
 
-    // Use the built CLI from dist/
-    const cliPath = path.join(process.cwd(), 'dist', 'cli.js');
-
-    // If we have a config file set up, pass it via --config option
-    const commandArgs = config ? [...args, '--config', path.resolve(config)] : args;
-
-      const child: ChildProcess = spawn('bun', [cliPath, ...commandArgs], {
-        cwd: this.testDir,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      if (child.stdout) {
-        child.stdout.on('data', (data) => {
-          const chunk = data.toString();
-          stdout += chunk;
-          this.outputCapture.stdout.push(chunk);
-        });
-      }
-
-      if (child.stderr) {
-        child.stderr.on('data', (data) => {
-          const chunk = data.toString();
-          stderr += chunk;
-          this.outputCapture.stderr.push(chunk);
-        });
-      }
-
-      child.on('close', (code) => {
-        const duration = Date.now() - startTime;
-        resolve({
-          exitCode: code || 0,
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
-          duration
-        });
-      });
-
-      child.on('error', (error) => {
-        const duration = Date.now() - startTime;
-        resolve({
-          exitCode: 1,
-          stdout: stdout.trim(),
-          stderr: error.message,
-          duration
-        });
-      });
-    });
-  }
 
   /**
    * Get captured output
