@@ -60,7 +60,7 @@ describe('Modern File Reading Tool', () => {
     const result = await fileReadTool.invoke({
       filePath: '../invalid_dir/file.txt'
     }, { context: testContext });
-    expect(result).toContain('contains invalid path characters');
+    expect(result).toContain('attempts to escape the working directory sandbox');
   });
 
   it('should handle binary files', async () => {

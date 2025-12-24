@@ -110,16 +110,15 @@ describe('Tool Context Integration', () => {
       rmSync(customDir, { recursive: true, force: true });
     });
 
-    it('should work without context (backward compatibility)', async () => {
+    it('should require context and fail without it', async () => {
       const result = await fileListTool.invoke({
         directoryPath: '.',
       }, {
         context: undefined,
       });
 
-      expect(result).toBeDefined();
-      expect(result).toContain('Contents of directory:');
-      expect(result).toContain('Total entries:');
+      // Should fail with context required error
+      expect(result).toContain('Context with workingDir is required for file operations');
     });
   });
 
