@@ -195,10 +195,16 @@ Always provide specific file paths and line numbers when referencing code in you
       messages
     }, context ? { context } : {});
 
-    logger.timingEnd(timingId, 'AGENT', 'Query completed');
-    logger.info('AGENT', 'Query result received', { responseLength: String(result.content).length });
+    // Extract the last message content from the state
+    const lastMessage = result.messages[result.messages.length - 1];
+    const content = typeof lastMessage.content === 'string'
+      ? lastMessage.content
+      : JSON.stringify(lastMessage.content);
 
-    return result.content as string;
+    logger.timingEnd(timingId, 'AGENT', 'Query completed');
+    logger.info('AGENT', 'Query result received', { responseLength: content.length });
+
+    return content;
   }
 
   /**
