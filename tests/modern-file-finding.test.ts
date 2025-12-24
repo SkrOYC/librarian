@@ -34,18 +34,18 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'JavaScript content');
     fs.writeFileSync(testFile3, 'Markdown content');
-    
+
     // Test modern tool with structured parameters
-    const result = await fileFindTool.invoke({({, testContext)
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['test.txt']
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('Found 1 files matching patterns');
     expect(result).toContain('test.txt');
     expect(result).not.toContain('example.js');
     expect(result).not.toContain('readme.md');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
@@ -59,17 +59,17 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'JavaScript content');
     fs.writeFileSync(testFile3, 'Markdown content');
-    
-    const result = await fileFindTool.invoke({({, testContext)
+
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.txt', '*.js']
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('Found 2 files matching patterns');
     expect(result).toContain('test.txt');
     expect(result).toContain('example.js');
     expect(result).not.toContain('readme.md');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
@@ -83,17 +83,17 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'JavaScript content');
     fs.writeFileSync(testFile3, 'Minified content');
-    
-    const result = await fileFindTool.invoke({({, testContext)
+
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.*'],
       exclude: ['*.min.*']
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('test.txt');
     expect(result).toContain('example.js');
     expect(result).not.toContain('test.min.js');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
@@ -103,22 +103,22 @@ describe('Modern File Finding Tool', () => {
   it('should handle recursive search', async () => {
     const subDir = path.join(testDir, 'subdir');
     fs.mkdirSync(subDir, { recursive: true });
-    
+
     const testFile1 = path.join(testDir, 'test.txt');
     const testFile2 = path.join(subDir, 'nested.js');
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Nested content');
-    
-    const result = await fileFindTool.invoke({({, testContext)
+
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.*'],
       recursive: true
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('test.txt');
     expect(result).toContain('nested.js');
     expect(result).toContain('Found 3 files matching patterns');  // Includes subdirectory
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
@@ -128,22 +128,22 @@ describe('Modern File Finding Tool', () => {
   it('should handle non-recursive search', async () => {
     const subDir = path.join(testDir, 'subdir');
     fs.mkdirSync(subDir, { recursive: true });
-    
+
     const testFile1 = path.join(testDir, 'test.txt');
     const testFile2 = path.join(subDir, 'nested.js');
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Nested content');
-    
-    const result = await fileFindTool.invoke({({, testContext)
+
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.*'],
       recursive: false
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('test.txt');
     expect(result).not.toContain('nested.js');
     expect(result).toContain('Found 1 files matching patterns');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
@@ -156,19 +156,19 @@ describe('Modern File Finding Tool', () => {
       const testFile = path.join(testDir, `test${i}.txt`);
       fs.writeFileSync(testFile, `Content ${i}`);
     }
-    
-    const result = await fileFindTool.invoke({({, testContext)
+
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.txt'],
       maxResults: 5
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('Found 5 files matching patterns');
     expect(result).toContain('test1.txt');
     expect(result).toContain('test5.txt');
     // Note: maxResults implementation may not be working correctly
     // expect(result).not.toContain('test6.txt');
-    
+
     // Clean up
     for (let i = 1; i <= 15; i++) {
       const testFile = path.join(testDir, `test${i}.txt`);
@@ -181,45 +181,45 @@ describe('Modern File Finding Tool', () => {
     const testFile2 = path.join(testDir, '.hidden.txt');
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Hidden content');
-    
-    const includeHiddenResult = await fileFindTool.invoke({({, testContext)
+
+    const includeHiddenResult = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.txt'],
       includeHidden: true
-    });
-    
-    const excludeHiddenResult = await fileFindTool.invoke({({, testContext)
+    }, { context: testContext });
+
+    const excludeHiddenResult = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.txt'],
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(includeHiddenResult).toContain('test.txt');
     expect(includeHiddenResult).toContain('.hidden.txt');
     expect(excludeHiddenResult).toContain('test.txt');
     expect(excludeHiddenResult).not.toContain('.hidden.txt');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
   });
 
   it('should handle invalid search path', async () => {
-    const result = await fileFindTool.invoke({({, testContext)
+    const result = await fileFindTool.invoke({
       searchPath: '/nonexistent/path',
       patterns: ['*.*']
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('Error finding files');
     expect(result).toContain('nonexistent');
   });
 
   it('should handle empty results', async () => {
-    const result = await fileFindTool.invoke({({, testContext)
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['*.nonexistent']
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('No files found');
   });
 
@@ -228,15 +228,15 @@ describe('Modern File Finding Tool', () => {
     const testFile2 = path.join(testDir, 'test_special-file.js');
     fs.writeFileSync(testFile1, 'Special content 1');
     fs.writeFileSync(testFile2, 'Special content 2');
-    
-    const result = await fileFindTool.invoke({({, testContext)
+
+    const result = await fileFindTool.invoke({
       searchPath: testDir,
       patterns: ['test-special_*.*']
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('test-special_file.txt');
     expect(result).toContain('Found 1 files matching patterns');  // Pattern doesn't match test_special-file.js
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
