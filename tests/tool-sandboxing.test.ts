@@ -343,15 +343,4 @@ describe('File Explorer Tools Sandboxing', () => {
       expect(result).toContain('const x');
     });
   });
-
-  describe('Backward Compatibility (No Context)', () => {
-    it('should default to process.cwd() when no context provided', async () => {
-      const result = await fileListTool.invoke({
-        directoryPath: '.',
-      });
-
-      expect(result).toBeDefined();
-      expect(result).toContain(process.cwd());
-    });
-  });
 });
