@@ -1,4 +1,0 @@
-repos_path: ~/.local/share/librarian/repos
-llm_provider: openai-compatible
-llm_model: grok-code
-base_url: https://opencode.ai/zen/v1
