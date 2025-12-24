@@ -110,35 +110,71 @@ export class TestCLIHelper {
   }
 
   /**
+   * Run CLI command and capture output
+   */
+  async runCommand(args: string[]): Promise<TestResult> {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+
+      // Use the built CLI from dist/
+      const cliPath = path.join(process.cwd(), 'dist', 'cli.js');
+
+      // If we have a config file set up, pass it via --config option
+      const commandArgs = this.configPath ? [...args, '--config', this.configPath] : args;
+
+      const child: ChildProcess = spawn('bun', [cliPath, ...commandArgs], {
+        cwd: this.testDir,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      if (child.stdout) {
+        child.stdout.on('data', (data) => {
+          const chunk = data.toString();
+          stdout += chunk;
+          this.outputCapture.stdout.push(chunk);
+        });
+      }
+
+      if (child.stderr) {
+        child.stderr.on('data', (data) => {
+          const chunk = data.toString();
+          stderr += chunk;
+          this.outputCapture.stderr.push(chunk);
+        });
+      }
+
+      child.on('close', (code) => {
+        const duration = Date.now() - startTime;
+        resolve({
+          exitCode: code || 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          duration
+        });
+      });
+
+      child.on('error', (error) => {
+        const duration = Date.now() - startTime;
+        resolve({
+          exitCode: 1,
+          stdout: stdout.trim(),
+          stderr: error.message,
+          duration
+        });
+      });
+    });
+  }
+
+  /**
    * Cleanup test environment
    */
   cleanup(): void {
     if (this.configPath && fs.existsSync(this.configPath)) {
       fs.unlinkSync(this.configPath);
     }
-  }
-}
-
-/**
- * Run CLI command with optional configuration
- */
-export async function runCLICommand(
-  args: string[],
-  config?: ReadmeConfig
-): Promise<TestResult> {
-  const testDir = fs.mkdtempSync('librarian-test-');
-  const helper = new TestCLIHelper(testDir);
-
-  try {
-    if (config) {
-      helper.setConfig(config);
-    }
-
-    const result = await helper.runCommand(args);
-    return result;
-  } finally {
-    helper.cleanup();
-    fs.rmSync(testDir, { recursive: true, force: true });
   }
 }
 
