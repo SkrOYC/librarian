@@ -5,7 +5,10 @@ dist/
 .DS_Store
 .vscode/
 .idea/
-*.lock
+# Lock files - exclude npm/yarn but keep bun.lock for bun2nix
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Test artifacts
 test_*.txt

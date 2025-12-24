@@ -14,7 +14,8 @@
     "test:watch": "bun test --watch tests/",
     "lint": "eslint src --ext .ts",
     "start": "bun dist/index.js",
-    "cli": "bun dist/cli.js"
+    "cli": "bun dist/cli.js",
+    "postinstall": "bunx bun2nix -o bun.nix"
   },
   "keywords": [
     "cli",
@@ -45,6 +46,7 @@
     "@typescript-eslint/eslint-plugin": "^8.50.0",
     "@typescript-eslint/parser": "^8.50.0",
     "bun-types": "^1.3.5",
+    "bun2nix": "^2.0.6",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3"
   }

@@ -32,6 +32,46 @@ bun add -g librarian-cli
 bun add librarian-cli
 ```
 
+## NixOS Installation
+
+This project supports building with Nix using [bun2nix](https://github.com/nix-community/bun2nix).
+
+### Building with Nix
+
+```bash
+# Build the package (requires Nix flakes enabled)
+nix build .#default
+
+# The binary will be at ./result/bin/librarian
+./result/bin/librarian --help
+```
+
+### System-wide Installation
+
+Add the librarian flake to your NixOS system configuration:
+
+```nix
+# In /etc/nixos/flake.nix
+inputs = {
+  librarian.url = "path:/home/oscar/GitHub/librarian";
+  # or for GitHub: librarian.url = "github:yourusername/librarian";
+};
+
+# In your nixosConfigurations module
+modules = [
+  ({ pkgs, ... }: {
+    # Add librarian overlay
+    nixpkgs.overlays = [ librarian.overlays.default ];
+    environment.systemPackages = [ pkgs.librarian ];
+  })
+];
+```
+
+Then rebuild:
+```bash
+sudo nixos-rebuild switch
+```
+
 ## Quick Start
 
 ### 1. Configure Technologies
