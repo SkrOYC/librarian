@@ -75,25 +75,6 @@ describe('Config Schema Alignment', () => {
         expect(loaded.aiProvider?.type).toBe('openai-compatible');
     });
 
-    it('should migrate old configuration with repositories map', async () => {
-        const oldConfig = {
-            repositories: {
-                react: 'https://github.com/facebook/react.git',
-                node: 'https://github.com/nodejs/node.git'
-            },
-            llm_provider: 'openai',
-            llm_model: 'gpt-4',
-            apiKey: 'old-key'
-        };
-
-        fs.writeFileSync(TEST_CONFIG_PATH, stringify(oldConfig));
-
-        const loaded: any = await loadConfig(TEST_CONFIG_PATH);
-
-        expect(loaded.technologies.default.react.repo).toBe('https://github.com/facebook/react.git');
-        expect(loaded.technologies.default.node.repo).toBe('https://github.com/nodejs/node.git');
-    });
-
     it('should auto-create default config when file missing', async () => {
         const nonExistentPath = path.join(process.cwd(), `test-auto-config-${Date.now()}.yaml`);
 

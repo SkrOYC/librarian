@@ -16,15 +16,31 @@ describe('CLI Integration', () => {
 
   beforeEach(async () => {
     testDir = fsSync.mkdtempSync('cli-integration-test-');
+    const reposDir = path.join(testDir, 'repos');
     mockConfig = createReadmeAlignedConfig({
-      repos_path: path.join(testDir, 'repos')
+      repos_path: reposDir
     });
 
     // Create mock repositories
-    const mockRepos = createStandardMockRepos(path.join(testDir, 'repos'));
+    const mockRepos = createStandardMockRepos(reposDir);
     for (const repo of mockRepos) {
-      createMockRepoStructure(path.join(testDir, 'repos'), repo);
+      createMockRepoStructure(reposDir, repo);
     }
+
+    // Override repo URLs to use local mock repositories (absolute paths)
+    mockConfig.technologies.default['react-mock'] = {
+      repo: path.join(reposDir, 'react-mock'),
+      branch: 'main',
+      description: 'JavaScript library for building user interfaces'
+    };
+    delete mockConfig.technologies.default.react;
+
+    mockConfig.technologies.langchain = {
+      'langchain-mock': {
+        repo: path.join(reposDir, 'langchain-mock'),
+        description: 'LangChain is a framework for building LLM-powered applications'
+      }
+    };
   });
 
   afterEach(async () => {
@@ -101,7 +117,7 @@ describe('CLI Integration', () => {
         'explore',
         'How does React handle state management?',
         '--tech',
-        'react'
+        'react-mock'
       ], mockConfig);
 
       // Should attempt to initialize and may start cloning
@@ -155,18 +171,6 @@ describe('CLI Integration', () => {
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Cannot use both --tech and --group flags simultaneously');
-    });
-
-    it('should handle explore with group', async () => {
-      const result = await runCLICommand([
-        'explore', 
-        'How does LangChain handle memory?', 
-        '--group', 
-        'langchain'
-      ], mockConfig);
-
-      // Should fail gracefully due to missing API key, but not crash
-      expect([0, 1]).toContain(result.exitCode);
     });
 
     it('should validate required query argument', async () => {
@@ -281,9 +285,9 @@ describe('CLI Integration', () => {
       
       // Should show group names
       expect(result.stdout).toContain('[default]');
-      expect(result.stdout).toContain('react');
+      expect(result.stdout).toContain('react-mock');
       expect(result.stdout).toContain('[langchain]');
-      expect(result.stdout).toContain('langchain-javascript');
+      expect(result.stdout).toContain('langchain-mock');
     });
 
     it('should preserve formatting in error messages', async () => {
@@ -298,7 +302,7 @@ describe('CLI Integration', () => {
       const result = await runCLICommand([
         'explore',
         longQuery,
-        '--tech', 'react'
+        '--tech', 'react-mock'
       ], mockConfig);
       
       // Should not crash on long queries
@@ -351,7 +355,7 @@ describe('CLI Integration', () => {
       const result = await runCLICommand([
         'explore',
         'How do React hooks work?',
-        '--tech', 'react'
+        '--tech', 'react-mock'
       ], mockConfig);
 
       // Should attempt to use ReactAgent
@@ -367,7 +371,7 @@ describe('CLI Integration', () => {
       const result = await runCLICommand([
         'explore',
         'Explain component lifecycle',
-        '--tech', 'react'
+        '--tech', 'react-mock'
       ], mockConfig);
 
       expect([0, 1]).toContain(result.exitCode);

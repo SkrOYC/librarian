@@ -94,17 +94,20 @@ export class TestCLIHelper {
   }
 
   /**
-   * Run CLI command and capture output
-   */
-  async runCommand(args: string[]): Promise<TestResult> {
-    return new Promise((resolve) => {
-      const startTime = Date.now();
+ * Run CLI command and capture output
+ */
+export async function runCLICommand(
+  args: string[],
+  config?: ReadmeConfig
+): Promise<TestResult> {
+  return new Promise((resolve) => {
+    const startTime = Date.now();
 
-      // Use the built CLI from dist/
-      const cliPath = path.join(process.cwd(), 'dist', 'cli.js');
+    // Use the built CLI from dist/
+    const cliPath = path.join(process.cwd(), 'dist', 'cli.js');
 
-      // If we have a config file set up, pass it via --config option
-      const commandArgs = this.configPath ? [...args, '--config', path.resolve(this.configPath)] : args;
+    // If we have a config file set up, pass it via --config option
+    const commandArgs = config ? [...args, '--config', path.resolve(config)] : args;
 
       const child: ChildProcess = spawn('bun', [cliPath, ...commandArgs], {
         cwd: this.testDir,
@@ -203,35 +206,22 @@ export async function runCLICommand(
  * Create mock repository structure for testing
  */
 export function createMockRepoStructure(basePath: string, repo: MockRepo): void {
-  const repoPath = path.join(basePath, repo.name);
-  
+  const repoPath = path.join(basePath, repo.group, repo.name);
+
   // Create repository directory
   fs.mkdirSync(repoPath, { recursive: true });
-  
+
   // Create files
   for (const [filePath, content] of Object.entries(repo.files)) {
     const fullPath = path.join(repoPath, filePath);
     const dirPath = path.dirname(fullPath);
-    
+
     // Create directory if it doesn't exist
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
     }
-    
+
     fs.writeFileSync(fullPath, content);
-  }
-  
-  // Initialize as git repository
-  try {
-    const { simpleGit } = require('simple-git');
-    const git = simpleGit(repoPath);
-    git.init();
-    git.addConfig('user.email', 'test@example.com');
-    git.addConfig('user.name', 'Test User');
-    git.add('.');
-    git.commit('Initial commit');
-  } catch (error) {
-    // Git initialization is optional for tests
   }
 }
 

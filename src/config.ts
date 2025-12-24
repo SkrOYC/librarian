@@ -140,9 +140,12 @@ function validateConfig(config: LibrarianConfig, envPath: string): void {
           continue;
         }
 
-        // Validate repo URL format
-        if (!tech.repo.startsWith('http://') && !tech.repo.startsWith('https://')) {
-          const errorMsg = `Technology "${techName}" has invalid repo URL: ${tech.repo}. Must start with http:// or https://`;
+        // Validate repo URL format - allow http/https URLs or local/file paths
+        const isRemoteUrl = tech.repo.startsWith('http://') || tech.repo.startsWith('https://');
+        const isFileUrl = tech.repo.startsWith('file://');
+        const hasProtocol = tech.repo.includes('://');
+        if (!isRemoteUrl && !isFileUrl && hasProtocol) {
+          const errorMsg = `Technology "${techName}" has invalid repo URL: ${tech.repo}. Must be http://, https://, file://, or a local path`;
           errors.push(errorMsg);
           logger.debug('CONFIG', 'Validation failed: invalid repo URL', { techName, groupName, repoUrl: tech.repo });
         }

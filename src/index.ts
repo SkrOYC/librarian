@@ -252,12 +252,29 @@ export class Librarian {
 
     const repoPath = this.getSecureRepoPath(tech.name, tech.group);
 
+    // Check if this is a local path (not a remote URL)
+    const isLocalRepo = !tech.repo.startsWith('http://') && !tech.repo.startsWith('https://');
+
     if (fs.existsSync(repoPath)) {
-      // Repository exists, update it
-      logger.debug('GIT', 'Repository exists, performing update');
-      await this.updateRepository(tech.name, tech.group);
+      // Repository exists
+      if (isLocalRepo) {
+        // For local repos, skip git operations - just use existing files
+        logger.debug('GIT', 'Local repository exists, skipping git operations');
+        return repoPath;
+      }
+      // Remote repository, update it (no-op for local repos to avoid isomorphic-git issues with local paths)
+      if (!isLocalRepo) {
+        logger.debug('GIT', 'Repository exists, performing update');
+        await this.updateRepository(tech.name, tech.group);
+      }
     } else {
-      // Repository doesn't exist, clone it
+      // Repository doesn't exist
+      if (isLocalRepo) {
+        // Local repo doesn't exist - this is an error in test setup
+        logger.error('GIT', 'Local repository path does not exist', undefined, { repoName, repoPath });
+        throw new Error(`Local repository ${repoName} does not exist at ${repoPath}`);
+      }
+      // Remote repository, clone it
       logger.debug('GIT', 'Repository does not exist, performing clone');
       return await this.cloneRepository(tech.name, tech.repo, tech.group, tech.branch);
     }
