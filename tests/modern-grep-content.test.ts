@@ -49,7 +49,7 @@ describe('Modern Grep Content Tool', () => {
       searchPath: '../invalid_dir',
       query: 'test'
     });
-    expect(result).toContain('contains invalid path characters');
+    expect(result).toContain('attempts to escape the working directory sandbox');
   });
 
   it('should handle missing query parameter', async () => {

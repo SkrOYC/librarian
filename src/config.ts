@@ -262,7 +262,7 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
     ...validatedConfig,
     technologies,
     aiProvider,
-    repos_path: validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined,
+    repos_path: aiProvider ? (validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined) : (validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined),
     workingDir: expandTilde(validatedConfig.workingDir)
   } as LibrarianConfig;
 

@@ -51,7 +51,7 @@ describe('Modern File Listing Tool', () => {
       directoryPath: '../invalid_dir',
       includeHidden: false
     });
-    expect(result).toContain('contains invalid path characters');
+    expect(result).toContain('attempts to escape working directory sandbox');
   });
 
   it('should include hidden files when requested', async () => {

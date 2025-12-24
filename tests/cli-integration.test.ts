@@ -106,7 +106,7 @@ describe('CLI Integration', () => {
 
       // Should attempt to initialize and may start cloning
       expect([0, 1]).toContain(result.exitCode);
-      if (result.exitCode ==== 1) {
+      if (result.exitCode === 1) {
         expect(result.stderr).toContain('API key');
       } else {
         // Non-streaming will just output the AI response or error
@@ -140,7 +140,9 @@ describe('CLI Integration', () => {
       ], mockConfig);
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('--tech') || expect(result.stderr).toContain('--group');
+      const containsTech = result.stderr.includes('--tech');
+      const containsGroup = result.stderr.includes('--group');
+      expect(containsTech || containsGroup).toBe(true);
     });
 
     it('should prevent using both tech and group flags', async () => {
@@ -180,7 +182,9 @@ describe('CLI Integration', () => {
       ], mockConfig);
       
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('--tech') || expect(result.stderr).toContain('--group');
+      const containsTech = result.stderr.includes('--tech');
+      const containsGroup = result.stderr.includes('--group');
+      expect(containsTech || containsGroup).toBe(true);
     });
 
     it('should prevent using both tech and group flags', async () => {

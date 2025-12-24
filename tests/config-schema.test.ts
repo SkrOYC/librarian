@@ -62,13 +62,17 @@ describe('Config Schema Alignment', () => {
             repos_path: './libs',
             llm_provider: 'openai-compatible',
             llm_model: 'llama-3-local',
+            base_url: 'https://api.example.com/v1',
             apiKey: 'sk-test'
         };
 
+        // Write config first, then load it
         fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
 
         const loaded: any = await loadConfig(TEST_CONFIG_PATH);
-        expect(loaded.llm_provider).toBe('openai-compatible');
+
+        // The test config uses llm_provider which gets migrated to aiProvider.type
+        expect(loaded.aiProvider?.type).toBe('openai-compatible');
     });
 
     it('should migrate old configuration with repositories map', async () => {
