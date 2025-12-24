@@ -32,7 +32,7 @@ describe('Modern File Listing Tool', () => {
     fs.writeFileSync(testFile2, 'Test content 2');
     
     // Test modern tool with structured parameters
-    const result = await fileListTool.invoke({
+    const result = await fileListTool.invoke({({, testContext)
       directoryPath: testDir,
       includeHidden: false
     });
@@ -47,7 +47,7 @@ describe('Modern File Listing Tool', () => {
   });
 
   it('should handle invalid directory paths', async () => {
-    const result = await fileListTool.invoke({
+    const result = await fileListTool.invoke({({, testContext)
       directoryPath: '../invalid_dir',
       includeHidden: false
     });
@@ -60,12 +60,12 @@ describe('Modern File Listing Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Hidden content');
     
-    const includeHiddenResult = await fileListTool.invoke({
+    const includeHiddenResult = await fileListTool.invoke({({, testContext)
       directoryPath: testDir,
       includeHidden: true
     });
     
-    const excludeHiddenResult = await fileListTool.invoke({
+    const excludeHiddenResult = await fileListTool.invoke({({, testContext)
       directoryPath: testDir,
       includeHidden: false
     });
@@ -81,7 +81,7 @@ describe('Modern File Listing Tool', () => {
   });
 
   it('should handle empty directories', async () => {
-    const result = await fileListTool.invoke({
+    const result = await fileListTool.invoke({({, testContext)
       directoryPath: testDir,
       includeHidden: false
     });
@@ -99,7 +99,7 @@ describe('Modern File Listing Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Nested content');
     
-    const result = await fileListTool.invoke({
+    const result = await fileListTool.invoke({({, testContext)
       directoryPath: testDir,
       includeHidden: false
     });
@@ -114,7 +114,7 @@ describe('Modern File Listing Tool', () => {
   });
 
   it('should handle permission errors gracefully', async () => {
-    const result = await fileListTool.invoke({
+    const result = await fileListTool.invoke({({, testContext)
       directoryPath: '/root/nonexistent',
       includeHidden: false
     });
@@ -131,7 +131,7 @@ describe('Modern File Listing Tool', () => {
     fs.writeFileSync(testFile2, 'Underscores content');
     fs.writeFileSync(testFile3, 'Dashes content');
     
-    const result = await fileListTool.invoke({
+    const result = await fileListTool.invoke({({, testContext)
       directoryPath: testDir,
       includeHidden: false
     });
@@ -150,7 +150,7 @@ describe('Modern File Listing Tool', () => {
     const testFile = path.join(testDir, 'test.txt');
     fs.writeFileSync(testFile, 'Test content');
     
-    const result = await fileListTool.invoke({
+    const result = await fileListTool.invoke({({, testContext)
       directoryPath: testDir,
       includeHidden: false
     });
@@ -170,11 +170,11 @@ describe('Modern File Listing Tool', () => {
     
     // Run multiple listing operations concurrently
     const [result1, result2] = await Promise.all([
-      fileListTool.invoke({
+      fileListTool.invoke({({, testContext)
         directoryPath: testDir,
         includeHidden: false
       }),
-      fileListTool.invoke({
+      fileListTool.invoke({({, testContext)
         directoryPath: testDir,
         includeHidden: true
       })

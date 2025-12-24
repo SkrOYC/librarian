@@ -35,9 +35,11 @@ describe('Config Schema Alignment', () => {
                 }
             },
             repos_path: './my-repos',
-            llm_provider: 'openai',
-            llm_model: 'gpt-4',
-            apiKey: 'test-key'
+            aiProvider: {
+                type: 'openai',
+                model: 'gpt-4',
+                apiKey: 'test-key'
+            }
         };
 
         fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
@@ -60,10 +62,12 @@ describe('Config Schema Alignment', () => {
                 }
             },
             repos_path: './libs',
-            llm_provider: 'openai-compatible',
-            llm_model: 'llama-3-local',
-            base_url: 'https://api.example.com/v1',
-            apiKey: 'sk-test'
+            aiProvider: {
+                type: 'openai-compatible',
+                model: 'llama-3-local',
+                baseURL: 'https://api.example.com/v1',
+                apiKey: 'sk-test'
+            }
         };
 
         // Write config first, then load it
@@ -121,9 +125,9 @@ describe('Config Schema Alignment', () => {
 
             expect(parsed).toBeDefined();
             expect(parsed.repos_path).toBe('~/.local/share/librarian/repos');
-            expect(parsed.llm_provider).toBe('openai-compatible');
-            expect(parsed.llm_model).toBe('grok-code');
-            expect(parsed.base_url).toBe('https://opencode.ai/zen/v1');
+            expect(parsed.aiProvider.type).toBe('openai-compatible');
+            expect(parsed.aiProvider.model).toBe('grok-code');
+            expect(parsed.aiProvider.baseURL).toBe('https://opencode.ai/zen/v1');
             expect(parsed.technologies).toBeUndefined();
         } finally {
             if (fs.existsSync(testPath)) {

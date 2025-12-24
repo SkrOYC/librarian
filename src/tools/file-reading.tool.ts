@@ -3,6 +3,7 @@ import * as z from "zod";
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../utils/logger.js';
+import { isTextFile } from '../utils/file-utils.js';
 
 // Check if file is an image file
 function isImageFile(filePath: string): boolean {
@@ -20,35 +21,6 @@ function isAudioFile(filePath: string): boolean {
   ]);
   const ext = path.extname(filePath).toLowerCase();
   return audioExtensions.has(ext);
-}
-
-// Check if file is text-based
-async function isTextFile(filePath: string): Promise<boolean> {
-  const textExtensions = new Set([
-    '.txt', '.js', '.ts', '.jsx', '.tsx', '.json', '.yaml', '.yml', '.md', 
-    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.py', '.rb', '.java',
-    '.cpp', '.c', '.h', '.hpp', '.go', '.rs', '.php', '.sql', '.xml', '.csv',
-    '.toml', '.lock', '.sh', '.bash', '.zsh', '.env', '.dockerfile', 'dockerfile',
-    '.gitignore', '.npmrc', '.prettierrc', '.eslintrc', '.editorconfig', '.jsonc'
-  ]);
-  
-  const ext = path.extname(filePath).toLowerCase();
-  if (textExtensions.has(ext)) {
-    return true;
-  }
-  
-  // For files without extensions or unknown extensions, try to detect if it's text
-  try {
-    const buffer = await fs.readFile(filePath, { encoding: 'binary', flag: 'r' });
-      // Check first few bytes for null bytes which indicate binary content
-      const bufferContent = Buffer.from(buffer);
-      for (let i = 0; i < Math.min(512, bufferContent.length); i++) {
-        if (bufferContent[i] === 0) return false; // Found null byte, likely binary
-      }
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // Safe file read with encoding detection
@@ -69,8 +41,11 @@ export const fileReadTool = tool(
     logger.info('TOOL', 'file_read called', { filePath });
 
     try {
-      // Get working directory from config context or default to process.cwd()
-      const workingDir = config?.context?.workingDir || process.cwd();
+      // Get working directory from config context - required for security
+      const workingDir = config?.context?.workingDir;
+      if (!workingDir) {
+        throw new Error('Context with workingDir is required for file operations');
+      }
       logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
       // Validate the path to prevent directory traversal

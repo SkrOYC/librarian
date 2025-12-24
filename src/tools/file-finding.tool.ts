@@ -149,8 +149,11 @@ export const fileFindTool = tool(
     logger.info('TOOL', 'file_find called', { searchPath, patterns, exclude, recursive, maxResults, includeHidden });
 
     try {
-      // Get working directory from config context or default to process.cwd()
-      const workingDir = config?.context?.workingDir || process.cwd();
+      // Get working directory from config context - required for security
+      const workingDir = config?.context?.workingDir;
+      if (!workingDir) {
+        throw new Error('Context with workingDir is required for file operations');
+      }
       logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
       // Validate the path to prevent directory traversal

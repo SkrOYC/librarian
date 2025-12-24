@@ -13,7 +13,8 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { BaseMessage } from '@langchain/core/messages';
-import { ReactAgent, AgentContext } from './agents/react-agent.js';
+import { ReactAgent } from './agents/react-agent.js';
+import { AgentContext } from './agents/context-schema.js';
 import { logger } from './utils/logger.js';
 import os from 'os';
 
@@ -627,43 +628,5 @@ export class Librarian {
       process.removeListener('SIGTERM', cleanup);
       logger.timingEnd(timingId, 'LIBRARIAN', `Group stream completed: ${groupName}`);
     }
-  }
-
-  private readRepositoryContents(repoPath: string): string {
-    try {
-      const files = this.walkDirectory(repoPath);
-      return files.join('\n');
-    } catch (error) {
-      console.error(`Error reading repository contents: ${error}`);
-      return 'Error reading repository contents';
-    }
-  }
-
-  private walkDirectory(dir: string, fileList: string[] = []): string[] {
-    const files = fs.readdirSync(dir);
-    
-    for (const file of files) {
-      const filePath = path.join(dir, file);
-      const stat = fs.statSync(filePath);
-      
-      if (stat.isDirectory()) {
-        // Skip node_modules and other large directories
-        if (file !== 'node_modules' && !file.startsWith('.')) {
-          this.walkDirectory(filePath, fileList);
-        }
-      } else {
-        // Add file path to the list
-        fileList.push(filePath);
-      }
-    }
-    
-    return fileList;
-  }
-
-  async queryAI(messages: BaseMessage[]): Promise<BaseMessage> {
-    logger.debug('LLM', 'Sending request to AI model', { messageCount: messages.length });
-    const result = await this.aiModel.invoke(messages);
-    logger.debug('LLM', 'Received response from AI model', { responseLength: String(result.content).length });
-    return result;
   }
 }

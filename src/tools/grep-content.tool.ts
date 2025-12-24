@@ -3,32 +3,7 @@ import * as z from "zod";
 import fs from 'fs/promises';
 import path from 'path';
 import { logger } from '../utils/logger.js';
-
-// Check if file is text-based
-async function isTextFile(filePath: string): Promise<boolean> {
-  const textExtensions = new Set([
-    '.txt', '.js', '.ts', '.jsx', '.tsx', '.json', '.yaml', '.yml', '.md', 
-    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.py', '.rb', '.java',
-    '.cpp', '.c', '.h', '.hpp', '.go', '.rs', '.php', '.sql', '.xml', '.csv',
-    '.toml', '.lock', '.sh', '.bash', '.zsh', '.env', '.dockerfile', 'dockerfile',
-    '.gitignore', '.npmrc', '.prettierrc', '.eslintrc', '.editorconfig', '.jsonc'
-  ]);
-  
-  const ext = path.extname(filePath).toLowerCase();
-  if (textExtensions.has(ext)) {
-    return true;
-  }
-  
-  try {
-    const buffer = await fs.readFile(filePath);
-    for (let i = 0; i < Math.min(512, buffer.length); i++) {
-      if (buffer[i] === 0) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { isTextFile } from '../utils/file-utils.js';
 
 // Safe file read with encoding detection
 async function readFileContent(filePath: string): Promise<string> {
@@ -104,8 +79,11 @@ export const grepContentTool = tool(
     logger.info('TOOL', 'grep_content called', { searchPath, queryLength: query.length, patterns, caseSensitive, regex, recursive, maxResults });
 
     try {
-      // Get working directory from config context or default to process.cwd()
-      const workingDir = config?.context?.workingDir || process.cwd();
+      // Get working directory from config context - required for security
+      const workingDir = config?.context?.workingDir;
+      if (!workingDir) {
+        throw new Error('Context with workingDir is required for file operations');
+      }
       logger.debug('TOOL', 'Working directory', { workingDir: workingDir.replace(process.env.HOME || '', '~') });
 
       if (!query) {

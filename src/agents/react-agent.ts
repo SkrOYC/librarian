@@ -9,16 +9,7 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
 import { logger } from "../utils/logger.js";
 import os from "os";
-
-/**
- * Type for context object passed to agent
- */
-export type AgentContext = {
-  workingDir: string;
-  environment?: string;
-  group: string;
-  technology: string;
-}
+import { AgentContext } from "./context-schema.js";
 
 /**
  * Configuration interface for ReactAgent

@@ -34,6 +34,9 @@ export type AgentContext = {
   technology: string;
 }
 
+// Re-export for convenience
+export type { AgentContext as AgentContextType };
+
 /**
  * Creates a context object with the given parameters.
  *

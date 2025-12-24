@@ -4,15 +4,9 @@ import { Command } from 'commander';
 import { Librarian } from './index.js';
 import { loadConfig } from './config.js';
 import { logger } from './utils/logger.js';
-import os from 'os';
+import { expandTilde } from './utils/path-utils.js';
 import path from 'path';
-
-function expandTilde(filePath: string): string {
-  if (filePath.startsWith('~/')) {
-    return path.join(os.homedir(), filePath.slice(2));
-  }
-  return filePath;
-}
+import os from 'os';
 
 export function createProgram() {
   const program = new Command();

@@ -38,7 +38,7 @@ describe('Modern File Reading Tool', () => {
     fs.writeFileSync(testFile, testContent);
     
     // Test modern tool with structured parameters
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: testFile
     });
     
@@ -47,14 +47,14 @@ describe('Modern File Reading Tool', () => {
   });
 
   it('should handle non-existent files', async () => {
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: 'non_existent_file.txt'
     });
     expect(result).toContain('Error reading file');
   });
 
   it('should handle invalid file paths', async () => {
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: '../invalid_dir/file.txt'
     });
     expect(result).toContain('contains invalid path characters');
@@ -66,7 +66,7 @@ describe('Modern File Reading Tool', () => {
     const binaryContent = Buffer.from([0x00, 0x01, 0x02, 0x03]); // Binary data with null byte
     fs.writeFileSync(testFile, binaryContent);
     
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: testFile
     });
     
@@ -80,7 +80,7 @@ describe('Modern File Reading Tool', () => {
     fs.writeFileSync(testFile, largeContent);
     
     const startTime = Date.now();
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: testFile
     });
     const endTime = Date.now();
@@ -95,7 +95,7 @@ describe('Modern File Reading Tool', () => {
     const specialContent = 'Content with special chars: émojis 🚀 unicode 中文';
     fs.writeFileSync(testFile, specialContent);
     
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: testFile
     });
     
@@ -107,7 +107,7 @@ describe('Modern File Reading Tool', () => {
     const testFile = path.join(process.cwd(), 'test_empty.txt');
     fs.writeFileSync(testFile, '');
     
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: testFile
     });
     
@@ -127,7 +127,7 @@ describe('Modern File Reading Tool', () => {
       const filePath = path.join(process.cwd(), testFile.name);
       fs.writeFileSync(filePath, testFile.content);
       
-      const result = await fileReadTool.invoke({
+      const result = await fileReadTool.invoke({({, testContext)
         filePath: filePath
       });
       
@@ -140,7 +140,7 @@ describe('Modern File Reading Tool', () => {
   });
 
   it('should handle permission errors gracefully', async () => {
-    const result = await fileReadTool.invoke({
+    const result = await fileReadTool.invoke({({, testContext)
       filePath: '/root/protected.txt'
     });
     
@@ -156,8 +156,8 @@ describe('Modern File Reading Tool', () => {
     
     // Read files concurrently
     const [result1, result2] = await Promise.all([
-      fileReadTool.invoke({ filePath: testFile1 }),
-      fileReadTool.invoke({ filePath: testFile2 })
+      fileReadTool.invoke({({, testContext) filePath: testFile1 }),
+      fileReadTool.invoke({({, testContext) filePath: testFile2 })
     ]);
     
     expect(result1).toContain('Concurrent content 1');
@@ -175,11 +175,11 @@ describe('Modern File Reading Tool', () => {
     const relativeFile = './test_path.txt';
     fs.writeFileSync(testFile, 'Path resolution test');
     
-    const result1 = await fileReadTool.invoke({
+    const result1 = await fileReadTool.invoke({({, testContext)
       filePath: testFile
     });
     
-    const result2 = await fileReadTool.invoke({
+    const result2 = await fileReadTool.invoke({({, testContext)
       filePath: relativeFile
     });
     

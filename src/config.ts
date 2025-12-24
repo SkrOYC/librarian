@@ -4,6 +4,7 @@ import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { LibrarianConfig } from './index.js';
 import { logger } from './utils/logger.js';
+import { expandTilde } from './utils/path-utils.js';
 import os from 'os';
 
 const TechnologySchema = z.object({
@@ -31,13 +32,6 @@ const ConfigSchema = z.object({
   workingDir: z.string().default('./librarian_work'),
   repos_path: z.string().optional(),
 });
-
-function expandTilde(filePath: string): string {
-  if (filePath.startsWith('~/')) {
-    return path.join(os.homedir(), filePath.slice(2));
-  }
-  return filePath;
-}
 
 /**
  * Load environment variables from a .env file using Bun native APIs
@@ -198,20 +192,8 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
   const validatedConfig = ConfigSchema.parse(parsedConfig);
   logger.debug('CONFIG', 'Config schema validation passed');
 
-  // Migration logic for technologies
+  // Use technologies from config, or create empty default
   let technologies: any = validatedConfig.technologies;
-
-  if (validatedConfig.repositories && !technologies) {
-    logger.info('CONFIG', 'Migrating from deprecated "repositories" format to "technologies" format');
-    const defaultGroup: Record<string, { repo: string, branch: string }> = {};
-    for (const [name, repo] of Object.entries(validatedConfig.repositories)) {
-      defaultGroup[name] = { repo, branch: 'main' };
-    }
-    technologies = {
-      default: defaultGroup
-    };
-    logger.debug('CONFIG', 'Migration completed', { techCount: Object.keys(defaultGroup).length });
-  }
 
   if (technologies) {
     // Normalize repo/name
@@ -232,40 +214,29 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
     technologies = { default: {} };
   }
 
-  // Migration logic for AI provider
-  let aiProvider = validatedConfig.aiProvider;
-
-  if (!aiProvider && validatedConfig.llm_provider) {
-    logger.info('CONFIG', 'Migrating from deprecated "llm_provider" format to "aiProvider" format');
-    aiProvider = {
-      type: validatedConfig.llm_provider,
-      apiKey: envVars.LIBRARIAN_API_KEY || '', // Load from .env file
-      model: validatedConfig.llm_model,
-      baseURL: validatedConfig.base_url
-    };
+  // AI provider is required
+  if (!validatedConfig.aiProvider) {
+    logger.error('CONFIG', 'AI provider is required in configuration');
+    console.error('Configuration error: aiProvider is required in config.yaml');
+    process.exit(1);
   }
 
-  if (!aiProvider) {
-    // Default fallback if nothing provided
-    logger.debug('CONFIG', 'No AI provider found, using default OpenAI configuration');
-    aiProvider = {
-      type: 'openai',
-      apiKey: envVars.LIBRARIAN_API_KEY || '',
-      model: 'gpt-4o'
-    };
-  }
+  // Create aiProvider with API key from .env
+  const aiProvider = {
+    ...validatedConfig.aiProvider,
+    apiKey: validatedConfig.aiProvider.apiKey || envVars.LIBRARIAN_API_KEY
+  };
 
-  // Set API key from .env if not already set
-  if (!aiProvider.apiKey && envVars.LIBRARIAN_API_KEY) {
-    logger.debug('CONFIG', 'API key loaded from .env');
-    aiProvider.apiKey = envVars.LIBRARIAN_API_KEY;
-  }
+  logger.debug('CONFIG', 'API key source', {
+    fromEnv: !!envVars.LIBRARIAN_API_KEY,
+    fromConfig: !!validatedConfig.aiProvider.apiKey
+  });
 
   const config = {
     ...validatedConfig,
     technologies,
     aiProvider,
-    repos_path: aiProvider ? (validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined) : (validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined),
+    repos_path: validatedConfig.repos_path ? expandTilde(validatedConfig.repos_path) : undefined,
     workingDir: expandTilde(validatedConfig.workingDir)
   } as LibrarianConfig;
 
@@ -285,9 +256,11 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
 export async function createDefaultConfig(configPath: string): Promise<void> {
   const defaultConfig = {
     repos_path: "~/.local/share/librarian/repos",
-    llm_provider: "openai-compatible",
-    llm_model: "grok-code",
-    base_url: "https://opencode.ai/zen/v1"
+    aiProvider: {
+      type: "openai-compatible",
+      model: "grok-code",
+      baseURL: "https://opencode.ai/zen/v1"
+    }
   };
 
   // Ensure directory exists

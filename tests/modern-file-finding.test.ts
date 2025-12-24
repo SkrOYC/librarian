@@ -10,12 +10,14 @@ import { fileFindTool } from '../src/tools/file-finding.tool.js';
 
 describe('Modern File Finding Tool', () => {
   let testDir: string;
+  let testContext: { workingDir: string; group: string; technology: string };
 
   beforeEach(() => {
     testDir = path.join(process.cwd(), `test-modern-find-${Date.now()}`);
     if (!fs.existsSync(testDir)) {
       fs.mkdirSync(testDir, { recursive: true });
     }
+    testContext = { workingDir: testDir, group: 'test', technology: 'test' };
   });
 
   afterEach(() => {
@@ -34,7 +36,7 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile3, 'Markdown content');
     
     // Test modern tool with structured parameters
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['test.txt']
     });
@@ -58,7 +60,7 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile2, 'JavaScript content');
     fs.writeFileSync(testFile3, 'Markdown content');
     
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.txt', '*.js']
     });
@@ -82,7 +84,7 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile2, 'JavaScript content');
     fs.writeFileSync(testFile3, 'Minified content');
     
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.*'],
       exclude: ['*.min.*']
@@ -107,7 +109,7 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Nested content');
     
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.*'],
       recursive: true
@@ -132,7 +134,7 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Nested content');
     
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.*'],
       recursive: false
@@ -155,7 +157,7 @@ describe('Modern File Finding Tool', () => {
       fs.writeFileSync(testFile, `Content ${i}`);
     }
     
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.txt'],
       maxResults: 5
@@ -180,13 +182,13 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Hidden content');
     
-    const includeHiddenResult = await fileFindTool.invoke({
+    const includeHiddenResult = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.txt'],
       includeHidden: true
     });
     
-    const excludeHiddenResult = await fileFindTool.invoke({
+    const excludeHiddenResult = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.txt'],
       includeHidden: false
@@ -203,7 +205,7 @@ describe('Modern File Finding Tool', () => {
   });
 
   it('should handle invalid search path', async () => {
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: '/nonexistent/path',
       patterns: ['*.*']
     });
@@ -213,7 +215,7 @@ describe('Modern File Finding Tool', () => {
   });
 
   it('should handle empty results', async () => {
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['*.nonexistent']
     });
@@ -227,7 +229,7 @@ describe('Modern File Finding Tool', () => {
     fs.writeFileSync(testFile1, 'Special content 1');
     fs.writeFileSync(testFile2, 'Special content 2');
     
-    const result = await fileFindTool.invoke({
+    const result = await fileFindTool.invoke({({, testContext)
       searchPath: testDir,
       patterns: ['test-special_*.*']
     });
