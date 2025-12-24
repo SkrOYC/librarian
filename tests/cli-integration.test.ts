@@ -12,9 +12,11 @@ import path from 'path';
 
 describe('CLI Integration', () => {
   let testDir: string;
+  let helper: TestCLIHelper;
   let mockConfig: any;
 
   beforeEach(async () => {
+    const helper = new TestCLIHelper(testDir);
     const helper = new TestCLIHelper(testDir);
     testDir = fsSync.mkdtempSync('cli-integration-test-');
     const reposDir = path.join(testDir, 'repos');
