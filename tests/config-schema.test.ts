@@ -7,12 +7,27 @@ import { loadConfig } from '../src/config.js';
 import { createDefaultConfig } from '../src/config.js';
 
 const TEST_CONFIG_PATH = path.join(process.cwd(), 'test-config.yaml');
+const TEST_ENV_PATH = path.join(process.cwd(), '.env');
+
+// Helper to create a temp .env file for tests
+function createTestEnv() {
+    if (!fs.existsSync(TEST_ENV_PATH)) {
+        fs.writeFileSync(TEST_ENV_PATH, 'LIBRARIAN_API_KEY=test-api-key');
+    }
+}
+
+function cleanupTestEnv() {
+    if (fs.existsSync(TEST_ENV_PATH)) {
+        fs.unlinkSync(TEST_ENV_PATH);
+    }
+}
 
 describe('Config Schema Alignment', () => {
     afterEach(() => {
         if (fs.existsSync(TEST_CONFIG_PATH)) {
             fs.unlinkSync(TEST_CONFIG_PATH);
         }
+        cleanupTestEnv();
     });
 
     it('should support nested technology groups with branch and description', async () => {
@@ -81,6 +96,8 @@ describe('Config Schema Alignment', () => {
 
     it('should auto-create default config when file missing', async () => {
         const nonExistentPath = path.join(process.cwd(), `test-auto-config-${Date.now()}.yaml`);
+        const envPath = path.join(path.dirname(nonExistentPath), '.env');
+        fs.writeFileSync(envPath, 'LIBRARIAN_API_KEY=test-api-key');
 
         try {
             const config: any = await loadConfig(nonExistentPath);
@@ -94,23 +111,30 @@ describe('Config Schema Alignment', () => {
             if (fs.existsSync(nonExistentPath)) {
                 fs.unlinkSync(nonExistentPath);
             }
+            if (fs.existsSync(envPath)) {
+                fs.unlinkSync(envPath);
+            }
         }
     });
 
     it('should create config directory if missing', async () => {
-        const deepPath = path.join(process.cwd(), `test-level1-${Date.now()}`, 'level2', 'config.yaml');
+        const timestamp = Date.now();
+        const deepPath = path.join(process.cwd(), `test-level1-${timestamp}`, 'level2', 'config.yaml');
         const testDir = path.dirname(deepPath);
+        const level1Dir = path.join(process.cwd(), `test-level1-${timestamp}`);
 
         try {
+            // Create directory and .env file first
+            fs.mkdirSync(testDir, { recursive: true });
+            fs.writeFileSync(path.join(testDir, '.env'), 'LIBRARIAN_API_KEY=test-api-key');
             await loadConfig(deepPath);
 
             expect(fs.existsSync(testDir)).toBe(true);
             expect(fs.existsSync(deepPath)).toBe(true);
         } finally {
             // Cleanup
-            const level1 = path.join(process.cwd(), `test-level1-${Date.now()}`);
-            if (fs.existsSync(level1)) {
-                fs.rmSync(level1, { recursive: true, force: true });
+            if (fs.existsSync(level1Dir)) {
+                fs.rmSync(level1Dir, { recursive: true, force: true });
             }
         }
     });

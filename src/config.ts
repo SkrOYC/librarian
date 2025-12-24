@@ -164,8 +164,9 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
 
   logger.info('CONFIG', 'Loading configuration', { configPath: actualPath.replace(os.homedir(), '~') });
 
-  // Load environment variables from .env file
-  const envPath = path.join(os.homedir(), '.config', 'librarian', '.env');
+  // Load environment variables from .env file (in same directory as config file)
+  const configDir = path.dirname(actualPath);
+  const envPath = path.join(configDir, '.env');
   const envVars = await loadEnvFile(envPath);
 
   // Check if config file exists
@@ -214,22 +215,36 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
     technologies = { default: {} };
   }
 
-  // AI provider is required
-  if (!validatedConfig.aiProvider) {
+  // Build aiProvider from either aiProvider object or README-style llm_* keys
+  let aiProvider: LibrarianConfig['aiProvider'];
+
+  if (validatedConfig.aiProvider) {
+    // Use aiProvider object format
+    const { type, model, baseURL } = validatedConfig.aiProvider;
+    aiProvider = {
+      type,
+      apiKey: validatedConfig.aiProvider.apiKey || envVars.LIBRARIAN_API_KEY || '',
+      ...(model && { model }),
+      ...(baseURL && { baseURL })
+    };
+  } else if (validatedConfig.llm_provider) {
+    // Use README-style llm_* keys
+    aiProvider = {
+      type: validatedConfig.llm_provider,
+      apiKey: envVars.LIBRARIAN_API_KEY || '',
+      ...(validatedConfig.llm_model && { model: validatedConfig.llm_model }),
+      ...(validatedConfig.base_url && { baseURL: validatedConfig.base_url })
+    };
+    logger.debug('CONFIG', 'Using README-style llm_* keys for AI provider');
+  } else {
     logger.error('CONFIG', 'AI provider is required in configuration');
-    console.error('Configuration error: aiProvider is required in config.yaml');
+    console.error('Configuration error: llm_provider (or aiProvider) is required in config.yaml');
     process.exit(1);
   }
 
-  // Create aiProvider with API key from .env
-  const aiProvider = {
-    ...validatedConfig.aiProvider,
-    apiKey: validatedConfig.aiProvider.apiKey || envVars.LIBRARIAN_API_KEY
-  };
-
   logger.debug('CONFIG', 'API key source', {
     fromEnv: !!envVars.LIBRARIAN_API_KEY,
-    fromConfig: !!validatedConfig.aiProvider.apiKey
+    fromConfig: !!validatedConfig.aiProvider?.apiKey
   });
 
   const config = {

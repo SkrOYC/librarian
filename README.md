@@ -324,7 +324,7 @@ bun run test
 
 - `commander`: CLI argument parsing
 - `yaml`: Configuration file parsing
-- `node-git`: Git operations
+- `isomorphic-git`: Git operations
 - `zod`: Runtime validation
 
 #### Agent System
@@ -335,10 +335,6 @@ bun run test
 - `@langchain/anthropic`: Anthropic provider integration
 - `@langchain/google-genai`: Google provider integration
 - `zod`: Tool schema validation and structured responses
-
-#### Utilities
-
-- `chalk`: Terminal output formatting
 
 ## Contributing
 

@@ -36,7 +36,8 @@ export class TestCLIHelper {
   private outputCapture: OutputCapture = { stdout: [], stderr: [] };
 
   constructor(testDir: string) {
-    this.testDir = testDir;
+    // Ensure testDir is absolute to avoid path resolution issues when cwd changes
+    this.testDir = path.resolve(testDir);
   }
 
   /**
@@ -112,15 +113,28 @@ export class TestCLIHelper {
   /**
    * Run CLI command and capture output
    */
-  async runCommand(args: string[]): Promise<TestResult> {
+  async runCommand(args: string[], config?: ReadmeConfig): Promise<TestResult> {
+    // If config is provided, set it up before running
+    if (config) {
+      this.setConfig(config);
+    }
+
     return new Promise((resolve) => {
       const startTime = Date.now();
 
       // Use the built CLI from dist/
       const cliPath = path.join(process.cwd(), 'dist', 'cli.js');
 
-      // If we have a config file set up, pass it via --config option
-      const commandArgs = this.configPath ? [...args, '--config', this.configPath] : args;
+      // If we have a config file set up, insert --config option after the command
+      // The --config option is command-specific, so it needs to come after the command name
+      let commandArgs = args;
+      if (this.configPath && args.length > 0) {
+        const command = args[0];
+        // Only add --config for commands that support it (list, explore)
+        if (command === 'list' || command === 'explore') {
+          commandArgs = [command, '--config', this.configPath, ...args.slice(1)];
+        }
+      }
 
       const child: ChildProcess = spawn('bun', [cliPath, ...commandArgs], {
         cwd: this.testDir,

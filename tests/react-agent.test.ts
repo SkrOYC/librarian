@@ -337,42 +337,6 @@ describe('React Agent and Tools Integration', () => {
       fs.unlinkSync(srcFile);
       fs.rmdirSync(nodeModulesDir);
       fs.rmdirSync(srcDir);
-    });
-      expect(result).toContain('Error finding files');
-    });
-
-    it('should exclude specified directories', async () => {
-      const findDir = path.join(testDir, 'test_find_dir');
-      const nodeModulesDir = path.join(findDir, 'node_modules');
-      const srcDir = path.join(findDir, 'src');
-      
-      fs.mkdirSync(findDir, { recursive: true });
-      fs.mkdirSync(nodeModulesDir, { recursive: true });
-      fs.mkdirSync(srcDir, { recursive: true });
-      
-      const nodeModuleFile = path.join(nodeModulesDir, 'dependency.js');
-      const srcFile = path.join(srcDir, 'app.js');
-      fs.writeFileSync(nodeModuleFile, 'Dependency file');
-      fs.writeFileSync(srcFile, 'App file');
-      
-      const result = await fileFindTool.invoke({
-        searchPath: findDir,
-        patterns: ['*.js'],
-        exclude: ['node_modules', '.git'],
-        recursive: true,
-        maxResults: 10,
-        includeHidden: false
-      });
-      
-      expect(result).toContain('app.js');
-      // Note: exclude functionality may not be working properly in current implementation
-      // expect(result).not.toContain('dependency.js');
-      
-      // Clean up
-      fs.unlinkSync(nodeModuleFile);
-      fs.unlinkSync(srcFile);
-      fs.rmdirSync(nodeModulesDir);
-      fs.rmdirSync(srcDir);
       fs.rmdirSync(findDir);
     });
 

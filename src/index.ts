@@ -12,7 +12,6 @@ import path from 'path';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { BaseMessage } from '@langchain/core/messages';
 import { ReactAgent } from './agents/react-agent.js';
 import { AgentContext } from './agents/context-schema.js';
 import { logger } from './utils/logger.js';

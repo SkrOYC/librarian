@@ -6,3 +6,7 @@ dist/
 .vscode/
 .idea/
 *.lock
+
+# Test artifacts
+test_*.txt
+test-*.txt
