@@ -15,315 +15,414 @@ import { AgentContext } from "./context-schema.js";
  * Configuration interface for ReactAgent
  */
 export interface ReactAgentConfig {
-  /** AI provider configuration including type, API key, and optional model/base URL */
-  aiProvider: {
-    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible';
-    apiKey: string;
-    model?: string;
-    baseURL?: string;
-  };
-  /** Working directory where the agent operates */
-  workingDir: string;
-  /** Optional technology context for dynamic system prompt construction */
-  technology?: {
-    name: string;
-    repository: string;
-    branch: string;
-  };
-  /** Optional context schema for runtime context validation */
-  contextSchema?: any;
+	/** AI provider configuration including type, API key, and optional model/base URL */
+	aiProvider: {
+		type: "openai" | "anthropic" | "google" | "openai-compatible";
+		apiKey: string;
+		model?: string;
+		baseURL?: string;
+	};
+	/** Working directory where the agent operates */
+	workingDir: string;
+	/** Optional technology context for dynamic system prompt construction */
+	technology?: {
+		name: string;
+		repository: string;
+		branch: string;
+	};
+	/** Optional context schema for runtime context validation */
+	contextSchema?: any;
 }
 
 export class ReactAgent {
-  private aiModel: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
-  private tools: any[];
-  private agent: any;
-  private config: ReactAgentConfig;
-  private contextSchema?: any;
+	private aiModel: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
+	private tools: any[];
+	private agent: any;
+	private config: ReactAgentConfig;
+	private contextSchema?: any;
 
-  constructor(config: ReactAgentConfig) {
-    this.config = config;
-    this.contextSchema = config.contextSchema;
-    this.aiModel = this.createAIModel(config.aiProvider);
+	constructor(config: ReactAgentConfig) {
+		this.config = config;
+		this.contextSchema = config.contextSchema;
+		this.aiModel = this.createAIModel(config.aiProvider);
 
-    // Initialize tools - modernized tool pattern
-    this.tools = [
-      fileListTool,
-      fileReadTool,
-      grepContentTool,
-      fileFindTool
-    ];
+		// Initialize tools - modernized tool pattern
+		this.tools = [fileListTool, fileReadTool, grepContentTool, fileFindTool];
 
-    logger.info('AGENT', 'Initializing ReactAgent', {
-      aiProviderType: config.aiProvider.type,
-      model: config.aiProvider.model,
-      workingDir: config.workingDir.replace(os.homedir(), '~'),
-      toolCount: this.tools.length,
-      hasContextSchema: !!this.contextSchema
-    });
-  }
+		logger.info("AGENT", "Initializing ReactAgent", {
+			aiProviderType: config.aiProvider.type,
+			model: config.aiProvider.model,
+			workingDir: config.workingDir.replace(os.homedir(), "~"),
+			toolCount: this.tools.length,
+			hasContextSchema: !!this.contextSchema,
+		});
+	}
 
-  /**
-   * Creates a dynamic system prompt based on current configuration and technology context
-   * @returns A context-aware system prompt string
-   */
-  createDynamicSystemPrompt(): string {
-    const { workingDir, technology } = this.config;
+	/**
+	 * Creates a dynamic system prompt based on current configuration and technology context
+	 * @returns A context-aware system prompt string
+	 */
+	createDynamicSystemPrompt(): string {
+		const { workingDir, technology } = this.config;
 
-    let prompt = `You are a sophisticated AI research assistant that can explore and analyze code repositories using specialized tools.
- `;
+		let prompt = `
+	You are a Patient Technical Mentor and Coding Instructor.
+	You are defined by these traits: methodical, insightful, and precision-oriented.
 
-    // Add technology context if available
-    if (technology) {
-      prompt += `
-You are currently exploring the **${technology.name}** technology repository.
+	Before taking any action (tool calls or user responses), you must proactively, methodically, and independently plan using the following logic structure. Your goal is not just to provide solutions, but to provide deep insights that help the user understand the "why" behind the code.
+
+### 1. LOGICAL DEPENDENCIES & CONSTRAINTS
+	Analyze the request against the following factors. Resolve conflicts in this exact order of importance:
+	1.1) MANDATORY RULES (Immutable):
+		- READ-ONLY SCOPE: You cannot modify, delete, or create files. You may *only* use read-only tools to explore (use absolute path):
+			- file_list: List directory contents with metadata
+			- file_read: Read the contents of a specific file
+			- grep_content: Search for content patterns across multiple files
+			- file_find: Find files matching specific patterns
+		- GROUNDED TEACHING: Every explanation must be exclusively linked to specific files or patterns found in the working directory.
+		- NO GUESSING: If you are unsure of how a local module works, you MUST read the file before explaining it.
+	1.2) ORDER OF OPERATIONS:
+		- Explore the directory structure before deep-diving into a specific file.
+		- Identify dependencies between files before explaining a single function's logic.
+	1.3) USER PREFERENCES:
+		- Prioritize providing direct insights and conceptual breakdowns over asking the user questions.
+
+### 2. RISK & AMBIGUITY ASSESSMENT
+	2.1) ACTION BIAS:
+		- For *Exploratory Tasks*: If you need to see a file to provide a better answer, PREFER calling the read tool **immediately** without asking the user.
+		- For *Structural Assumptions*: If the user asks about a component you haven't seen yet, STOP and use your tools to find it before responding.
+	2.2) CONSEQUENCE CHECK:
+		- Ask: "Does my explanation rely on a library or local module I haven't actually verified in the current environment?"
+
+### 3. ABDUCTIVE REASONING & DIAGNOSTICS
+	3.1) ROOT CAUSE ANALYSIS:
+		- When explaining a bug or a complex logic flow, generate at least 2 competing hypotheses for why the code behaves the way it does.
+	3.2) HYPOTHESIS TESTING:
+		- Use your read tools to verify which hypothesis is supported by the actual source code in the directory.
+
+### 4. OUTCOME EVALUATION & ADAPTABILITY
+	4.1) LOOP REASONING:
+		- After reading a file, ask: "Does this code contradict the explanation I was about to give?"
+	4.2) DYNAMIC RE-PLANNING:
+		- If a file search returns no results, immediately pivot to a broader search or check configuration files (like \`requirements.txt\` or \`tsconfig.json\`, etc) to find where the logic might be hidden.
+
+### 5. INFORMATION AVAILABILITY & SCOPE
+	Incorporate information from these specific sources:
+	5.1) The provided working directory (primary source).
+	5.2) Language-specific documentation and best practices.
+	5.3) Explicit patterns observed across multiple files in the local environment.
+
+### 6. PRECISION & GROUNDING
+	6.1) CITATION REQUIREMENT:
+	  - Verify every insight by quoting the exact filename and, where possible, the line numbers or function names.
+	  - If the information is not present in the directory, state: "Based on the accessible files, I cannot find [X], but typically [Y] applies."
+
+### 7. COMPLETENESS CHECK
+	7.1) FALSE NEGATIVE SCAN:
+		- Did I miss a configuration file that changes how this code is executed?
+	7.2) EXHAUSTIVENESS:
+		- Ensure that the "insight" provided covers both the immediate fix and the underlying programming principle.
+
+### 8. PERSISTENCE & ERROR HANDLING LOGIC
+	8.1) TRANSIENT ERRORS (e.g., File Read Timeout):
+		- Action: Retry the read call.
+		- Limit: Max 3 retries.
+	8.2) LOGIC/HARD ERRORS (e.g., File Not Found, Permission Denied):
+		- Action: DO NOT RETRY.
+		- Correction: Search for an alternative file or explain the limitation to the user.
+	8.3) EXIT CONDITION:
+		- If the code is obfuscated or missing, provide the best possible insight based on standard conventions.
+
+### 9. INHIBITION & EXECUTION
+	Inhibit your response. Only provide the final pedagogical insight after you have used your tools to confirm the state of the working directory.
+
+### Context
+`;
+		// Add technology context if available
+		if (technology) {
+			prompt += `
+You have been provided the **${technology.name}** repository.
 Repository: ${technology.repository}
-Branch: ${technology.branch}
-Working Directory: ${workingDir}
+Your Working Directory: ${workingDir}
 
-Focus your analysis on understanding the architecture, key components, and usage patterns specific to this technology.
+Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\`
 `;
-    } else {
-      prompt += `
-Working Directory: ${workingDir}
+		} else {
+			prompt += `
+You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}
+
+Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\`
 `;
-    }
+		}
 
-    prompt += `Your available tools are:
-- file_list: List directory contents with metadata
-- file_read: Read the contents of a specific file
-- grep_content: Search for content patterns across multiple files
-- file_find: Find files matching specific patterns
+		logger.debug("AGENT", "Dynamic system prompt generated", {
+			hasTechnologyContext: !!technology,
+			promptLength: prompt.length,
+		});
 
-When analyzing a repository:
-1. Start by using file_list to understand the repository structure
-2. Use file_find to locate specific files of interest
-3. Use file_read to examine file contents in detail
-4. Use grep_content to search for specific code patterns or text
-5. Synthesize all gathered information to provide comprehensive answers
+		return prompt;
+	}
 
-Always provide specific file paths and line numbers when referencing code in your responses.`;
+	private createAIModel(
+		aiProvider: ReactAgentConfig["aiProvider"],
+	): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
+		const { type, apiKey, model, baseURL } = aiProvider;
 
-    logger.debug('AGENT', 'Dynamic system prompt generated', {
-      hasTechnologyContext: !!technology,
-      promptLength: prompt.length
-    });
+		logger.debug("AGENT", "Creating AI model instance", {
+			type,
+			model,
+			hasBaseURL: !!baseURL,
+		});
 
-    return prompt;
-  }
+		switch (type) {
+			case "openai":
+				return new ChatOpenAI({
+					apiKey,
+					modelName: model || "gpt-5.2",
+				});
+			case "openai-compatible":
+				return new ChatOpenAI({
+					apiKey,
+					modelName: model || "gpt-5.2",
+					configuration: {
+						baseURL: baseURL || "https://api.openai.com/v1",
+					},
+				});
+			case "anthropic":
+				return new ChatAnthropic({
+					apiKey,
+					modelName: model || "claude-sonnet-4-5",
+				});
+			case "google":
+				return new ChatGoogleGenerativeAI({
+					apiKey,
+					model: model || "gemini-3-flash-preview",
+				});
+			default:
+				logger.error(
+					"AGENT",
+					"Unsupported AI provider type",
+					new Error(`Unsupported AI provider type: ${type}`),
+					{ type },
+				);
+				throw new Error(`Unsupported AI provider type: ${type}`);
+		}
+	}
 
-  private createAIModel(aiProvider: ReactAgentConfig['aiProvider']): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
-    const { type, apiKey, model, baseURL } = aiProvider;
+	async initialize(): Promise<void> {
+		// Create the agent using LangChain's createAgent function with dynamic system prompt
+		this.agent = createAgent({
+			model: this.aiModel,
+			tools: this.tools,
+			systemPrompt: this.createDynamicSystemPrompt(),
+		});
 
-    logger.debug('AGENT', 'Creating AI model instance', { type, model, hasBaseURL: !!baseURL });
+		logger.info("AGENT", "Agent initialized successfully", {
+			toolCount: this.tools.length,
+			hasContextSchema: !!this.contextSchema,
+		});
+	}
 
-    switch (type) {
-      case 'openai':
-        return new ChatOpenAI({
-          apiKey,
-          modelName: model || 'gpt-4o',
-        });
-      case 'openai-compatible':
-        return new ChatOpenAI({
-          apiKey,
-          modelName: model || 'gpt-4o',
-          configuration: {
-            baseURL: baseURL || 'https://api.openai.com/v1',
-          }
-        });
-      case 'anthropic':
-        return new ChatAnthropic({
-          apiKey,
-          modelName: model || 'claude-3-sonnet-20240229',
-        });
-      case 'google':
-        return new ChatGoogleGenerativeAI({
-          apiKey,
-          model: model || 'gemini-pro',
-        });
-      default:
-        logger.error('AGENT', 'Unsupported AI provider type', new Error(`Unsupported AI provider type: ${type}`), { type });
-        throw new Error(`Unsupported AI provider type: ${type}`);
-    }
-  }
+	/**
+	 * Query repository with a given query and optional context
+	 *
+	 * @param repoPath - The repository path (deprecated, for compatibility)
+	 * @param query - The query string
+	 * @param context - Optional context object containing working directory and metadata
+	 * @returns The agent's response as a string
+	 */
+	async queryRepository(
+		repoPath: string,
+		query: string,
+		context?: AgentContext,
+	): Promise<string> {
+		logger.info("AGENT", "Query started", {
+			queryLength: query.length,
+			hasContext: !!context,
+		});
 
-  async initialize(): Promise<void> {
-    // Create the agent using LangChain's createAgent function with dynamic system prompt and context schema
-    this.agent = createAgent({
-      model: this.aiModel,
-      tools: this.tools,
-      systemPrompt: this.createDynamicSystemPrompt(),
-      contextSchema: this.contextSchema,
-    });
+		const timingId = logger.timingStart("agentQuery");
 
-    logger.info('AGENT', 'Agent initialized successfully', {
-      toolCount: this.tools.length,
-      hasContextSchema: !!this.contextSchema
-    });
-  }
+		if (!this.agent) {
+			logger.error(
+				"AGENT",
+				"Agent not initialized",
+				new Error("Agent not initialized. Call initialize() first."),
+			);
+			throw new Error("Agent not initialized. Call initialize() first.");
+		}
 
-  /**
-   * Query repository with a given query and optional context
-   *
-   * @param repoPath - The repository path (deprecated, for compatibility)
-   * @param query - The query string
-   * @param context - Optional context object containing working directory and metadata
-   * @returns The agent's response as a string
-   */
-  async queryRepository(repoPath: string, query: string, context?: AgentContext): Promise<string> {
-    logger.info('AGENT', 'Query started', { queryLength: query.length, hasContext: !!context });
+		// Prepare the messages for the agent - system prompt already set during initialization
+		const messages = [new HumanMessage(query)];
 
-    const timingId = logger.timingStart('agentQuery');
+		logger.debug("AGENT", "Invoking agent with messages", {
+			messageCount: messages.length,
+			hasContext: !!context,
+		});
 
-    if (!this.agent) {
-      logger.error('AGENT', 'Agent not initialized', new Error("Agent not initialized. Call initialize() first."));
-      throw new Error("Agent not initialized. Call initialize() first.");
-    }
+		// Execute the agent with optional context
+		const result = await this.agent.invoke(
+			{
+				messages,
+			},
+			context ? { context } : {},
+		);
 
-    // Prepare the messages for the agent - system prompt already set during initialization
-    const messages = [
-      new HumanMessage(query)
-    ];
+		// Extract the last message content from the state
+		const lastMessage = result.messages[result.messages.length - 1];
+		const content =
+			typeof lastMessage.content === "string"
+				? lastMessage.content
+				: JSON.stringify(lastMessage.content);
 
-    logger.debug('AGENT', 'Invoking agent with messages', {
-      messageCount: messages.length,
-      hasContext: !!context
-    });
+		logger.timingEnd(timingId, "AGENT", "Query completed");
+		logger.info("AGENT", "Query result received", {
+			responseLength: content.length,
+		});
 
-    // Execute the agent with optional context
-    const result = await this.agent.invoke({
-      messages
-    }, context ? { context } : {});
+		return content;
+	}
 
-    // Extract the last message content from the state
-    const lastMessage = result.messages[result.messages.length - 1];
-    const content = typeof lastMessage.content === 'string'
-      ? lastMessage.content
-      : JSON.stringify(lastMessage.content);
+	/**
+	 * Stream repository query with optional context
+	 *
+	 * @param repoPath - The repository path (deprecated, for compatibility)
+	 * @param query - The query string
+	 * @param context - Optional context object containing working directory and metadata
+	 * @returns Async generator yielding string chunks
+	 */
+	async *streamRepository(
+		repoPath: string,
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		logger.info("AGENT", "Stream started", {
+			queryLength: query.length,
+			hasContext: !!context,
+		});
 
-    logger.timingEnd(timingId, 'AGENT', 'Query completed');
-    logger.info('AGENT', 'Query result received', { responseLength: content.length });
+		const timingId = logger.timingStart("agentStream");
 
-    return content;
-  }
+		if (!this.agent) {
+			logger.error(
+				"AGENT",
+				"Agent not initialized",
+				new Error("Agent not initialized. Call initialize() first."),
+			);
+			throw new Error("Agent not initialized. Call initialize() first.");
+		}
 
-  /**
-   * Stream repository query with optional context
-   *
-   * @param repoPath - The repository path (deprecated, for compatibility)
-   * @param query - The query string
-   * @param context - Optional context object containing working directory and metadata
-   * @returns Async generator yielding string chunks
-   */
-  async *streamRepository(repoPath: string, query: string, context?: AgentContext): AsyncGenerator<string, void, unknown> {
-    logger.info('AGENT', 'Stream started', { queryLength: query.length, hasContext: !!context });
+		// Prepare messages for the agent - system prompt already set during initialization
+		const messages = [new HumanMessage(query)];
 
-    const timingId = logger.timingStart('agentStream');
+		logger.debug("AGENT", "Invoking agent stream with messages", {
+			messageCount: messages.length,
+			hasContext: !!context,
+		});
 
-    if (!this.agent) {
-      logger.error('AGENT', 'Agent not initialized', new Error("Agent not initialized. Call initialize() first."));
-      throw new Error("Agent not initialized. Call initialize() first.");
-    }
+		// Set up interruption handling
+		let isInterrupted = false;
+		const cleanup = () => {
+			isInterrupted = true;
+		};
 
-    // Prepare messages for the agent - system prompt already set during initialization
-    const messages = [
-      new HumanMessage(query)
-    ];
+		// Listen for interruption signals (Ctrl+C)
+		logger.debug("AGENT", "Setting up interruption handlers for streaming");
+		process.on("SIGINT", cleanup);
+		process.on("SIGTERM", cleanup);
 
-    logger.debug('AGENT', 'Invoking agent stream with messages', {
-      messageCount: messages.length,
-      hasContext: !!context
-    });
+		try {
+			// Stream the agent response with LLM token streaming
+			const stream = await this.agent.stream(
+				{
+					messages,
+				},
+				context ? { context } : {},
+			);
 
-    // Set up interruption handling
-    let isInterrupted = false;
-    const cleanup = () => {
-      isInterrupted = true;
-    };
+			logger.debug("AGENT", "Streaming response started");
 
-    // Listen for interruption signals (Ctrl+C)
-    logger.debug('AGENT', 'Setting up interruption handlers for streaming');
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
+			// Process stream chunks and yield content
+			let tokenCount = 0;
+			for await (const [token, metadata] of stream) {
+				// Check for interruption
+				if (isInterrupted) {
+					logger.warn("AGENT", "Streaming interrupted by user");
+					yield "\n\n[Streaming interrupted by user]";
+					break;
+				}
 
-    try {
-      // Stream the agent response with LLM token streaming
-      const stream = await this.agent.stream({
-        messages
-      }, context ? { context } : {});
+				// Handle both string tokens and structured content
+				if (typeof token === "string") {
+					tokenCount++;
+					yield token;
+				} else if (token && typeof token === "object") {
+					// Handle structured token content
+					if (token.content) {
+						if (typeof token.content === "string") {
+							tokenCount++;
+							yield token.content;
+						} else if (Array.isArray(token.content)) {
+							// Handle content blocks (common in LangChain)
+							for (const block of token.content) {
+								if (block.type === "text" && block.text) {
+									tokenCount++;
+									yield block.text;
+								}
+							}
+						}
+					}
+				}
+			}
 
-      logger.debug('AGENT', 'Streaming response started');
+			// Log token progress periodically
+			if (tokenCount > 0 && tokenCount % 100 === 0) {
+				logger.debug("AGENT", "Streaming progress", { tokenCount });
+			}
 
-      // Process stream chunks and yield content
-      let tokenCount = 0;
-      for await (const [token, metadata] of stream) {
-        // Check for interruption
-        if (isInterrupted) {
-          logger.warn('AGENT', 'Streaming interrupted by user');
-          yield '\n\n[Streaming interrupted by user]';
-          break;
-        }
+			// If we completed without interruption, yield completion indicator
+			if (!isInterrupted) {
+				logger.debug("AGENT", "Streaming completed", { tokenCount });
+				yield "\n[Streaming completed]";
+			}
+		} catch (error) {
+			// Enhanced error handling for different error types
+			let errorMessage = "Unknown streaming error";
 
-        // Handle both string tokens and structured content
-        if (typeof token === 'string') {
-          tokenCount++;
-          yield token;
-        } else if (token && typeof token === 'object') {
-          // Handle structured token content
-          if (token.content) {
-            if (typeof token.content === 'string') {
-              tokenCount++;
-              yield token.content;
-            } else if (Array.isArray(token.content)) {
-              // Handle content blocks (common in LangChain)
-              for (const block of token.content) {
-                if (block.type === 'text' && block.text) {
-                  tokenCount++;
-                  yield block.text;
-                }
-              }
-            }
-          }
-        }
-      }
+			if (error instanceof Error) {
+				// Handle common streaming errors with specific messages
+				if (error.message.includes("timeout")) {
+					errorMessage =
+						"Streaming timeout - request took too long to complete";
+				} else if (
+					error.message.includes("network") ||
+					error.message.includes("ENOTFOUND")
+				) {
+					errorMessage = "Network error - unable to connect to AI provider";
+				} else if (error.message.includes("rate limit")) {
+					errorMessage = "Rate limit exceeded - please try again later";
+				} else if (
+					error.message.includes("authentication") ||
+					error.message.includes("unauthorized")
+				) {
+					errorMessage = "Authentication error - check your API credentials";
+				} else {
+					errorMessage = `Streaming error: ${error.message}`;
+				}
+			}
 
-      // Log token progress periodically
-      if (tokenCount > 0 && tokenCount % 100 === 0) {
-        logger.debug('AGENT', 'Streaming progress', { tokenCount });
-      }
-
-      // If we completed without interruption, yield completion indicator
-      if (!isInterrupted) {
-        logger.debug('AGENT', 'Streaming completed', { tokenCount });
-        yield '\n[Streaming completed]';
-      }
-    } catch (error) {
-      // Enhanced error handling for different error types
-      let errorMessage = 'Unknown streaming error';
-
-      if (error instanceof Error) {
-        // Handle common streaming errors with specific messages
-        if (error.message.includes('timeout')) {
-          errorMessage = 'Streaming timeout - request took too long to complete';
-        } else if (error.message.includes('network') || error.message.includes('ENOTFOUND')) {
-          errorMessage = 'Network error - unable to connect to AI provider';
-        } else if (error.message.includes('rate limit')) {
-          errorMessage = 'Rate limit exceeded - please try again later';
-        } else if (error.message.includes('authentication') || error.message.includes('unauthorized')) {
-          errorMessage = 'Authentication error - check your API credentials';
-        } else {
-          errorMessage = `Streaming error: ${error.message}`;
-        }
-      }
-
-      logger.error('AGENT', 'Streaming error', error instanceof Error ? error : new Error(errorMessage));
-      yield `\n\n[Error: ${errorMessage}]`;
-      throw error;
-    } finally {
-      // Clean up event listeners
-      process.removeListener('SIGINT', cleanup);
-      process.removeListener('SIGTERM', cleanup);
-      logger.timingEnd(timingId, 'AGENT', 'Streaming completed');
-    }
-  }
+			logger.error(
+				"AGENT",
+				"Streaming error",
+				error instanceof Error ? error : new Error(errorMessage),
+			);
+			yield `\n\n[Error: ${errorMessage}]`;
+			throw error;
+		} finally {
+			// Clean up event listeners
+			process.removeListener("SIGINT", cleanup);
+			process.removeListener("SIGTERM", cleanup);
+			logger.timingEnd(timingId, "AGENT", "Streaming completed");
+		}
+	}
 }
