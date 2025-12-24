@@ -10,12 +10,14 @@ import { fileListTool } from '../src/tools/file-listing.tool.js';
 
 describe('Modern File Listing Tool', () => {
   let testDir: string;
+  let testContext: { workingDir: string; group: string; technology: string };
 
   beforeEach(() => {
     testDir = path.join(process.cwd(), `test-modern-filelist-${Date.now()}`);
     if (!fs.existsSync(testDir)) {
       fs.mkdirSync(testDir, { recursive: true });
     }
+    testContext = { workingDir: testDir, group: 'test', technology: 'test' };
   });
 
   afterEach(() => {
@@ -30,27 +32,27 @@ describe('Modern File Listing Tool', () => {
     const testFile2 = path.join(testDir, 'test2.txt');
     fs.writeFileSync(testFile1, 'Test content 1');
     fs.writeFileSync(testFile2, 'Test content 2');
-    
+
     // Test modern tool with structured parameters
-    const result = await fileListTool.invoke({({, testContext)
+    const result = await fileListTool.invoke({
       directoryPath: testDir,
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('test1.txt');
     expect(result).toContain('test2.txt');
     expect(result).toContain('Contents of directory');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
   });
 
   it('should handle invalid directory paths', async () => {
-    const result = await fileListTool.invoke({({, testContext)
+    const result = await fileListTool.invoke({
       directoryPath: '../invalid_dir',
       includeHidden: false
-    });
+    }, { context: testContext });
     expect(result).toContain('attempts to escape working directory sandbox');
   });
 
@@ -59,33 +61,33 @@ describe('Modern File Listing Tool', () => {
     const testFile2 = path.join(testDir, '.hidden.txt');
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Hidden content');
-    
-    const includeHiddenResult = await fileListTool.invoke({({, testContext)
+
+    const includeHiddenResult = await fileListTool.invoke({
       directoryPath: testDir,
       includeHidden: true
-    });
-    
-    const excludeHiddenResult = await fileListTool.invoke({({, testContext)
+    }, { context: testContext });
+
+    const excludeHiddenResult = await fileListTool.invoke({
       directoryPath: testDir,
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(includeHiddenResult).toContain('test.txt');
     expect(includeHiddenResult).toContain('.hidden.txt');
     expect(excludeHiddenResult).toContain('test.txt');
     expect(excludeHiddenResult).not.toContain('.hidden.txt');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
   });
 
   it('should handle empty directories', async () => {
-    const result = await fileListTool.invoke({({, testContext)
+    const result = await fileListTool.invoke({
       directoryPath: testDir,
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('Contents of directory');
     expect(result).toContain('Total entries: 0');
   });
@@ -93,20 +95,20 @@ describe('Modern File Listing Tool', () => {
   it('should handle subdirectories', async () => {
     const subDir = path.join(testDir, 'subdir');
     fs.mkdirSync(subDir, { recursive: true });
-    
+
     const testFile1 = path.join(testDir, 'test.txt');
     const testFile2 = path.join(subDir, 'nested.txt');
     fs.writeFileSync(testFile1, 'Test content');
     fs.writeFileSync(testFile2, 'Nested content');
-    
-    const result = await fileListTool.invoke({({, testContext)
+
+    const result = await fileListTool.invoke({
       directoryPath: testDir,
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('test.txt');
     expect(result).toContain('subdir');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
@@ -114,11 +116,11 @@ describe('Modern File Listing Tool', () => {
   });
 
   it('should handle permission errors gracefully', async () => {
-    const result = await fileListTool.invoke({({, testContext)
+    const result = await fileListTool.invoke({
       directoryPath: '/root/nonexistent',
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('Error');
     expect(result).toContain('directory');
   });
@@ -130,16 +132,16 @@ describe('Modern File Listing Tool', () => {
     fs.writeFileSync(testFile1, 'Special chars content');
     fs.writeFileSync(testFile2, 'Underscores content');
     fs.writeFileSync(testFile3, 'Dashes content');
-    
-    const result = await fileListTool.invoke({({, testContext)
+
+    const result = await fileListTool.invoke({
       directoryPath: testDir,
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('file-with-special-chars.txt');
     expect(result).toContain('file_with_underscores.js');
     expect(result).toContain('file-with-dashes.md');
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
@@ -149,15 +151,15 @@ describe('Modern File Listing Tool', () => {
   it('should handle file information display', async () => {
     const testFile = path.join(testDir, 'test.txt');
     fs.writeFileSync(testFile, 'Test content');
-    
-    const result = await fileListTool.invoke({({, testContext)
+
+    const result = await fileListTool.invoke({
       directoryPath: testDir,
       includeHidden: false
-    });
-    
+    }, { context: testContext });
+
     expect(result).toContain('test.txt');
     expect(result).toContain('Contents of directory');
-    
+
     // Clean up
     fs.unlinkSync(testFile);
   });
@@ -167,25 +169,25 @@ describe('Modern File Listing Tool', () => {
     const testFile2 = path.join(testDir, 'concurrent2.txt');
     fs.writeFileSync(testFile1, 'Content 1');
     fs.writeFileSync(testFile2, 'Content 2');
-    
+
     // Run multiple listing operations concurrently
     const [result1, result2] = await Promise.all([
-      fileListTool.invoke({({, testContext)
+      fileListTool.invoke({
         directoryPath: testDir,
         includeHidden: false
-      }),
-      fileListTool.invoke({({, testContext)
+      }, { context: testContext }),
+      fileListTool.invoke({
         directoryPath: testDir,
         includeHidden: true
-      })
+      }, { context: testContext })
     ]);
-    
+
     expect(result1).toContain('concurrent1.txt');
     expect(result1).toContain('concurrent2.txt');
     expect(result2).toContain('concurrent1.txt');
     expect(result2).toContain('concurrent2.txt');
     expect(result2).toEqual(result1); // Same parameters should produce same results
-    
+
     // Clean up
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
