@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { runCLICommand, createCLITestScenarios, createMockRepoStructure, createStandardMockRepos } from './helpers/cli-test-helpers.js';
+import { TestCLIHelper, createCLITestScenarios, createMockRepoStructure, createStandardMockRepos } from './helpers/cli-test-helpers.js';
 import { createReadmeAlignedConfig } from './helpers/test-config.js';
 import fs from 'fs/promises';
 import fsSync from 'fs';
@@ -15,6 +15,7 @@ describe('CLI Integration', () => {
   let mockConfig: any;
 
   beforeEach(async () => {
+    const helper = new TestCLIHelper(testDir);
     testDir = fsSync.mkdtempSync('cli-integration-test-');
     const reposDir = path.join(testDir, 'repos');
     mockConfig = createReadmeAlignedConfig({
@@ -51,20 +52,60 @@ describe('CLI Integration', () => {
   });
 
   describe('Basic CLI Commands', () => {
+  let mockConfig: any;
+
+  beforeEach(async () => {
+    testDir = fsSync.mkdtempSync('cli-integration-test-');
+    const reposDir = path.join(testDir, 'repos');
+    helper = new TestCLIHelper(testDir);
+    mockConfig = createReadmeAlignedConfig({
+      repos_path: reposDir
+    });
+
+    // Create mock repositories
+    const mockRepos = createStandardMockRepos(reposDir);
+    for (const repo of mockRepos) {
+      createMockRepoStructure(reposDir, repo);
+    }
+
+    // Override repo URLs to use local mock repositories (absolute paths)
+    mockConfig.technologies.default['react-mock'] = {
+      repo: path.join(reposDir, 'react-mock'),
+      branch: 'main',
+      description: 'JavaScript library for building user interfaces'
+    };
+    delete mockConfig.technologies.default.react;
+
+    mockConfig.technologies.langchain = {
+      'langchain-mock': {
+        repo: path.join(reposDir, 'langchain-mock'),
+        description: 'LangChain is a framework for building LLM-powered applications'
+      }
+    };
+  });
+
+  afterEach(async () => {
+    // Clean up test directory
+    if (fsSync.existsSync(testDir)) {
+      fsSync.rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  describe('Basic CLI Commands', () => {
     it('should show help when run without arguments', async () => {
-      const result = await runCLICommand(['--help']);
+      const result = await helper.runCommand(['--help']);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Usage:');
       expect(result.stdout).toContain('librarian');
     });
 
     it('should show version', async () => {
-      const result = await runCLICommand(['--version']);
+      const result = await helper.runCommand(['--version']);
       expect(result.exitCode).toBe(0);
     });
 
     it('should show explore command help', async () => {
-      const result = await runCLICommand(['explore', '--help']);
+      const result = await helper.runCommand(['explore', '--help']);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('explore');
       expect(result.stdout).toContain('--tech');
@@ -72,7 +113,28 @@ describe('CLI Integration', () => {
     });
 
     it('should show list command help', async () => {
-      const result = await runCLICommand(['list', '--help']);
+      const result = await helper.runCommand(['list', '--help']);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('list');
+      expect(result.stdout).toContain('--group');
+    });
+  });
+
+    it('should show version', async () => {
+      const result = await helper.runCommand(['--version']);
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should show explore command help', async () => {
+      const result = await helper.runCommand(['explore', '--help']);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('explore');
+      expect(result.stdout).toContain('--tech');
+      expect(result.stdout).toContain('--group');
+    });
+
+    it('should show list command help', async () => {
+      const result = await helper.runCommand(['list', '--help']);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('list');
       expect(result.stdout).toContain('--group');
@@ -81,7 +143,7 @@ describe('CLI Integration', () => {
 
   describe('List Command', () => {
     it('should list all technologies', async () => {
-      const result = await runCLICommand(['list'], mockConfig);
+      const result = await helper.runCommand(['list'], mockConfig);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Available Technologies');
       expect(result.stdout).toContain('[default]');
@@ -89,7 +151,7 @@ describe('CLI Integration', () => {
     });
 
     it('should list technologies in specific group', async () => {
-      const result = await runCLICommand(['list', '--group', 'default'], mockConfig);
+      const result = await helper.runCommand(['list', '--group', 'default'], mockConfig);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('react');
       expect(result.stdout).toContain('nodejs');
@@ -97,13 +159,13 @@ describe('CLI Integration', () => {
     });
 
     it('should handle non-existent group gracefully', async () => {
-      const result = await runCLICommand(['list', '--group', 'nonexistent'], mockConfig);
+      const result = await helper.runCommand(['list', '--group', 'nonexistent'], mockConfig);
       // Should either exit with error or show empty list
       expect([0, 1]).toContain(result.exitCode);
     });
 
     it('should format output with descriptions', async () => {
-      const result = await runCLICommand(['list'], mockConfig);
+      const result = await helper.runCommand(['list'], mockConfig);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('JavaScript library');
       expect(result.stdout).toContain('JavaScript runtime');
@@ -113,7 +175,7 @@ describe('CLI Integration', () => {
 
   describe('Explore Command', () => {
     it('should handle explore with specific technology', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'How does React handle state management?',
         '--tech',
@@ -132,7 +194,7 @@ describe('CLI Integration', () => {
     });
 
     it('should handle explore with group', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'How does LangChain handle memory?',
         '--group',
@@ -144,13 +206,13 @@ describe('CLI Integration', () => {
     });
 
     it('should validate required query argument', async () => {
-      const result = await runCLICommand(['explore'], mockConfig);
+      const result = await helper.runCommand(['explore'], mockConfig);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('error: missing required argument');
     });
 
     it('should validate required tech or group flag', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'test query'
       ], mockConfig);
@@ -162,7 +224,7 @@ describe('CLI Integration', () => {
     });
 
     it('should prevent using both tech and group flags', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'test query',
         '--tech', 'react',
@@ -174,13 +236,13 @@ describe('CLI Integration', () => {
     });
 
     it('should validate required query argument', async () => {
-      const result = await runCLICommand(['explore'], mockConfig);
+      const result = await helper.runCommand(['explore'], mockConfig);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('error: missing required argument');
     });
 
     it('should validate required tech or group flag', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore', 
         'test query'
       ], mockConfig);
@@ -192,7 +254,7 @@ describe('CLI Integration', () => {
     });
 
     it('should prevent using both tech and group flags', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'test query',
         '--tech', 'react',
@@ -206,12 +268,12 @@ describe('CLI Integration', () => {
 
   describe('Configuration Integration', () => {
     it('should use configuration from expected location', async () => {
-      const result = await runCLICommand(['list'], mockConfig);
+      const result = await helper.runCommand(['list'], mockConfig);
       expect(result.exitCode).toBe(0);
     });
 
     it('should handle missing configuration file gracefully', async () => {
-      const result = await runCLICommand(['list']);
+      const result = await helper.runCommand(['list']);
       // Should handle missing config gracefully
       expect([0, 1]).toContain(result.exitCode);
       if (result.exitCode === 1) {
@@ -227,7 +289,7 @@ describe('CLI Integration', () => {
           }
         }
       });
-      const result = await runCLICommand(['list'], invalidConfig);
+      const result = await helper.runCommand(['list'], invalidConfig);
       // Might succeed or fail depending on validation
       expect([0, 1]).toContain(result.exitCode);
     });
@@ -235,7 +297,7 @@ describe('CLI Integration', () => {
 
   describe('Error Handling', () => {
     it('should handle invalid technology names', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'test query',
         '--tech', 'nonexistent-tech'
@@ -246,7 +308,7 @@ describe('CLI Integration', () => {
     });
 
     it('should handle invalid group names', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'test query',
         '--group', 'nonexistent-group'
@@ -268,7 +330,7 @@ describe('CLI Integration', () => {
         }
       });
 
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore', 
         'test query',
         '--tech', 'bad-repo'
@@ -280,7 +342,7 @@ describe('CLI Integration', () => {
 
   describe('Output Formatting', () => {
     it('should format list output correctly', async () => {
-      const result = await runCLICommand(['list'], mockConfig);
+      const result = await helper.runCommand(['list'], mockConfig);
       expect(result.exitCode).toBe(0);
       
       // Should show group names
@@ -291,7 +353,7 @@ describe('CLI Integration', () => {
     });
 
     it('should preserve formatting in error messages', async () => {
-      const result = await runCLICommand(['invalid-command'], mockConfig);
+      const result = await helper.runCommand(['invalid-command'], mockConfig);
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('error: unknown command');
     });
@@ -299,7 +361,7 @@ describe('CLI Integration', () => {
     it('should handle long queries without line breaking issues', async () => {
       const longQuery = 'This is a very long query that contains multiple words and should be handled properly by the CLI without causing line breaking or formatting issues in the output.';
       
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         longQuery,
         '--tech', 'react-mock'
@@ -316,7 +378,7 @@ describe('CLI Integration', () => {
         repos_path: path.join(testDir, 'custom-repos')
       });
 
-      const result = await runCLICommand(['list'], configWithPath);
+      const result = await helper.runCommand(['list'], configWithPath);
       expect(result.exitCode).toBe(0);
     });
 
@@ -325,7 +387,7 @@ describe('CLI Integration', () => {
         repos_path: '~/librarian-test-repos'
       });
 
-      const result = await runCLICommand(['list'], configWithTilde);
+      const result = await helper.runCommand(['list'], configWithTilde);
       expect(result.exitCode).toBe(0);
     });
   });
@@ -352,7 +414,7 @@ describe('CLI Integration', () => {
   describe('Integration with Modern Components', () => {
     it('should integrate with ReactAgent correctly', async () => {
       // This tests the actual integration path
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'How do React hooks work?',
         '--tech', 'react-mock'
@@ -368,7 +430,7 @@ describe('CLI Integration', () => {
 
     it('should handle streaming output', async () => {
       // Test that the CLI properly handles streaming from ReactAgent
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'Explain component lifecycle',
         '--tech', 'react-mock'
@@ -380,7 +442,7 @@ describe('CLI Integration', () => {
 
   describe('Security Validation', () => {
     it('should prevent path traversal attacks', async () => {
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'test query',
         '--tech', '../../../etc/passwd'
@@ -403,7 +465,7 @@ describe('CLI Integration', () => {
         }
       });
 
-      const result = await runCLICommand([
+      const result = await helper.runCommand([
         'explore',
         'test query',
         '--tech', 'malicious'
