@@ -337,7 +337,12 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				{
 					messages,
 				},
-				context ? { context } : {},
+				context ? {
+					context,
+					streamMode: "messages",
+				} : {
+					streamMode: "messages",
+				},
 			);
 
 			logger.debug("AGENT", "Streaming response started");
@@ -352,6 +357,12 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 					break;
 				}
 
+			// Skip tool nodes and tool calls - only stream final model response text
+			if (metadata?.langgraph_node === "tools") {
+				// Skip tool execution results
+				continue;
+			}
+
 				// Handle both string tokens and structured content
 				if (typeof token === "string") {
 					tokenCount++;
@@ -364,6 +375,8 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 							yield token.content;
 						} else if (Array.isArray(token.content)) {
 							// Handle content blocks (common in LangChain)
+							// Skip tool call blocks (only stream final text)
+
 							for (const block of token.content) {
 								if (block.type === "text" && block.text) {
 									tokenCount++;
@@ -380,11 +393,8 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				logger.debug("AGENT", "Streaming progress", { tokenCount });
 			}
 
-			// If we completed without interruption, yield completion indicator
-			if (!isInterrupted) {
-				logger.debug("AGENT", "Streaming completed", { tokenCount });
-				yield "\n[Streaming completed]";
-			}
+			// Clean end of stream
+			yield "\n";
 		} catch (error) {
 			// Enhanced error handling for different error types
 			let errorMessage = "Unknown streaming error";
