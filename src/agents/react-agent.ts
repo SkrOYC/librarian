@@ -265,7 +265,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			{
 				messages,
 			},
-			context ? { context } : {},
+			context ? { context, recursionLimit: 100 } : { recursionLimit: 100 },
 		);
 
 		// Extract the last message content from the state
@@ -340,8 +340,10 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				context ? {
 					context,
 					streamMode: "messages",
+					recursionLimit: 100,
 				} : {
 					streamMode: "messages",
+					recursionLimit: 100,
 				},
 			);
 

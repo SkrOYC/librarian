@@ -13,3 +13,6 @@ pnpm-lock.yaml
 # Test artifacts
 test_*.txt
 test-*.txt
+
+# Working directory
+result
