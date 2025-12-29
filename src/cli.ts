@@ -24,7 +24,7 @@ export function createProgram() {
     .option('-t, --tech <technology>', 'Specific technology to explore')
     .option('-g, --group <group>', 'Technology group to explore')
     .option('-c, --config <path>', 'Path to configuration file')
-    .option('-s, --stream', 'Enable streaming output for real-time responses')
+    .option('--no-stream', 'Disable streaming output (streaming is enabled by default)')
     .action(async (query, options) => {
       try {
         // Set debug mode from global options
@@ -36,7 +36,7 @@ export function createProgram() {
           queryLength: query.length,
           tech: options.tech || null,
           group: options.group || null,
-          stream: options.stream || false,
+          noStream: options.noStream || false,
           debug: programOptions.debug || false
         });
 
@@ -57,7 +57,7 @@ export function createProgram() {
             throw new Error(`Technology ${options.tech} not found in configuration`);
           }
 
-          if (options.stream) {
+          if (!options.noStream) {
             // Use streaming for real-time output
             try {
               const stream = librarian.streamRepository(techDetails.name, query);
@@ -78,7 +78,7 @@ export function createProgram() {
           }
         } else if (options.group) {
           // Query the entire group using a single agent
-          if (options.stream) {
+          if (!options.noStream) {
             try {
               const stream = librarian.streamGroup(options.group, query);
 
