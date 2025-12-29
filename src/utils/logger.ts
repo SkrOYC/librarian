@@ -1,6 +1,6 @@
 /**
  * Logger utility for librarian CLI
- * Writes all logs to timestamped files in ~/.config/librarian/
+ * Writes all logs to timestamped files in ~/.config/librarian/logs/
  * Silent failure on write errors
  * Metadata-only logging (no sensitive data)
  */
@@ -43,9 +43,9 @@ class Logger {
   }
 
   /**
-   * Initialize the log file with timestamp
-   * Format: ~/.config/librarian/YYYY-MM-DD_HH-MM-SS_mmm-librarian.log
-   */
+    * Initialize the log file with timestamp
+    * Format: ~/.config/librarian/logs/YYYY-MM-DD_HH-MM-SS_mmm-librarian.log
+    */
   private initializeLogFile(): void {
     try {
       // Create timestamp for filename
@@ -68,7 +68,7 @@ class Logger {
       const timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}_${ms}`;
 
       // Log directory
-      const logDir = path.join(os.homedir(), '.config', 'librarian');
+      const logDir = path.join(os.homedir(), '.config', 'librarian', 'logs');
 
       // Ensure directory exists
       if (!fs.existsSync(logDir)) {
