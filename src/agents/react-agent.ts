@@ -206,6 +206,13 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				core: ["list_directory", "read_file", "glob", "search_file_content"],
 				autoAccept: true,
 			},
+			mcpServers: {}, // Ensure no host MCP servers are loaded
+			mcp: {
+				excluded: ["*"], // Extra safety to exclude all servers
+			},
+			experimental: {
+				enableAgents: false, // Disable experimental subagents
+			},
 			output: {
 				format: "json",
 			},
@@ -226,7 +233,8 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		const env = {
 			...process.env,
 			GEMINI_SYSTEM_MD: systemPromptPath,
-			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
+			GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath, // Override defaults
+			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath, // Override system settings (highest precedence)
 			GEMINI_MODEL: model,
 		};
 
