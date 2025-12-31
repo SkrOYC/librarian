@@ -241,6 +241,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			cwd: workingDir,
 			env,
 			stdout: "pipe",
+			stderr: "pipe", // Suppress internal CLI status messages
 		});
 
 		let buffer = "";
@@ -319,6 +320,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		const proc = spawn("claude", args, {
 			cwd: workingDir,
 			env,
+			stdio: ["pipe", "pipe", "ignore"], // Suppress internal CLI status messages/noise on stderr
 		});
 
 		let buffer = "";
