@@ -20,13 +20,13 @@ const ConfigSchema = z.object({
   technologies: z.record(z.string(), GroupSchema).optional(),
   repositories: z.record(z.string(), z.string()).optional(), // For backward compatibility
   aiProvider: z.object({
-    type: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'claude-code']),
-    apiKey: z.string().optional(), // Optional - will be loaded from .env or not needed for claude-code
+    type: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'claude-code', 'gemini-cli']),
+    apiKey: z.string().optional(), // Optional - will be loaded from .env or not needed for claude-code/gemini-cli
     model: z.string().optional(),
     baseURL: z.string().optional(),
   }).optional(),
   // Support README style keys
-  llm_provider: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'claude-code']).optional(),
+  llm_provider: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'claude-code', 'gemini-cli']).optional(),
   llm_model: z.string().optional(),
   base_url: z.string().optional(),
   workingDir: z.string().default('./librarian_work'),
@@ -93,7 +93,7 @@ function validateConfig(config: LibrarianConfig, envPath: string): void {
   const errors: string[] = [];
 
   // Validate API key is present and non-empty
-  if (config.aiProvider.type !== 'claude-code' && (!config.aiProvider.apiKey || config.aiProvider.apiKey.trim() === '')) {
+  if (config.aiProvider.type !== 'claude-code' && config.aiProvider.type !== 'gemini-cli' && (!config.aiProvider.apiKey || config.aiProvider.apiKey.trim() === '')) {
     const errorMsg = `API key is missing or empty. Please set LIBRARIAN_API_KEY in ${envPath}`;
     errors.push(errorMsg);
     logger.debug('CONFIG', 'Validation failed: API key missing', { envPath: envPath.replace(os.homedir(), '~') });

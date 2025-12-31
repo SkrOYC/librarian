@@ -9,6 +9,8 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
 import { logger } from "../utils/logger.js";
 import os from "os";
+import { mkdir, rm } from "node:fs/promises";
+import path from "path";
 import { AgentContext } from "./context-schema.js";
 import { spawn } from "child_process"; // Using child_process for better streaming control in Node/Bun mix
 import { Readable } from "stream";
@@ -19,7 +21,7 @@ import { Readable } from "stream";
 export interface ReactAgentConfig {
 	/** AI provider configuration including type, API key, and optional model/base URL */
 	aiProvider: {
-		type: "openai" | "anthropic" | "google" | "openai-compatible" | "claude-code";
+		type: "openai" | "anthropic" | "google" | "openai-compatible" | "claude-code" | "gemini-cli";
 		apiKey: string;
 		model?: string;
 		baseURL?: string;
@@ -47,7 +49,7 @@ export class ReactAgent {
 		this.config = config;
 		this.contextSchema = config.contextSchema;
 		
-		if (config.aiProvider.type !== "claude-code") {
+		if (config.aiProvider.type !== "claude-code" && config.aiProvider.type !== "gemini-cli") {
 			this.aiModel = this.createAIModel(config.aiProvider);
 		}
 
@@ -70,6 +72,7 @@ export class ReactAgent {
 	createDynamicSystemPrompt(): string {
 		const { workingDir, technology, aiProvider } = this.config;
 		const isClaudeCli = aiProvider.type === "claude-code";
+		const isGeminiCli = aiProvider.type === "gemini-cli";
 
 		let prompt = `
 	You are a Patient Technical Mentor and Coding Instructor.
@@ -80,17 +83,22 @@ export class ReactAgent {
 	### 1. LOGICAL DEPENDENCIES & CONSTRAINTS
 	Analyze the request against the following factors. Resolve conflicts in this exact order of importance:
 	1.1) MANDATORY RULES (Immutable):
-		- READ-ONLY SCOPE: You cannot modify, delete, or create files. You may *only* use read-only tools to explore (use absolute path):
-			${isClaudeCli ? `
-			- Read: Read the contents of a specific file
-			- Glob: Find files matching specific patterns
-			- Grep: Search for content patterns across multiple files
-			` : `
-			- file_list: List directory contents with metadata
-			- file_read: Read the contents of a specific file
-			- grep_content: Search for content patterns across multiple files
-			- file_find: Find files matching specific patterns
-			`}
+	    - READ-ONLY SCOPE: You cannot modify, delete, or create files. You may *only* use read-only tools to explore (use absolute path):
+	        ${isClaudeCli ? `
+	        - Read: Read the contents of a specific file
+	        - Glob: Find files matching specific patterns
+	        - Grep: Search for content patterns across multiple files
+	        ` : isGeminiCli ? `
+	        - read_file: Read the contents of a specific file
+	        - glob: Find files matching specific patterns
+	        - search_file_content: Search for content patterns across multiple files
+	        - list_directory: List directory contents
+	        ` : `
+	        - file_list: List directory contents with metadata
+	        - file_read: Read the contents of a specific file
+	        - grep_content: Search for content patterns across multiple files
+	        - file_find: Find files matching specific patterns
+	        `}
 		- GROUNDED TEACHING: Every explanation must be exclusively linked to specific files or patterns found in the working directory.
 		- NO GUESSING: If you are unsure of how a local module works, you MUST read the file before explaining it.
 	1.2) ORDER OF OPERATIONS:
@@ -173,6 +181,107 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		});
 
 		return prompt;
+	}
+
+	private async *streamGeminiCli(
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		const workingDir = context?.workingDir || this.config.workingDir;
+		const systemPrompt = this.createDynamicSystemPrompt();
+
+		// Create a temporary directory for Gemini CLI config
+		const tempDir = path.join(os.tmpdir(), `librarian-gemini-${Date.now()}`);
+		await mkdir(tempDir, { recursive: true });
+
+		const systemPromptPath = path.join(tempDir, "system.md");
+		const settingsPath = path.join(tempDir, "settings.json");
+
+		// Write system prompt to file using Bun native API
+		await Bun.write(systemPromptPath, systemPrompt);
+
+		// Write restrictive settings to file using Bun native API
+		const settings = {
+			tools: {
+				core: ["list_directory", "read_file", "glob", "search_file_content"],
+				autoAccept: true,
+			},
+			output: {
+				format: "json",
+			},
+		};
+		await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
+
+		const model = this.config.aiProvider.model || "gemini-2.5-flash";
+
+		const args = [
+			"gemini",
+			"-p",
+			query,
+			"--output-format",
+			"stream-json",
+			"--yolo",
+		];
+
+		const env = {
+			...process.env,
+			GEMINI_SYSTEM_MD: systemPromptPath,
+			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
+			GEMINI_MODEL: model,
+		};
+
+		logger.debug("AGENT", "Spawning Gemini CLI", {
+			args,
+			workingDir,
+			model,
+		});
+
+		// Using Bun.spawn for native Bun performance and streaming
+		const proc = Bun.spawn(args, {
+			cwd: workingDir,
+			env,
+			stdout: "pipe",
+		});
+
+		let buffer = "";
+
+		const reader = proc.stdout.getReader();
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += new TextDecoder().decode(value);
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+
+				for (const line of lines) {
+					if (!line.trim()) continue;
+					try {
+						const data = JSON.parse(line);
+						// Filter for message events from the assistant
+						if (data.type === "message" && data.role === "assistant" && data.content) {
+							yield data.content;
+						}
+					} catch (e) {
+						// Silent fail for non-JSON or partial lines
+					}
+				}
+			}
+
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				throw new Error(`Gemini CLI exited with code ${exitCode}`);
+			}
+		} finally {
+			// Cleanup temporary files
+			try {
+				await rm(tempDir, { recursive: true, force: true });
+			} catch (err) {
+				logger.warn("AGENT", "Failed to cleanup Gemini temp files", { error: err });
+			}
+		}
 	}
 
 	private async *streamClaudeCli(
@@ -308,8 +417,8 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 	}
 
 	async initialize(): Promise<void> {
-		if (this.config.aiProvider.type === "claude-code") {
-			logger.info("AGENT", "Claude CLI mode initialized (skipping LangChain setup)");
+		if (this.config.aiProvider.type === "claude-code" || this.config.aiProvider.type === "gemini-cli") {
+			logger.info("AGENT", `${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`);
 			return;
 		}
 
@@ -351,6 +460,14 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		if (this.config.aiProvider.type === "claude-code") {
 			let fullContent = "";
 			for await (const chunk of this.streamClaudeCli(query, context)) {
+				fullContent += chunk;
+			}
+			return fullContent;
+		}
+
+		if (this.config.aiProvider.type === "gemini-cli") {
+			let fullContent = "";
+			for await (const chunk of this.streamGeminiCli(query, context)) {
 				fullContent += chunk;
 			}
 			return fullContent;
@@ -418,6 +535,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 
 		if (this.config.aiProvider.type === "claude-code") {
 			yield* this.streamClaudeCli(query, context);
+			return;
+		}
+
+		if (this.config.aiProvider.type === "gemini-cli") {
+			yield* this.streamGeminiCli(query, context);
 			return;
 		}
 

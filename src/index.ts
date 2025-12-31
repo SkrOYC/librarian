@@ -28,7 +28,7 @@ export interface LibrarianConfig {
     };
   };
   aiProvider: {
-    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'claude-code';
+    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'claude-code' | 'gemini-cli';
     apiKey: string;
     model?: string;
     baseURL?: string;
@@ -101,6 +101,19 @@ export class Librarian {
       } catch (error) {
         logger.error('LIBRARIAN', 'Claude CLI not found in PATH', undefined, { type: 'claude-code' });
         console.error('Error: "claude" CLI not found. Please install it to use the "claude-code" provider.');
+        process.exit(1);
+      }
+    }
+
+    // Check if Gemini CLI is available if using gemini-cli provider
+    if (this.config.aiProvider.type === 'gemini-cli') {
+      try {
+        const { execSync } = await import('child_process');
+        execSync('gemini --version', { stdio: 'ignore' });
+        logger.info('LIBRARIAN', 'Gemini CLI verified');
+      } catch (error) {
+        logger.error('LIBRARIAN', 'Gemini CLI not found in PATH', undefined, { type: 'gemini-cli' });
+        console.error('Error: "gemini" CLI not found. Please install it to use the "gemini-cli" provider.');
         process.exit(1);
       }
     }
