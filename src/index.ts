@@ -28,7 +28,7 @@ export interface LibrarianConfig {
     };
   };
   aiProvider: {
-    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible';
+    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'claude-code';
     apiKey: string;
     model?: string;
     baseURL?: string;
@@ -39,11 +39,13 @@ export interface LibrarianConfig {
 
 export class Librarian {
   private config: LibrarianConfig;
-  private aiModel: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
+  private aiModel?: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
 
   constructor(config: LibrarianConfig) {
     this.config = config;
-    this.aiModel = this.createAIModel();
+    if (config.aiProvider.type !== 'claude-code') {
+      this.aiModel = this.createAIModel();
+    }
 
     logger.info('LIBRARIAN', 'Initializing librarian', {
       aiProviderType: config.aiProvider.type,
@@ -90,6 +92,19 @@ export class Librarian {
   }
 
   async initialize(): Promise<void> {
+    // Check if Claude CLI is available if using claude-code provider
+    if (this.config.aiProvider.type === 'claude-code') {
+      try {
+        const { execSync } = await import('child_process');
+        execSync('claude --version', { stdio: 'ignore' });
+        logger.info('LIBRARIAN', 'Claude CLI verified');
+      } catch (error) {
+        logger.error('LIBRARIAN', 'Claude CLI not found in PATH', undefined, { type: 'claude-code' });
+        console.error('Error: "claude" CLI not found. Please install it to use the "claude-code" provider.');
+        process.exit(1);
+      }
+    }
+
     // Create working directory if it doesn't exist
     const workDir = this.config.repos_path || this.config.workingDir;
     if (!fs.existsSync(workDir)) {

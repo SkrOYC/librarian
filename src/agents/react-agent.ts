@@ -10,6 +10,8 @@ import { HumanMessage } from "@langchain/core/messages";
 import { logger } from "../utils/logger.js";
 import os from "os";
 import { AgentContext } from "./context-schema.js";
+import { spawn } from "child_process"; // Using child_process for better streaming control in Node/Bun mix
+import { Readable } from "stream";
 
 /**
  * Configuration interface for ReactAgent
@@ -17,7 +19,7 @@ import { AgentContext } from "./context-schema.js";
 export interface ReactAgentConfig {
 	/** AI provider configuration including type, API key, and optional model/base URL */
 	aiProvider: {
-		type: "openai" | "anthropic" | "google" | "openai-compatible";
+		type: "openai" | "anthropic" | "google" | "openai-compatible" | "claude-code";
 		apiKey: string;
 		model?: string;
 		baseURL?: string;
@@ -35,7 +37,7 @@ export interface ReactAgentConfig {
 }
 
 export class ReactAgent {
-	private aiModel: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
+	private aiModel?: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
 	private tools: any[];
 	private agent: any;
 	private config: ReactAgentConfig;
@@ -44,7 +46,10 @@ export class ReactAgent {
 	constructor(config: ReactAgentConfig) {
 		this.config = config;
 		this.contextSchema = config.contextSchema;
-		this.aiModel = this.createAIModel(config.aiProvider);
+		
+		if (config.aiProvider.type !== "claude-code") {
+			this.aiModel = this.createAIModel(config.aiProvider);
+		}
 
 		// Initialize tools - modernized tool pattern
 		this.tools = [fileListTool, fileReadTool, grepContentTool, fileFindTool];
@@ -63,22 +68,29 @@ export class ReactAgent {
 	 * @returns A context-aware system prompt string
 	 */
 	createDynamicSystemPrompt(): string {
-		const { workingDir, technology } = this.config;
+		const { workingDir, technology, aiProvider } = this.config;
+		const isClaudeCli = aiProvider.type === "claude-code";
 
 		let prompt = `
 	You are a Patient Technical Mentor and Coding Instructor.
 	You are defined by these traits: methodical, insightful, and precision-oriented.
-
+	
 	Before taking any action (tool calls or user responses), you must proactively, methodically, and independently plan using the following logic structure. Your goal is not just to provide solutions, but to provide deep insights that help the user understand the "why" behind the code.
-
-### 1. LOGICAL DEPENDENCIES & CONSTRAINTS
+	
+	### 1. LOGICAL DEPENDENCIES & CONSTRAINTS
 	Analyze the request against the following factors. Resolve conflicts in this exact order of importance:
 	1.1) MANDATORY RULES (Immutable):
 		- READ-ONLY SCOPE: You cannot modify, delete, or create files. You may *only* use read-only tools to explore (use absolute path):
+			${isClaudeCli ? `
+			- Read: Read the contents of a specific file
+			- Glob: Find files matching specific patterns
+			- Grep: Search for content patterns across multiple files
+			` : `
 			- file_list: List directory contents with metadata
 			- file_read: Read the contents of a specific file
 			- grep_content: Search for content patterns across multiple files
 			- file_find: Find files matching specific patterns
+			`}
 		- GROUNDED TEACHING: Every explanation must be exclusively linked to specific files or patterns found in the working directory.
 		- NO GUESSING: If you are unsure of how a local module works, you MUST read the file before explaining it.
 	1.2) ORDER OF OPERATIONS:
@@ -86,44 +98,44 @@ export class ReactAgent {
 		- Identify dependencies between files before explaining a single function's logic.
 	1.3) USER PREFERENCES:
 		- Prioritize providing direct insights and conceptual breakdowns over asking the user questions.
-
-### 2. RISK & AMBIGUITY ASSESSMENT
+	
+	### 2. RISK & AMBIGUITY ASSESSMENT
 	2.1) ACTION BIAS:
 		- For *Exploratory Tasks*: If you need to see a file to provide a better answer, PREFER calling the read tool **immediately** without asking the user.
 		- For *Structural Assumptions*: If the user asks about a component you haven't seen yet, STOP and use your tools to find it before responding.
 	2.2) CONSEQUENCE CHECK:
 		- Ask: "Does my explanation rely on a library or local module I haven't actually verified in the current environment?"
-
-### 3. ABDUCTIVE REASONING & DIAGNOSTICS
+	
+	### 3. ABDUCTIVE REASONING & DIAGNOSTICS
 	3.1) ROOT CAUSE ANALYSIS:
 		- When explaining a bug or a complex logic flow, generate at least 2 competing hypotheses for why the code behaves the way it does.
 	3.2) HYPOTHESIS TESTING:
 		- Use your read tools to verify which hypothesis is supported by the actual source code in the directory.
-
-### 4. OUTCOME EVALUATION & ADAPTABILITY
+	
+	### 4. OUTCOME EVALUATION & ADAPTABILITY
 	4.1) LOOP REASONING:
 		- After reading a file, ask: "Does this code contradict the explanation I was about to give?"
 	4.2) DYNAMIC RE-PLANNING:
 		- If a file search returns no results, immediately pivot to a broader search or check configuration files (like \`requirements.txt\` or \`tsconfig.json\`, etc) to find where the logic might be hidden.
-
-### 5. INFORMATION AVAILABILITY & SCOPE
+	
+	### 5. INFORMATION AVAILABILITY & SCOPE
 	Incorporate information from these specific sources:
 	5.1) The provided working directory (primary source).
 	5.2) Language-specific documentation and best practices.
 	5.3) Explicit patterns observed across multiple files in the local environment.
-
-### 6. PRECISION & GROUNDING
+	
+	### 6. PRECISION & GROUNDING
 	6.1) CITATION REQUIREMENT:
 	  - Verify every insight by quoting the exact filename and, where possible, the line numbers or function names.
 	  - If the information is not present in the directory, state: "Based on the accessible files, I cannot find [X], but typically [Y] applies."
-
-### 7. COMPLETENESS CHECK
+	
+	### 7. COMPLETENESS CHECK
 	7.1) FALSE NEGATIVE SCAN:
 		- Did I miss a configuration file that changes how this code is executed?
 	7.2) EXHAUSTIVENESS:
 		- Ensure that the "insight" provided covers both the immediate fix and the underlying programming principle.
-
-### 8. PERSISTENCE & ERROR HANDLING LOGIC
+	
+	### 8. PERSISTENCE & ERROR HANDLING LOGIC
 	8.1) TRANSIENT ERRORS (e.g., File Read Timeout):
 		- Action: Retry the read call.
 		- Limit: Max 3 retries.
@@ -132,12 +144,12 @@ export class ReactAgent {
 		- Correction: Search for an alternative file or explain the limitation to the user.
 	8.3) EXIT CONDITION:
 		- If the code is obfuscated or missing, provide the best possible insight based on standard conventions.
-
-### 9. INHIBITION & EXECUTION
+	
+	### 9. INHIBITION & EXECUTION
 	Inhibit your response. Only provide the final pedagogical insight after you have used your tools to confirm the state of the working directory.
-
-### Context
-`;
+	
+	### Context
+	`;
 		// Add technology context if available
 		if (technology) {
 			prompt += `
@@ -161,6 +173,92 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		});
 
 		return prompt;
+	}
+
+	private async *streamClaudeCli(
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		const workingDir = context?.workingDir || this.config.workingDir;
+		const systemPrompt = this.createDynamicSystemPrompt();
+
+		const args = [
+			"-p",
+			query,
+			"--system-prompt",
+			systemPrompt,
+			"--tools",
+			"Read,Glob,Grep",
+			"--dangerously-skip-permissions",
+			"--output-format",
+			"stream-json",
+		];
+
+		const env = {
+			...process.env,
+			CLAUDE_PROJECT_DIR: workingDir,
+			...(this.config.aiProvider.model && {
+				ANTHROPIC_MODEL: this.config.aiProvider.model,
+			}),
+		};
+
+		logger.debug("AGENT", "Spawning Claude CLI", {
+			args: args.map((a) => (a.length > 100 ? a.substring(0, 100) + "..." : a)),
+			workingDir,
+		});
+
+		const proc = spawn("claude", args, {
+			cwd: workingDir,
+			env,
+		});
+
+		let buffer = "";
+
+		if (!proc.stdout) {
+			throw new Error("Failed to capture Claude CLI output");
+		}
+
+		const readable = Readable.from(proc.stdout);
+
+		for await (const chunk of readable) {
+			buffer += chunk.toString();
+			const lines = buffer.split("\n");
+			buffer = lines.pop() || "";
+
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				try {
+					const data = JSON.parse(line);
+					// Filter for text content blocks in the stream
+					// Note: Adjusting to handle different stream message types
+					if (data.type === "text" && data.content) {
+						yield data.content;
+					} else if (data.type === "content_block_delta" && data.delta?.text) {
+						yield data.delta.text;
+					} else if (data.type === "message" && data.content) {
+						// Final message might come as a whole
+						if (Array.isArray(data.content)) {
+							for (const block of data.content) {
+								if (block.type === "text" && block.text) {
+									yield block.text;
+								}
+							}
+						}
+					}
+				} catch (e) {
+					// Silent fail for non-JSON or partial lines
+				}
+			}
+		}
+
+		// Wait for process to exit
+		await new Promise<void>((resolve, reject) => {
+			proc.on("exit", (code) => {
+				if (code === 0) resolve();
+				else reject(new Error(`Claude CLI exited with code ${code}`));
+			});
+			proc.on("error", reject);
+		});
 	}
 
 	private createAIModel(
@@ -210,6 +308,15 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 	}
 
 	async initialize(): Promise<void> {
+		if (this.config.aiProvider.type === "claude-code") {
+			logger.info("AGENT", "Claude CLI mode initialized (skipping LangChain setup)");
+			return;
+		}
+
+		if (!this.aiModel) {
+			throw new Error("AI model not created for non-CLI provider");
+		}
+
 		// Create the agent using LangChain's createAgent function with dynamic system prompt
 		this.agent = createAgent({
 			model: this.aiModel,
@@ -240,6 +347,14 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			queryLength: query.length,
 			hasContext: !!context,
 		});
+
+		if (this.config.aiProvider.type === "claude-code") {
+			let fullContent = "";
+			for await (const chunk of this.streamClaudeCli(query, context)) {
+				fullContent += chunk;
+			}
+			return fullContent;
+		}
 
 		const timingId = logger.timingStart("agentQuery");
 
@@ -300,6 +415,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			queryLength: query.length,
 			hasContext: !!context,
 		});
+
+		if (this.config.aiProvider.type === "claude-code") {
+			yield* this.streamClaudeCli(query, context);
+			return;
+		}
 
 		const timingId = logger.timingStart("agentStream");
 
