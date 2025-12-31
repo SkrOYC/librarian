@@ -402,7 +402,12 @@ export class Librarian {
     // Initialize the agent
     const agent = new ReactAgent({
       aiProvider: this.config.aiProvider,
-      workingDir: repoPath
+      workingDir: repoPath,
+      technology: {
+        name: tech.name,
+        repository: tech.repo,
+        branch: tech.branch
+      }
     });
     await agent.initialize();
 
@@ -465,7 +470,12 @@ export class Librarian {
       // Initialize agent
       const agent = new ReactAgent({
         aiProvider: this.config.aiProvider,
-        workingDir: repoPath
+        workingDir: repoPath,
+        technology: {
+          name: tech.name,
+          repository: tech.repo,
+          branch: tech.branch
+        }
       });
       await agent.initialize();
 
