@@ -43,7 +43,7 @@ export class Librarian {
 
   constructor(config: LibrarianConfig) {
     this.config = config;
-    if (config.aiProvider.type !== 'claude-code') {
+    if (config.aiProvider.type !== 'claude-code' && config.aiProvider.type !== 'gemini-cli') {
       this.aiModel = this.createAIModel();
     }
 
