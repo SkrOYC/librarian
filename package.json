@@ -8,8 +8,8 @@
   },
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "build": "bun build --compile --outfile librarian ./src/cli.ts",
+    "build:dev": "tsc",
     "test": "bun test tests/",
     "test:watch": "bun test --watch tests/",
     "lint": "eslint src --ext .ts",

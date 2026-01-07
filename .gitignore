@@ -16,3 +16,6 @@ test-*.txt
 
 # Working directory
 result
+
+# Built executables
+librarian
