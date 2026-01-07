@@ -28,8 +28,19 @@
     in
     {
       packages = eachSystem (system: {
-        # Produce a package for this template with bun2nix in overlay
+        # Produce the librarian executable package
         default = pkgsFor.${system}.callPackage ./default.nix { };
+
+        # Also expose the executable for direct use
+        executable = pkgsFor.${system}.callPackage ./default.nix { };
+      });
+
+      apps = eachSystem (system: {
+        # Allow running with nix run
+        default = {
+          type = "app";
+          program = "${pkgsFor.${system}.callPackage ./default.nix { }}/bin/librarian";
+        };
       });
 
       devShells = eachSystem (system: {
