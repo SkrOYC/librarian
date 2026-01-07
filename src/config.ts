@@ -113,6 +113,13 @@ function validateConfig(config: LibrarianConfig, envPath: string): void {
     logger.debug('CONFIG', 'Validation failed: base_url missing for anthropic-compatible provider');
   }
 
+  // Validate model for anthropic-compatible providers
+  if (config.aiProvider.type === 'anthropic-compatible' && !config.aiProvider.model) {
+    const errorMsg = 'model is required for anthropic-compatible providers';
+    errors.push(errorMsg);
+    logger.debug('CONFIG', 'Validation failed: model missing for anthropic-compatible provider');
+  }
+
   // Validate repos_path is present
   if (!config.repos_path) {
     errors.push('repos_path is required in configuration');
