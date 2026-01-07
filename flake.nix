@@ -16,30 +16,42 @@
       # Read each system from nix-systems input
       eachSystem = inputs.nixpkgs.lib.genAttrs (import inputs.systems);
 
+      # Capture inputs for use in closures
+      bun2nixFlake = inputs.bun2nix;
+
       # Access package set for a given system
       pkgsFor = eachSystem (
         system:
-        import inputs.nixpkgs {
-          inherit system;
-          # Use bun2nix overlay, which puts `bun2nix` in pkgs
-          overlays = [ inputs.bun2nix.overlays.default ];
-        }
+        let
+          pkgs = import inputs.nixpkgs {
+            inherit system;
+            # Use bun2nix overlay, which puts `bun2nix` in pkgs
+            overlays = [ inputs.bun2nix.overlays.default ];
+          };
+        in
+        pkgs
       );
     in
     {
       packages = eachSystem (system: {
         # Produce the librarian executable package
-        default = pkgsFor.${system}.callPackage ./default.nix { };
+        default = pkgsFor.${system}.callPackage ./default.nix { 
+          bun2nix = pkgsFor.${system}.bun2nix; 
+          bun = pkgsFor.${system}.bun; 
+        };
 
         # Also expose the executable for direct use
-        executable = pkgsFor.${system}.callPackage ./default.nix { };
+        executable = pkgsFor.${system}.callPackage ./default.nix { 
+          bun2nix = pkgsFor.${system}.bun2nix; 
+          bun = pkgsFor.${system}.bun; 
+        };
       });
 
       apps = eachSystem (system: {
         # Allow running with nix run
         default = {
           type = "app";
-          program = "${pkgsFor.${system}.callPackage ./default.nix { }}/bin/librarian";
+          program = "${pkgsFor.${system}.callPackage ./default.nix { bun2nix = pkgsFor.${system}.bun2nix; bun = pkgsFor.${system}.bun; }}/bin/librarian";
         };
       });
 
