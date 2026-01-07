@@ -28,7 +28,7 @@ export interface LibrarianConfig {
     };
   };
   aiProvider: {
-    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'claude-code' | 'gemini-cli';
+    type: 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'anthropic-compatible' | 'claude-code' | 'gemini-cli';
     apiKey: string;
     model?: string;
     baseURL?: string;
@@ -80,6 +80,18 @@ export class Librarian {
         return new ChatAnthropic({ 
           apiKey,
           modelName: model || 'claude-3-sonnet-20240229',
+        });
+      case 'anthropic-compatible':
+        if (!baseURL) {
+          throw new Error('baseURL is required for anthropic-compatible provider');
+        }
+        if (!model) {
+          throw new Error('model is required for anthropic-compatible provider');
+        }
+        return new ChatAnthropic({ 
+          apiKey,
+          modelName: model,
+          anthropicApiUrl: baseURL,
         });
       case 'google':
         return new ChatGoogleGenerativeAI({ 

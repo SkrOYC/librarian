@@ -20,13 +20,13 @@ const ConfigSchema = z.object({
   technologies: z.record(z.string(), GroupSchema).optional(),
   repositories: z.record(z.string(), z.string()).optional(), // For backward compatibility
   aiProvider: z.object({
-    type: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'claude-code', 'gemini-cli']),
+    type: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'anthropic-compatible', 'claude-code', 'gemini-cli']),
     apiKey: z.string().optional(), // Optional - will be loaded from .env or not needed for claude-code/gemini-cli
     model: z.string().optional(),
     baseURL: z.string().optional(),
   }).optional(),
   // Support README style keys
-  llm_provider: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'claude-code', 'gemini-cli']).optional(),
+  llm_provider: z.enum(['openai', 'anthropic', 'google', 'openai-compatible', 'anthropic-compatible', 'claude-code', 'gemini-cli']).optional(),
   llm_model: z.string().optional(),
   base_url: z.string().optional(),
   workingDir: z.string().default('./librarian_work'),
@@ -104,6 +104,13 @@ function validateConfig(config: LibrarianConfig, envPath: string): void {
     const errorMsg = 'base_url is required for openai-compatible providers';
     errors.push(errorMsg);
     logger.debug('CONFIG', 'Validation failed: base_url missing for openai-compatible provider');
+  }
+
+  // Validate base_url for anthropic-compatible providers
+  if (config.aiProvider.type === 'anthropic-compatible' && !config.aiProvider.baseURL) {
+    const errorMsg = 'base_url is required for anthropic-compatible providers';
+    errors.push(errorMsg);
+    logger.debug('CONFIG', 'Validation failed: base_url missing for anthropic-compatible provider');
   }
 
   // Validate repos_path is present
