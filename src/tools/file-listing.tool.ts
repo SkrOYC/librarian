@@ -133,7 +133,7 @@ export const fileListTool = tool(
 				);
 			}
 			logger.debug("TOOL", "Working directory", {
-				workingDir: workingDir.replace(process.env.HOME || "", "~"),
+				workingDir: workingDir.replace(Bun.env.HOME || "", "~"),
 			});
 
 			// Validate path to prevent directory traversal
@@ -142,9 +142,9 @@ export const fileListTool = tool(
 			const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
 			logger.debug("TOOL", "Path validation", {
-				resolvedPath: resolvedPath.replace(process.env.HOME || "", "~"),
+				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
 				resolvedWorkingDir: resolvedWorkingDir.replace(
-					process.env.HOME || "",
+					Bun.env.HOME || "",
 					"~",
 				),
 				relativePath,

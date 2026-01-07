@@ -81,10 +81,10 @@ describe('Configuration', () => {
       });
 
       const yamlContent = yaml.stringify(config);
-      await fs.writeFile(configPath, yamlContent);
+      await Bun.write(configPath, yamlContent);
 
       // Simulate loading the YAML content
-      const loadedContent = await fs.readFile(configPath, 'utf8');
+      const loadedContent = await Bun.file(configPath).text();
       const parsedConfig = yaml.parse(loadedContent);
 
       expect(parsedConfig.llm_provider).toBe('anthropic');
@@ -96,9 +96,9 @@ describe('Configuration', () => {
       const configPath = path.join(configDir, 'config.yaml');
       const config = createReadmeAlignedConfig();
       const yamlContent = yaml.stringify(config);
-      await fs.writeFile(configPath, yamlContent);
+      await Bun.write(configPath, yamlContent);
 
-      const loadedContent = await fs.readFile(configPath, 'utf8');
+      const loadedContent = await Bun.file(configPath).text();
       const parsedConfig = yaml.parse(loadedContent);
 
       expect(parsedConfig.technologies.default).toBeDefined();
@@ -122,9 +122,9 @@ describe('Configuration', () => {
       });
 
       const yamlContent = yaml.stringify(config);
-      await fs.writeFile(configPath, yamlContent);
+      await Bun.write(configPath, yamlContent);
 
-      const loadedContent = await fs.readFile(configPath, 'utf8');
+      const loadedContent = await Bun.file(configPath).text();
       const parsedConfig = yaml.parse(loadedContent);
 
       expect(parsedConfig.technologies.custom).toBeDefined();
@@ -247,10 +247,10 @@ describe('Configuration', () => {
         llm_provider: openai
       `;
 
-      await fs.writeFile(configPath, malformedYaml);
+      await Bun.write(configPath, malformedYaml);
 
       // This would be handled by the actual config loading logic
-      const content = await fs.readFile(configPath, 'utf8');
+      const content = await Bun.file(configPath).text();
       expect(() => {
         yaml.parse(content);
       }).toThrow();
@@ -270,9 +270,9 @@ describe('Configuration', () => {
 
     it('should handle empty configuration file', async () => {
       const configPath = path.join(configDir, 'config.yaml');
-      await fs.writeFile(configPath, '');
+      await Bun.write(configPath, '');
 
-      const content = await fs.readFile(configPath, 'utf8');
+      const content = await Bun.file(configPath).text();
       expect(content).toBe('');
     });
   });

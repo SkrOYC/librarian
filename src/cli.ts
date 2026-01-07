@@ -64,7 +64,7 @@ export function createProgram() {
 
               for await (const chunk of stream) {
                 // Output each chunk as it arrives
-                process.stdout.write(chunk);
+                Bun.stdout.write(new TextEncoder().encode(chunk));
               }
             } catch (error) {
               console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');
@@ -83,7 +83,7 @@ export function createProgram() {
               const stream = librarian.streamGroup(options.group, query);
 
               for await (const chunk of stream) {
-                process.stdout.write(chunk);
+                Bun.stdout.write(new TextEncoder().encode(chunk));
               }
             } catch (error) {
               console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');

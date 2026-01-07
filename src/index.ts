@@ -237,12 +237,12 @@ export class Librarian {
     const repoPath = this.getSecureRepoPath(repoName, groupName);
     const gitPath = path.join(repoPath, '.git');
 
-    if (!fs.existsSync(repoPath)) {
+    if (!(await Bun.file(repoPath).exists())) {
       logger.error('GIT', 'Repository path does not exist', undefined, { repoName, repoPath: repoPath.replace(os.homedir(), '~') });
       throw new Error(`Repository ${repoName} does not exist at ${repoPath}. Cannot update.`);
     }
 
-    if (!fs.existsSync(gitPath)) {
+    if (!(await Bun.file(gitPath).exists())) {
       logger.error('GIT', 'Directory is not a git repository', undefined, { repoName, repoPath: repoPath.replace(os.homedir(), '~') });
       throw new Error(`Directory ${repoName} exists at ${repoPath} but is not a git repository. Cannot update.`);
     }

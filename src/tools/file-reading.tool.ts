@@ -1,6 +1,5 @@
 import { tool } from "langchain";
 import * as z from "zod";
-import fs from "fs/promises";
 import path from "path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
@@ -40,16 +39,16 @@ function isAudioFile(filePath: string): boolean {
 	return audioExtensions.has(ext);
 }
 
-// Safe file read with encoding detection
-async function readFileContent(filePath: string): Promise<string> {
-	try {
-		return await fs.readFile(filePath, "utf8");
-	} catch (error: unknown) {
-		const errorMessage =
-			error instanceof Error ? error.message : "Unknown error";
-		throw new Error(`Failed to read file: ${errorMessage}`);
+	// Safe file read with encoding detection
+	async function readFileContent(filePath: string): Promise<string> {
+		try {
+			return await Bun.file(filePath).text();
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : "Unknown error";
+			throw new Error(`Failed to read file: ${errorMessage}`);
+		}
 	}
-}
 
 // Create the modernized tool using the tool() function
 export const fileReadTool = tool(
@@ -67,7 +66,7 @@ export const fileReadTool = tool(
 				);
 			}
 			logger.debug("TOOL", "Working directory", {
-				workingDir: workingDir.replace(process.env.HOME || "", "~"),
+				workingDir: workingDir.replace(Bun.env.HOME || "", "~"),
 			});
 
 			// Validate the path to prevent directory traversal
@@ -76,9 +75,9 @@ export const fileReadTool = tool(
 			const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
 			logger.debug("TOOL", "Path validation", {
-				resolvedPath: resolvedPath.replace(process.env.HOME || "", "~"),
+				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
 				resolvedWorkingDir: resolvedWorkingDir.replace(
-					process.env.HOME || "",
+					Bun.env.HOME || "",
 					"~",
 				),
 				relativePath,

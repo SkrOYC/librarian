@@ -3,7 +3,6 @@
  * Shared utilities for file type detection and file operations
  */
 
-import fs from 'fs/promises';
 import path from 'path';
 
 /**
@@ -24,14 +23,15 @@ export async function isTextFile(filePath: string): Promise<boolean> {
     return true;
   }
 
-  // For files without extensions or unknown extensions, check for null bytes
-  try {
-    const buffer = await fs.readFile(filePath);
-    for (let i = 0; i < Math.min(512, buffer.length); i++) {
-      if (buffer[i] === 0) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
+   // For files without extensions or unknown extensions, check for null bytes
+   try {
+     const buffer = await Bun.file(filePath).arrayBuffer();
+     const uint8Array = new Uint8Array(buffer);
+     for (let i = 0; i < Math.min(512, uint8Array.length); i++) {
+       if (uint8Array[i] === 0) return false;
+     }
+     return true;
+   } catch {
+     return false;
+   }
 }

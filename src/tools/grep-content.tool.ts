@@ -1,6 +1,6 @@
 import { tool } from "langchain";
 import * as z from "zod";
-import fs from "fs/promises";
+import { readdir, stat } from "fs/promises";
 import path from "path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
@@ -8,7 +8,7 @@ import { isTextFile } from "../utils/file-utils.js";
 // Safe file read with encoding detection
 async function readFileContent(filePath: string): Promise<string> {
 	try {
-		return await fs.readFile(filePath, "utf8");
+		return await Bun.file(filePath).text();
 	} catch (error: unknown) {
 		const errorMessage =
 			error instanceof Error ? error.message : "Unknown error";
@@ -48,7 +48,7 @@ async function findFiles(
 ): Promise<string[]> {
 	const foundFiles: string[] = [];
 
-	const entries = await fs.readdir(dirPath, { withFileTypes: true });
+	const entries = await readdir(dirPath, { withFileTypes: true });
 
 	for (const entry of entries) {
 		const fullPath = path.join(dirPath, entry.name);
@@ -103,7 +103,7 @@ export const grepContentTool = tool(
 				);
 			}
 			logger.debug("TOOL", "Working directory", {
-				workingDir: workingDir.replace(process.env.HOME || "", "~"),
+				workingDir: workingDir.replace(Bun.env.HOME || "", "~"),
 			});
 
 			if (!query) {
@@ -117,9 +117,9 @@ export const grepContentTool = tool(
 			const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
 			logger.debug("TOOL", "Path validation", {
-				resolvedPath: resolvedPath.replace(process.env.HOME || "", "~"),
+				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
 				resolvedWorkingDir: resolvedWorkingDir.replace(
-					process.env.HOME || "",
+					Bun.env.HOME || "",
 					"~",
 				),
 				relativePath,
@@ -138,7 +138,7 @@ export const grepContentTool = tool(
 				);
 			}
 
-			const stats = await fs.stat(resolvedPath);
+			const stats = await stat(resolvedPath);
 			if (!stats.isDirectory()) {
 				logger.error("TOOL", "Search path is not a directory", undefined, {
 					searchPath,

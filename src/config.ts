@@ -1,4 +1,4 @@
-import fs from 'fs';
+import { mkdir } from 'fs/promises';
 import path from 'path';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
@@ -183,8 +183,8 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
   const envPath = path.join(configDir, '.env');
   const envVars = await loadEnvFile(envPath);
 
-  // Check if config file exists
-  if (!fs.existsSync(actualPath)) {
+   // Check if config file exists
+   if (!(await Bun.file(actualPath).exists())) {
     logger.info('CONFIG', 'Config file not found, creating default config');
     try {
       await createDefaultConfig(actualPath);
@@ -197,8 +197,8 @@ export async function loadConfig(configPath?: string): Promise<LibrarianConfig> 
     }
   }
 
-  // Read and parse the YAML file
-  const configFileContent = fs.readFileSync(actualPath, 'utf8');
+   // Read and parse the YAML file
+   const configFileContent = await Bun.file(actualPath).text();
   logger.debug('CONFIG', 'Config file read successfully', { fileSize: configFileContent.length });
 
   const parsedConfig = parse(configFileContent);
@@ -292,11 +292,11 @@ export async function createDefaultConfig(configPath: string): Promise<void> {
     }
   };
 
-  // Ensure directory exists
-  const configDir = path.dirname(configPath);
-  fs.mkdirSync(configDir, { recursive: true });
+   // Ensure directory exists
+   const configDir = path.dirname(configPath);
+   await mkdir(configDir, { recursive: true });
 
-  // Write YAML file
-  const yamlString = stringify(defaultConfig);
-  fs.writeFileSync(configPath, yamlString);
+   // Write YAML file
+   const yamlString = stringify(defaultConfig);
+   await Bun.write(configPath, yamlString);
 }

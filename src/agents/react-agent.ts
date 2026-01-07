@@ -9,7 +9,7 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
 import { logger } from "../utils/logger.js";
 import os from "os";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm } from "fs/promises";
 import path from "path";
 import { AgentContext } from "./context-schema.js";
 import { spawn } from "child_process"; // Using child_process for better streaming control in Node/Bun mix
@@ -231,7 +231,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		];
 
 		const env = {
-			...process.env,
+			...Bun.env,
 			GEMINI_SYSTEM_MD: systemPromptPath,
 			GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath, // Override defaults
 			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath, // Override system settings (highest precedence)
@@ -313,7 +313,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		];
 
 		const env = {
-			...process.env,
+			...Bun.env,
 			CLAUDE_PROJECT_DIR: workingDir,
 			...(this.config.aiProvider.model && {
 				ANTHROPIC_MODEL: this.config.aiProvider.model,

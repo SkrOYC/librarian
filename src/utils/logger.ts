@@ -5,9 +5,10 @@
  * Metadata-only logging (no sensitive data)
  */
 
-import fs from 'fs';
+import { mkdir } from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import type { FileSink } from "bun";
 
 export type LogLevel = 'INFO' | 'DEBUG' | 'WARN' | 'ERROR';
 export type LogComponent = 'CLI' | 'CONFIG' | 'LIBRARIAN' | 'AGENT' | 'TOOL' | 'LLM' | 'GIT' | 'PATH' | 'LOGGER' | 'TIMING';
@@ -23,12 +24,14 @@ interface TimingOperation {
 
 class Logger {
   private static instance: Logger;
-  private writeStream: fs.WriteStream | null = null;
+  private writer: FileSink | null = null;
   private debugMode: boolean = false;
   private timingOperations: Map<string, TimingOperation> = new Map();
 
   private constructor() {
-    this.initializeLogFile();
+    this.initializeLogFile().catch(() => {
+      // Silent - do nothing on initialization errors
+    });
   }
 
   static getInstance(): Logger {
@@ -46,7 +49,7 @@ class Logger {
     * Initialize the log file with timestamp
     * Format: ~/.config/librarian/logs/YYYY-MM-DD_HH-MM-SS_mmm-librarian.log
     */
-  private initializeLogFile(): void {
+  private async initializeLogFile(): Promise<void> {
     try {
       // Create timestamp for filename
       const now = new Date();
@@ -70,25 +73,21 @@ class Logger {
       // Log directory
       const logDir = path.join(os.homedir(), '.config', 'librarian', 'logs');
 
-      // Ensure directory exists
-      if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
-      }
+       // Ensure directory exists
+       if (!(await Bun.file(logDir).exists())) {
+         await mkdir(logDir, { recursive: true });
+       }
 
       // Log filename
       const logFilename = `${timestamp}-librarian.log`;
       const logPath = path.join(logDir, logFilename);
 
-      // Create write stream
-      this.writeStream = fs.createWriteStream(logPath, { flags: 'a' });
+       // Create write stream
+       const logFile = Bun.file(logPath);
+       this.writer = logFile.writer();
 
-      // Handle stream errors silently
-      this.writeStream.on('error', () => {
-        // Silent - do nothing
-      });
-
-      // Log initialization
-      this.info('LOGGER', `Logging initialized: ${logPath}`);
+       // Log initialization
+       this.info('LOGGER', `Logging initialized: ${logPath}`);
 
     } catch {
       // Silent - do nothing on initialization errors
@@ -164,20 +163,18 @@ class Logger {
     return entry;
   }
 
-  /**
-   * Write log entry to file
-   */
-  private writeLog(entry: string): void {
-    try {
-      if (this.writeStream && !this.writeStream.destroyed) {
-        this.writeStream.write(entry + '\n', (err) => {
-          // Silent - do nothing on error
-        });
-      }
-    } catch {
-      // Silent - do nothing on write errors
-    }
-  }
+   /**
+    * Write log entry to file
+    */
+   private writeLog(entry: string): void {
+     try {
+       if (this.writer) {
+         this.writer.write(entry + '\n');
+       }
+     } catch {
+       // Silent - do nothing on write errors
+     }
+   }
 
   /**
    * Internal logging method
@@ -270,18 +267,18 @@ class Logger {
     }
   }
 
-  /**
-   * Clean up resources
-   */
-  close(): void {
-    try {
-      if (this.writeStream && !this.writeStream.destroyed) {
-        this.writeStream.end();
-      }
-    } catch {
-      // Silent
-    }
-  }
+   /**
+    * Clean up resources
+    */
+   close(): void {
+     try {
+       if (this.writer) {
+         this.writer.end();
+       }
+     } catch {
+       // Silent
+     }
+   }
 }
 
 // Export singleton instance
