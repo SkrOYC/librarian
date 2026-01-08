@@ -8,7 +8,7 @@
   },
   "type": "module",
   "scripts": {
-    "build": "bun build --outfile librarian ./src/cli.ts",
+    "build": "bun build --outfile librarian --target bun ./src/cli.ts",
     "build:dev": "tsc",
     "test": "bun test tests/",
     "test:watch": "bun test --watch tests/",
