@@ -1,8 +1,0 @@
-{
-  "track_id": "cli_config_alignment_20251221",
-  "type": "feature",
-  "status": "new",
-  "created_at": "2025-12-21T17:20:00Z",
-  "updated_at": "2025-12-21T17:20:00Z",
-  "description": "Let's align the cli commands and yaml settings with the readme requirements"
-}

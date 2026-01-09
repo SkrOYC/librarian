@@ -24,8 +24,15 @@ describe('Modern File Reading Tool', () => {
   });
 
   afterEach(() => {
-    // Clean up test files after each test
-    const testFiles = ['test_modern_file_read.txt', 'test_binary.bin'];
+    // Clean up all test files after each test
+    const testFiles = [
+      'test_modern_file_read.txt',
+      'test_binary.bin',
+      'test_large.txt',
+      'test-special-émojis-🚀.txt',
+      'test_empty.txt',
+      'test_path.txt'
+    ];
     testFiles.forEach(file => {
       const filePath = path.join(process.cwd(), file);
       if (fs.existsSync(filePath)) {

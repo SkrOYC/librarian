@@ -16,9 +16,6 @@
       # Read each system from nix-systems input
       eachSystem = inputs.nixpkgs.lib.genAttrs (import inputs.systems);
 
-      # Capture inputs for use in closures
-      bun2nixFlake = inputs.bun2nix;
-
       # Access package set for a given system
       pkgsFor = eachSystem (
         system:
@@ -34,16 +31,14 @@
     in
     {
       packages = eachSystem (system: {
-        # Produce the librarian executable package
-        default = pkgsFor.${system}.callPackage ./default.nix { 
-          bun2nix = pkgsFor.${system}.bun2nix; 
-          bun = pkgsFor.${system}.bun; 
+        # Produce the librarian executable package (standalone Bun binary)
+        default = pkgsFor.${system}.callPackage ./default.nix {
+          inherit (pkgsFor.${system}) bun2nix bun;
         };
 
         # Also expose the executable for direct use
-        executable = pkgsFor.${system}.callPackage ./default.nix { 
-          bun2nix = pkgsFor.${system}.bun2nix; 
-          bun = pkgsFor.${system}.bun; 
+        executable = pkgsFor.${system}.callPackage ./default.nix {
+          inherit (pkgsFor.${system}) bun2nix bun;
         };
       });
 
@@ -51,7 +46,7 @@
         # Allow running with nix run
         default = {
           type = "app";
-          program = "${pkgsFor.${system}.callPackage ./default.nix { bun2nix = pkgsFor.${system}.bun2nix; bun = pkgsFor.${system}.bun; }}/bin/librarian";
+          program = "${pkgsFor.${system}.callPackage ./default.nix { inherit (pkgsFor.${system}) bun2nix bun; }}/bin/librarian";
         };
       });
 
@@ -60,13 +55,14 @@
           packages = with pkgsFor.${system}; [
             bun
 
-            # Add bun2nix binary to our devshell
-            # Optional now that we have a binary on npm
+            # Add bun2nix for generating reproducible dependency builds
             bun2nix
           ];
 
           shellHook = ''
             bun install --frozen-lockfile
+            # Build the standalone executable for local testing
+            bun build --outfile librarian --target bun ./src/cli.ts
           '';
         };
       });
