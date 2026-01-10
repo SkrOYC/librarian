@@ -143,10 +143,7 @@ export const fileListTool = tool(
 
 			logger.debug("TOOL", "Path validation", {
 				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(
-					Bun.env.HOME || "",
-					"~",
-				),
+				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
 				relativePath,
 				validated: !relativePath.startsWith(".."),
 			});

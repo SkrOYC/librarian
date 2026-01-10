@@ -118,10 +118,7 @@ export const grepContentTool = tool(
 
 			logger.debug("TOOL", "Path validation", {
 				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(
-					Bun.env.HOME || "",
-					"~",
-				),
+				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
 				relativePath,
 				validated: !relativePath.startsWith(".."),
 			});
@@ -238,8 +235,14 @@ export const grepContentTool = tool(
 	},
 	{
 		name: "grep_content",
-		description:
-			"Search for content patterns in files. Use this to find specific text or code patterns across multiple files.",
+		description: `A powerful search tool built on ripgrep
+
+Usage:
+- ALWAYS use grep_content for search tasks.
+- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+- Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
+- Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use \`interface\{\}\` to find \`interface{}\` in Go code)
+`,
 		schema: z.object({
 			searchPath: z.string().describe("The directory path to search in"),
 			query: z

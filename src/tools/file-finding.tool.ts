@@ -189,10 +189,7 @@ export const fileFindTool = tool(
 
 			logger.debug("TOOL", "Path validation", {
 				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(
-					Bun.env.HOME || "",
-					"~",
-				),
+				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
 				relativePath,
 				validated: !relativePath.startsWith(".."),
 			});
@@ -258,8 +255,15 @@ export const fileFindTool = tool(
 	},
 	{
 		name: "find_files",
-		description:
-			"Find files matching glob patterns in a directory. Use this to locate specific files by name or extension.",
+		description: `Discovers files using glob patterns. Respects .gitignore.
+Usage
+- Fast file pattern matching command that works with any codebase size
+- Supports glob patterns like "**/*.js" or "src/**/*.ts"
+- Returns matching file paths sorted
+- Use this command when you need to find files by name patterns
+- When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Task tool instead
+- You can call multiple commands in a single response. It is always better to speculatively perform multiple searches in parallel if they are potentially useful.
+`,
 		schema: z.object({
 			searchPath: z
 				.string()

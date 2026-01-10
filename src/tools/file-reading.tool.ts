@@ -39,16 +39,16 @@ function isAudioFile(filePath: string): boolean {
 	return audioExtensions.has(ext);
 }
 
-	// Safe file read with encoding detection
-	async function readFileContent(filePath: string): Promise<string> {
-		try {
-			return await Bun.file(filePath).text();
-		} catch (error: unknown) {
-			const errorMessage =
-				error instanceof Error ? error.message : "Unknown error";
-			throw new Error(`Failed to read file: ${errorMessage}`);
-		}
+// Safe file read with encoding detection
+async function readFileContent(filePath: string): Promise<string> {
+	try {
+		return await Bun.file(filePath).text();
+	} catch (error: unknown) {
+		const errorMessage =
+			error instanceof Error ? error.message : "Unknown error";
+		throw new Error(`Failed to read file: ${errorMessage}`);
 	}
+}
 
 // Create the modernized tool using the tool() function
 export const fileReadTool = tool(
@@ -76,10 +76,7 @@ export const fileReadTool = tool(
 
 			logger.debug("TOOL", "Path validation", {
 				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(
-					Bun.env.HOME || "",
-					"~",
-				),
+				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
 				relativePath,
 				validated: !relativePath.startsWith(".."),
 			});
