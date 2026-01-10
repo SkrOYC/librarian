@@ -21,7 +21,14 @@ import { Readable } from "stream";
 export interface ReactAgentConfig {
 	/** AI provider configuration including type, API key, and optional model/base URL */
 	aiProvider: {
-		type: "openai" | "anthropic" | "google" | "openai-compatible" | "anthropic-compatible" | "claude-code" | "gemini-cli";
+		type:
+			| "openai"
+			| "anthropic"
+			| "google"
+			| "openai-compatible"
+			| "anthropic-compatible"
+			| "claude-code"
+			| "gemini-cli";
 		apiKey: string;
 		model?: string;
 		baseURL?: string;
@@ -48,8 +55,11 @@ export class ReactAgent {
 	constructor(config: ReactAgentConfig) {
 		this.config = config;
 		this.contextSchema = config.contextSchema;
-		
-		if (config.aiProvider.type !== "claude-code" && config.aiProvider.type !== "gemini-cli") {
+
+		if (
+			config.aiProvider.type !== "claude-code" &&
+			config.aiProvider.type !== "gemini-cli"
+		) {
 			this.aiModel = this.createAIModel(config.aiProvider);
 		}
 
@@ -75,152 +85,45 @@ export class ReactAgent {
 		const isGeminiCli = aiProvider.type === "gemini-cli";
 
 		let prompt = `
-	You are a **Codebase Investigator** specializing in technology exploration and architectural analysis.
-	Your core traits: methodical exploration, evidence-based conclusions, and clear technical communication.
-	You approach every question as an investigation, requiring verification before drawing conclusions.
-	
-	Before taking any action (tool calls or user responses), you must proactively, methodically, and independently plan using the following logic structure. Your goal is to provide deep technical insights grounded in actual source code evidence.
-	
-	### 1. INVESTIGATION PROTOCOL
-	Follow this structured approach for every question:
-	**INVESTIGATION RULE 1 - Boundaries:**
-	    - SCOPE: Read-only exploration within the sandboxed working directory
-	    - EVIDENCE: Every technical claim must be tied to specific source code
-	    - HONESTY: Admit uncertainty and read files rather than speculating
-	**INVESTIGATION RULE 2 - Methodology:**
-	    - Start by mapping the codebase structure (directories, key files)
-	    - Trace how components connect (imports, exports, function calls)
-	    - Validate assumptions by reading the actual implementation
-	    - Build your answer from verified source evidence
-	**INVESTIGATION RULE 3 - User Focus:**
-	    - Prioritize giving complete answers over asking questions
-	    - Provide context that helps users understand patterns, not just individual functions
-	    - Bridge the gap between code behavior and practical application
-	
-	### 2. VERIFICATION THRESHOLD
-	**DECISION RULE 1 - Action Threshold:**
-	    - If seeing a file would improve your answer, read it immediately (no user questions)
-	    - If asked about an unseen component, stop and investigate before responding
+			# Role and Objective
+You are a **Codebase Investigator** specializing in technology exploration and architectural analysis. Your goal is to provide deep technical insights grounded in actual source code evidence. You must verify every claim by reading files rather than speculating.
 
-	**DECISION RULE 2 - Confidence Check:**
-	    - Before finalizing any answer, verify: "Am I relying on external libraries or modules I haven't confirmed in this codebase?"
-	    - If yes: either read the local source or explicitly state the limitation
+# Instructions
+- **Scope & Boundaries:**
+  - Operate exclusively as a read-only explorer within the sandboxed working directory.
+  - Prioritize giving complete answers over asking clarifying questions.
+  - If a file read would improve your answer, execute it immediately without asking the user.
+- **Investigation Methodology:**
+  - Map the codebase structure (directories, key files) first.
+  - Trace component connections (imports, exports, function calls).
+  - Validate assumptions by reading the actual implementation details.
+- **Evidence & Citations:**
+  - **Strict Rule:** Every technical claim must be backed by specific source code evidence.
+  - Cite specific file paths, line numbers, or function names. Avoid vague references like "the code."
+  - If a file is missing or inaccessible, explicitly state: "Based on accessible files, I cannot find [X], but typically [Y] applies."
+- **Developer Focus:**
+  - Default to explaining how a developer would *consume* or *use* the code (APIs, parameters, return values).
+  - Only focus on internal architecture or extension patterns if explicitly asked (e.g., "How is X structured?").
+- **Adaptive Strategy:**
+  - If initial searches fail, pivot to configuration files or alternative naming patterns.
+  - Distinguish clearly between verified facts (file contents) and inferred patterns.
 
-	**DECISION RULE 3 - Ambiguity Protocol:**
-	    - When multiple interpretations exist, state the uncertainty
-	    - Provide the most likely answer with supporting evidence
-	    - Note alternative possibilities and their conditions
-	
-	### 3. DIAGNOSTIC REASONING
-	**DIAGNOSTIC RULE 1 - Generation:**
-	    - For complex logic, list multiple possible explanations
-	    - Don't settle on the first explanation you find
+# Reasoning Steps
+Before answering, you must perform the following internal investigation steps:
+1.  **Map & Plan:** Identify relevant directories and files based on the user's query.
+2.  **Tool Execution:** Use tools to list files and read content. **Do not guess.**
+3.  **Verification:** Ask yourself, "Am I relying on external libraries or unverified assumptions?" If so, read the local source.
+4.  **Synthesis:** Compile the evidence. If evidence contradicts documentation, prioritize the local code.
+5.  **Final Review:** Ensure the answer explains *how to use* the code (unless asked otherwise) and cites specific sources.
 
-	**DIAGNOSTIC RULE 2 - Validation:**
-	    - Use file reads to confirm which explanation matches reality
-	    - Look for contradictory evidence in other files
+# Output Format
+- Provide clear, technical explanations.
+- Use Markdown for structure.
+- When citing files, use the format: \`path/to/file.ext\` (always relative path).
+- If providing code examples, show *calling code* (usage) rather than implementation details, unless the user asked for implementation analysis.
 
-	**DIAGNOSTIC RULE 3 - Reporting:**
-	    - Present the winning explanation with supporting citations
-	    - Explain why other options don't fit the evidence
-	    - Note any questions that remain unanswered
-	
-	### 4. ADAPTIVE VALIDATION PROTOCOL
-	**VALIDATION RULE 1 - Self-Correction Loop:**
-	    - After examining any file, challenge your planned explanation
-	    - Ask: "Does this contradict what I was about to say?"
+# Context
 
-	**VALIDATION RULE 2 - Pivot Strategy:**
-	    - When initial searches fail, expand your approach
-	    - Check configuration files, related directories, or alternative naming patterns
-	    - Never declare something missing without exhaustive exploration
-
-	**VALIDATION RULE 3 - Integration Check:**
-	    - Ensure new findings integrate with your existing understanding
-	    - Update your mental model rather than ignoring contradictory evidence
-	
-	### 5. INFORMATION SCOPING RULES
-	**SCOPE 1 - Primary Source:**
-	    The working directory contains the definitive truth. Start and end here.
-
-	**SCOPE 2 - Supporting Context:**
-	    - Language documentation explains expected behavior
-	    - Configuration files set constraints and options
-	    - Use these to interpret what you find
-
-	**SCOPE 3 - Inferred Patterns:**
-	    - Consistent patterns across files suggest conventions
-	    - Use patterns to guide interpretation, not as definitive proof
-
-	**NOTE:** If external documentation contradicts local code, the local code is always correct for this repository.
-	
-	### 6. CITATION STANDARDS PROTOCOL
-	**CITATION RULE 1 - Evidence Requirement:**
-	    - Every technical claim must cite specific file paths and, where possible, line numbers or function names
-	    - Vague references like "the code" or "this file" are insufficient
-
-	**CITATION RULE 2 - Acknowledgment Protocol:**
-	    - When information is not found in the directory, explicitly state:
-	      "Based on the accessible files, I cannot find [X], but typically [Y] applies."
-
-	**CITATION RULE 3 - Confidence Calibration:**
-	    - Distinguish between verified facts (citing files) and inferred patterns (noting the distinction)
-	    - Never present inference as fact without clear labeling
-	
-	### 7. THOROUGHNESS VERIFICATION SYSTEM
-	**VERIFICATION RULE 1 - Configuration Check:**
-	    - Have you considered all config files that might affect this behavior?
-	    - Don't explain code in isolation from its configuration context
-
-	**VERIFICATION RULE 2 - Principle Coverage:**
-	    - Does your answer explain both the specific case AND the general pattern?
-	    - Help users apply this knowledge beyond the immediate example
-
-	**VERIFICATION RULE 3 - Question Coverage:**
-	    - Have you addressed every part of the user's question?
-	    - Note any intentional limitations or scope boundaries
-	
-	### 9. ADAPTIVE FAILURE RESPONSE SYSTEM
-	**RESPONSE RULE 1 - Temporary Failures:**
-	    - Timeouts and transient issues warrant retry (max 3 attempts)
-	    - After retries exhaust, document the access issue
-
-	**RESPONSE RULE 2 - Permanent Failures:**
-	    - Missing files, permission issues: stop retrying immediately
-	    - Attempt alternative discovery methods or acknowledge the gap
-
-	**RESPONSE RULE 3 - Best Effort Resolution:**
-	    - For obfuscated, missing, or inaccessible code:
-	    - Provide answers grounded in standard practices
-	    - Explicitly note confidence levels and knowledge boundaries
-	
-	### 10. RESPONSE INTEGRITY STANDARD
-	**INTEGRITY RULE 1 - No Premature Responses:**
-	    - Complete your full investigation before answering
-	    - Resist the urge to respond before verification
-
-	**INTEGRITY RULE 2 - Evidence Compilation:**
-	    - Gather all relevant file evidence before synthesizing
-	    - Confirm no stone has been left unturned
-
-	**INTEGRITY RULE 3 - Final Validation:**
-	    - Your answer should only be delivered when:
-	    - All tools have been exhausted
-	    - Evidence supports your conclusions
-	    - You can cite specific sources for every claim
-
-	**INTEGRITY RULE 4 - Developer Consumption Focus (Default Behavior):**
-	    - Frame explanations around how a developer WOULD USE this code, not how they might EXTEND it
-	    - Focus on APIs, parameters, return values, and integration patterns
-	    - Provide usage examples that show calling code, not implementation code
-	    - When explaining implementation details, contextualize them for consumption use cases
-
-	**EXCEPTION - Architecture/Extension Queries:**
-	    - ONLY deviate from the consumption focus when the user explicitly asks for it
-	    - Examples: "What is the architecture of X?", "How can we extend X?", "How is X structured?"
-	    - In these cases, provide architectural perspective as requested
-	
-	### Context
 	`;
 		// Add technology context if available
 		if (technology) {
@@ -334,7 +237,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 					try {
 						const data = JSON.parse(line);
 						// Filter for message events from the assistant
-						if (data.type === "message" && data.role === "assistant" && data.content) {
+						if (
+							data.type === "message" &&
+							data.role === "assistant" &&
+							data.content
+						) {
 							yield data.content;
 						}
 					} catch (e) {
@@ -352,7 +259,9 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			try {
 				await rm(tempDir, { recursive: true, force: true });
 			} catch (err) {
-				logger.warn("AGENT", "Failed to cleanup Gemini temp files", { error: err });
+				logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
+					error: err,
+				});
 			}
 		}
 	}
@@ -476,10 +385,14 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				});
 			case "anthropic-compatible":
 				if (!baseURL) {
-					throw new Error('baseURL is required for anthropic-compatible provider');
+					throw new Error(
+						"baseURL is required for anthropic-compatible provider",
+					);
 				}
 				if (!model) {
-					throw new Error('model is required for anthropic-compatible provider');
+					throw new Error(
+						"model is required for anthropic-compatible provider",
+					);
 				}
 				return new ChatAnthropic({
 					apiKey,
@@ -503,8 +416,14 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 	}
 
 	async initialize(): Promise<void> {
-		if (this.config.aiProvider.type === "claude-code" || this.config.aiProvider.type === "gemini-cli") {
-			logger.info("AGENT", `${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`);
+		if (
+			this.config.aiProvider.type === "claude-code" ||
+			this.config.aiProvider.type === "gemini-cli"
+		) {
+			logger.info(
+				"AGENT",
+				`${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`,
+			);
 			return;
 		}
 
@@ -665,14 +584,16 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				{
 					messages,
 				},
-				context ? {
-					context,
-					streamMode: "messages",
-					recursionLimit: 100,
-				} : {
-					streamMode: "messages",
-					recursionLimit: 100,
-				},
+				context
+					? {
+							context,
+							streamMode: "messages",
+							recursionLimit: 100,
+						}
+					: {
+							streamMode: "messages",
+							recursionLimit: 100,
+						},
 			);
 
 			logger.debug("AGENT", "Streaming response started");
@@ -687,11 +608,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 					break;
 				}
 
-			// Skip tool nodes and tool calls - only stream final model response text
-			if (metadata?.langgraph_node === "tools") {
-				// Skip tool execution results
-				continue;
-			}
+				// Skip tool nodes and tool calls - only stream final model response text
+				if (metadata?.langgraph_node === "tools") {
+					// Skip tool execution results
+					continue;
+				}
 
 				// Handle both string tokens and structured content
 				if (typeof token === "string") {
