@@ -1,4 +1,8 @@
-import { createAgent } from "langchain";
+import { 
+  createAgent, 
+  anthropicPromptCachingMiddleware, 
+  todoListMiddleware 
+} from "langchain";
 import { fileListTool } from "../tools/file-listing.tool.js";
 import { fileReadTool } from "../tools/file-reading.tool.js";
 import { grepContentTool } from "../tools/grep-content.tool.js";
@@ -658,6 +662,13 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			model: this.aiModel,
 			tools: this.tools,
 			systemPrompt: this.createDynamicSystemPrompt(),
+			middleware: [
+				todoListMiddleware(),
+				...(this.config.aiProvider.type === "anthropic" ||
+				this.config.aiProvider.type === "anthropic-compatible"
+					? [anthropicPromptCachingMiddleware()]
+					: []),
+			],
 		});
 
 		logger.info("AGENT", "Agent initialized successfully", {
@@ -801,59 +812,30 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		process.on("SIGTERM", cleanup);
 
 		try {
-			// Stream the agent response with LLM token streaming
-			const stream = await this.agent.stream(
-				{
-					messages,
-				},
-				context
-					? {
-							context,
-							streamMode: "messages",
-							recursionLimit: 100,
-						}
-					: {
-							streamMode: "messages",
-							recursionLimit: 100,
-						},
+			// Use invoke() to get clean final response only
+			// Note: streaming is suppressed to avoid intermediate tool outputs
+			const result = await this.agent.invoke(
+				{ messages },
+				context ? { context, recursionLimit: 100 } : { recursionLimit: 100 }
 			);
 
-			logger.debug("AGENT", "Streaming response started");
-
-			// Process stream chunks and yield content
-			let tokenCount = 0;
-			for await (const [token, metadata] of stream) {
-				// Check for interruption
-				if (isInterrupted) {
-					logger.warn("AGENT", "Streaming interrupted by user");
-					yield "\n\n[Streaming interrupted by user]";
-					break;
-				}
-
-				// Skip tool nodes and tool calls - only stream final model response text
-				if (metadata?.langgraph_node === "tools") {
-					// Skip tool execution results
-					continue;
-				}
-
-				// Handle both string tokens and structured content
-				if (typeof token === "string") {
-					tokenCount++;
-					yield token;
-				} else if (token && typeof token === "object") {
-					// Handle structured token content
-					if (token.content) {
-						if (typeof token.content === "string") {
-							tokenCount++;
-							yield token.content;
-						} else if (Array.isArray(token.content)) {
-							// Handle content blocks (common in LangChain)
-							// Skip tool call blocks (only stream final text)
-
-							for (const block of token.content) {
-								if (block.type === "text" && block.text) {
-									tokenCount++;
-									yield block.text;
+			// Extract the final message content
+			if (result.messages && result.messages.length > 0) {
+				const lastMessage = result.messages[result.messages.length - 1];
+				if (lastMessage?.content) {
+					const content = lastMessage.content;
+					if (typeof content === "string") {
+						yield content;
+					} else if (Array.isArray(content)) {
+						// Handle content blocks - only output text blocks
+						for (const block of content) {
+							if (block && typeof block === "object") {
+								const blockObj = block as { type?: string; text?: unknown };
+								if (blockObj.type === "text" && blockObj.text) {
+									const text = blockObj.text;
+									if (typeof text === "string") {
+										yield text;
+									}
 								}
 							}
 						}
@@ -861,12 +843,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				}
 			}
 
-			// Log token progress periodically
-			if (tokenCount > 0 && tokenCount % 100 === 0) {
-				logger.debug("AGENT", "Streaming progress", { tokenCount });
-			}
-
-			// Clean end of stream
 			yield "\n";
 		} catch (error) {
 			// Enhanced error handling for different error types
