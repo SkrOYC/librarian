@@ -5,13 +5,23 @@
  * Metadata-only logging (no sensitive data)
  */
 
-import { mkdir } from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
+import { mkdir } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { FileSink } from "bun";
 
-export type LogLevel = 'INFO' | 'DEBUG' | 'WARN' | 'ERROR';
-export type LogComponent = 'CLI' | 'CONFIG' | 'LIBRARIAN' | 'AGENT' | 'TOOL' | 'LLM' | 'GIT' | 'PATH' | 'LOGGER' | 'TIMING';
+export type LogLevel = "INFO" | "DEBUG" | "WARN" | "ERROR";
+export type LogComponent =
+  | "CLI"
+  | "CONFIG"
+  | "LIBRARIAN"
+  | "AGENT"
+  | "TOOL"
+  | "LLM"
+  | "GIT"
+  | "PATH"
+  | "LOGGER"
+  | "TIMING";
 
 interface LogMetadata {
   [key: string]: unknown;
@@ -46,9 +56,9 @@ class Logger {
   }
 
   /**
-    * Initialize the log file with timestamp
-    * Format: ~/.config/librarian/logs/YYYY-MM-DD_HH-MM-SS_mmm-librarian.log
-    */
+   * Initialize the log file with timestamp
+   * Format: ~/.config/librarian/logs/YYYY-MM-DD_HH-MM-SS_mmm-librarian.log
+   */
   private async initializeLogFile(): Promise<void> {
     try {
       // Create timestamp for filename
@@ -56,39 +66,38 @@ class Logger {
       const isoString = now.toISOString();
 
       if (!isoString) {
-        throw new Error('Failed to generate timestamp');
+        throw new Error("Failed to generate timestamp");
       }
 
       // Create timestamp: YYYY-MM-DD_HH-MM-SS
       const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      const ms = String(now.getMilliseconds()).padStart(3, '0');
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const hours = String(now.getHours()).padStart(2, "0");
+      const minutes = String(now.getMinutes()).padStart(2, "0");
+      const seconds = String(now.getSeconds()).padStart(2, "0");
+      const ms = String(now.getMilliseconds()).padStart(3, "0");
 
       const timestamp = `${year}-${month}-${day}_${hours}-${minutes}-${seconds}_${ms}`;
 
       // Log directory
-      const logDir = path.join(os.homedir(), '.config', 'librarian', 'logs');
+      const logDir = path.join(os.homedir(), ".config", "librarian", "logs");
 
-       // Ensure directory exists
-       if (!(await Bun.file(logDir).exists())) {
-         await mkdir(logDir, { recursive: true });
-       }
+      // Ensure directory exists
+      if (!(await Bun.file(logDir).exists())) {
+        await mkdir(logDir, { recursive: true });
+      }
 
       // Log filename
       const logFilename = `${timestamp}-librarian.log`;
       const logPath = path.join(logDir, logFilename);
 
-       // Create write stream
-       const logFile = Bun.file(logPath);
-       this.writer = logFile.writer();
+      // Create write stream
+      const logFile = Bun.file(logPath);
+      this.writer = logFile.writer();
 
-       // Log initialization
-       this.info('LOGGER', `Logging initialized: ${logPath}`);
-
+      // Log initialization
+      this.info("LOGGER", `Logging initialized: ${logPath}`);
     } catch {
       // Silent - do nothing on initialization errors
     }
@@ -100,12 +109,12 @@ class Logger {
   private formatTimestamp(): string {
     const now = new Date();
     const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    const ms = String(now.getMilliseconds()).padStart(3, '0');
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const seconds = String(now.getSeconds()).padStart(2, "0");
+    const ms = String(now.getMilliseconds()).padStart(3, "0");
 
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
   }
@@ -126,24 +135,27 @@ class Logger {
   private getRedactedValue(key: string, value: unknown): unknown {
     const lowerKey = key.toLowerCase();
 
-    if (['apiKey', 'token', 'secret', 'password'].includes(lowerKey)) {
-      return '[REDACTED]';
+    if (["apiKey", "token", "secret", "password"].includes(lowerKey)) {
+      return "[REDACTED]";
     }
 
-    if ((key === 'query' || key === 'content') && typeof value === 'string') {
+    if ((key === "query" || key === "content") && typeof value === "string") {
       return value.length;
     }
 
-    if ((key === 'repoUrl' || key === 'baseURL') && typeof value === 'string') {
+    if ((key === "repoUrl" || key === "baseURL") && typeof value === "string") {
       return this.redactUrl(value);
     }
 
-    if (key === 'workingDir' && typeof value === 'string') {
-      return value.replace(os.homedir(), '~');
+    if (key === "workingDir" && typeof value === "string") {
+      return value.replace(os.homedir(), "~");
     }
 
-    if (typeof value === 'string' && (value.includes(os.homedir()) || value.includes('/home/'))) {
-      return value.replace(os.homedir(), '~');
+    if (
+      typeof value === "string" &&
+      (value.includes(os.homedir()) || value.includes("/home/"))
+    ) {
+      return value.replace(os.homedir(), "~");
     }
 
     return value;
@@ -154,14 +166,19 @@ class Logger {
       const url = new URL(value);
       return url.hostname;
     } catch {
-      return '[INVALID_URL]';
+      return "[INVALID_URL]";
     }
   }
 
   /**
    * Format log entry
    */
-  private formatLogEntry(level: LogLevel, component: LogComponent, message: string, metadata?: LogMetadata): string {
+  private formatLogEntry(
+    level: LogLevel,
+    component: LogComponent,
+    message: string,
+    metadata?: LogMetadata
+  ): string {
     const timestamp = this.formatTimestamp();
     let entry = `[${timestamp}] [${level}] [${component}] ${message}`;
 
@@ -173,23 +190,28 @@ class Logger {
     return entry;
   }
 
-   /**
-    * Write log entry to file
-    */
-   private writeLog(entry: string): void {
-     try {
-       if (this.writer) {
-         this.writer.write(`${entry}\n`);
-       }
-     } catch {
-       // Silent - do nothing on write errors
-     }
-   }
+  /**
+   * Write log entry to file
+   */
+  private writeLog(entry: string): void {
+    try {
+      if (this.writer) {
+        this.writer.write(`${entry}\n`);
+      }
+    } catch {
+      // Silent - do nothing on write errors
+    }
+  }
 
   /**
    * Internal logging method
    */
-  private log(level: LogLevel, component: LogComponent, message: string, metadata?: LogMetadata): void {
+  private log(
+    level: LogLevel,
+    component: LogComponent,
+    message: string,
+    metadata?: LogMetadata
+  ): void {
     try {
       const entry = this.formatLogEntry(level, component, message, metadata);
       this.writeLog(entry);
@@ -202,15 +224,19 @@ class Logger {
    * INFO level - Always logged
    */
   info(component: LogComponent, message: string, metadata?: LogMetadata): void {
-    this.log('INFO', component, message, metadata);
+    this.log("INFO", component, message, metadata);
   }
 
   /**
    * DEBUG level - Only logged when debug mode is enabled
    */
-  debug(component: LogComponent, message: string, metadata?: LogMetadata): void {
+  debug(
+    component: LogComponent,
+    message: string,
+    metadata?: LogMetadata
+  ): void {
     if (this.debugMode) {
-      this.log('DEBUG', component, message, metadata);
+      this.log("DEBUG", component, message, metadata);
     }
   }
 
@@ -218,13 +244,18 @@ class Logger {
    * WARN level - Always logged
    */
   warn(component: LogComponent, message: string, metadata?: LogMetadata): void {
-    this.log('WARN', component, message, metadata);
+    this.log("WARN", component, message, metadata);
   }
 
   /**
    * ERROR level - Always logged with stack trace
    */
-  error(component: LogComponent, message: string, error?: Error, metadata?: LogMetadata): void {
+  error(
+    component: LogComponent,
+    message: string,
+    error?: Error,
+    metadata?: LogMetadata
+  ): void {
     const errorMetadata: LogMetadata = metadata ? { ...metadata } : {};
 
     if (error) {
@@ -237,7 +268,7 @@ class Logger {
       }
     }
 
-    this.log('ERROR', component, message, errorMetadata);
+    this.log("ERROR", component, message, errorMetadata);
   }
 
   /**
@@ -248,10 +279,10 @@ class Logger {
     const operationId = `${operation}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     this.timingOperations.set(operationId, {
       operation,
-      startTime: performance.now()
+      startTime: performance.now(),
     });
 
-    this.debug('TIMING', `Started: ${operation}`);
+    this.debug("TIMING", `Started: ${operation}`);
 
     return operationId;
   }
@@ -259,7 +290,11 @@ class Logger {
   /**
    * End timing an operation
    */
-  timingEnd(operationId: string, component: LogComponent, message?: string): void {
+  timingEnd(
+    operationId: string,
+    component: LogComponent,
+    message?: string
+  ): void {
     const timing = this.timingOperations.get(operationId);
 
     if (timing) {
@@ -272,23 +307,23 @@ class Logger {
       this.info(component, logMessage, { duration: `${durationMs}ms` });
 
       if (this.debugMode) {
-        this.debug('TIMING', `Ended: ${timing.operation}`, { durationMs });
+        this.debug("TIMING", `Ended: ${timing.operation}`, { durationMs });
       }
     }
   }
 
-   /**
-    * Clean up resources
-    */
-   close(): void {
-     try {
-       if (this.writer) {
-         this.writer.end();
-       }
-     } catch {
-       // Silent
-     }
-   }
+  /**
+   * Clean up resources
+   */
+  close(): void {
+    try {
+      if (this.writer) {
+        this.writer.end();
+      }
+    } catch {
+      // Silent
+    }
+  }
 }
 
 // Export singleton instance

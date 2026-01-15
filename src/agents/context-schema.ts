@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Context Schema for Agent Runtime
@@ -10,7 +10,10 @@ export const contextSchema = z.object({
   /** The absolute path to sandbox directory where all file operations should be confined */
   workingDir: z.string().describe("The absolute path to sandbox directory"),
   /** Optional environment identifier (e.g., 'development', 'production') */
-  environment: z.string().optional().describe("Optional environment identifier"),
+  environment: z
+    .string()
+    .optional()
+    .describe("Optional environment identifier"),
   /** The technology group name (e.g., 'default', 'langchain') */
   group: z.string().describe("The technology group name"),
   /** The technology/repo name (e.g., 'react', 'openai') */
