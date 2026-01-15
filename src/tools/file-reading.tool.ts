@@ -117,7 +117,7 @@ async function readLinesInRange(
 				// Optimization: Stop reading if we've passed the requested range
 				if (endLine !== -1 && currentLine > endLine) {
 					await reader.cancel();
-					return { lines, totalLines: -1 }; // totalLines unknown if we stop early
+					return { lines };
 				}
 			}
 		}

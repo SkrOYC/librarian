@@ -270,26 +270,22 @@ export const grepTool = tool(
 				if (isExcluded) continue;
 
 				if (await isTextFile(file)) {
-					try {
-						const fileMatches = await searchFileWithContext(
-							file,
-							searchRegex,
-							contextBefore,
-							contextAfter,
-						);
+					const fileMatches = await searchFileWithContext(
+						file,
+						searchRegex,
+						contextBefore,
+						contextAfter,
+					);
 
-						if (fileMatches.length > 0) {
-							const remainingSlot = maxResults - totalMatches;
-							const limitedMatches = fileMatches.slice(0, remainingSlot);
-							
-							results.push({ 
-								path: path.relative(workingDir, file), 
-								matches: limitedMatches 
-							});
-							totalMatches += limitedMatches.length;
-						}
-					} catch {
-						// Silent fail for unreadable files
+					if (fileMatches.length > 0) {
+						const remainingSlot = maxResults - totalMatches;
+						const limitedMatches = fileMatches.slice(0, remainingSlot);
+						
+						results.push({ 
+							path: path.relative(workingDir, file), 
+							matches: limitedMatches 
+						});
+						totalMatches += limitedMatches.length;
 					}
 				}
 			}
