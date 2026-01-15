@@ -26,21 +26,31 @@ Librarian CLI allows AI coding agents to:
 
 ## Installation
 
-### Quick Try
+### NPM Installation
 
 ```bash
-# Build and run directly with Nix
-nix run github:SkrOYC/librarian -- --help
+# Install globally
+npm install -g @skroyc/librarian
+
+# Or install locally
+npm install @skroyc/librarian
 ```
 
 ### Bun Installation
 
 ```bash
 # Install globally
-bun add -g librarian-cli
+bun add -g @skroyc/librarian
 
 # Or install locally
-bun add librarian-cli
+bun add @skroyc/librarian
+```
+
+### Quick Try
+
+```bash
+# Build and run directly with Nix
+nix run github:SkrOYC/librarian -- --help
 ```
 
 ### Nix Installation
@@ -532,14 +542,23 @@ aiProvider:
 git clone https://github.com/SkrOYC/librarian.git
 cd librarian
 
-# Install dependencies
+# Install dependencies with Bun (recommended)
 bun install
 
-# Build the project
+# OR install dependencies with npm
+npm install
+
+# Build the project with Bun
 bun run build
 
-# Run tests
+# OR build with npm
+npm run build
+
+# Run tests with Bun
 bun run test
+
+# OR run tests with npm
+npm run test
 ```
 
 ### Dependencies

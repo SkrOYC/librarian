@@ -1,0 +1,45 @@
+# Nix-specific files
+flake.nix
+default.nix
+bun.nix
+result
+
+# Test files
+tests/
+verify-sandboxing.ts
+
+# Editor/IDE files
+.vscode/
+.idea/
+.claude/
+
+# Environment files
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+
+# Git files
+.git/
+.gitignore
+.github/
+
+# Build artifacts (should be rebuilt during install)
+librarian
+
+# Development files
+CONTRIBUTING.md
+AGENTS.md
+
+# Lock files (npm manages its own)
+bun.lock
+flake.lock
+
+# Temporary files
+*.tmp
+*.swp
+*~
+\#*#
