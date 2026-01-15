@@ -301,13 +301,13 @@ export const grepTool = tool(
 	},
 	{
 		name: "grep",
-		description: `A powerful search tool built on ripgrep
+		description: `A powerful search tool for finding text patterns in files.
 
 Usage:
 - ALWAYS use grep for search tasks.
 - Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
-- Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
-- Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use \`interface{}\` to find \`interface{}\` in Go code)
+- Filter files with glob parameter (e.g., "*.js", "**/*.tsx")
+- Pattern syntax: Uses JavaScript regex - literal braces need escaping (use \`interface{}\` to find \`interface{}\` in Go code)
 `,
 		schema: z.object({
 			searchPath: z.string().describe("The directory path to search in"),

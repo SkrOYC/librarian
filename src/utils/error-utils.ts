@@ -76,5 +76,9 @@ export function getToolSuggestion(operation: string, targetPath?: string): strin
 		return "Try a simpler search pattern or verify the search path.";
 	}
 
+	if (operation === "find") {
+		return "Check if the search path exists and the patterns are valid glob patterns.";
+	}
+
 	return undefined;
 }

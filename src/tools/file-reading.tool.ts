@@ -139,9 +139,9 @@ export const viewTool = tool(
 			}
 
 			// Read file content within range using streaming
-			const { lines, totalLines } = await readLinesInRange(resolvedPath, viewRange);
+			const { lines } = await readLinesInRange(resolvedPath, viewRange);
 
-			if (lines.length === 0 && totalLines === 0) {
+			if (lines.length === 0) {
 				return "[File is empty]";
 			}
 
