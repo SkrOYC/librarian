@@ -192,4 +192,46 @@ describe('Modern File Listing Tool', () => {
     fs.unlinkSync(testFile1);
     fs.unlinkSync(testFile2);
   });
+
+  it('should handle recursive listing with maxDepth', async () => {
+    const level1Dir = path.join(testDir, 'level1');
+    const level2Dir = path.join(level1Dir, 'level2');
+    fs.mkdirSync(level2Dir, { recursive: true });
+
+    fs.writeFileSync(path.join(testDir, 'root.txt'), 'Root file');
+    fs.writeFileSync(path.join(level1Dir, 'level1.txt'), 'Level 1 file');
+    fs.writeFileSync(path.join(level2Dir, 'level2.txt'), 'Level 2 file');
+
+    // Test with maxDepth=1 (list starting directory contents, don't recurse)
+    const result1 = await listTool.invoke({
+      directoryPath: testDir,
+      recursive: true,
+      maxDepth: 1
+    }, { context: testContext });
+
+    expect(result1).toContain('root.txt');
+    expect(result1).toContain('level1/'); // Directory header shown, but contents not recursed
+    expect(result1).not.toContain('level1.txt'); // Not recursed, so not shown
+    expect(result1).not.toContain('level2/');
+
+    // Test with maxDepth=2 (list starting directory + 1 level deep)
+    const result2 = await listTool.invoke({
+      directoryPath: testDir,
+      recursive: true,
+      maxDepth: 2
+    }, { context: testContext });
+
+    expect(result2).toContain('root.txt');
+    expect(result2).toContain('level1/');
+    expect(result2).toContain('level1.txt'); // Recursed into level1
+    expect(result2).not.toContain('level2/'); // Not recursed into level2
+    expect(result2).not.toContain('level2.txt');
+
+    // Clean up
+    fs.unlinkSync(path.join(testDir, 'root.txt'));
+    fs.unlinkSync(path.join(level1Dir, 'level1.txt'));
+    fs.unlinkSync(path.join(level2Dir, 'level2.txt'));
+    fs.rmdirSync(level2Dir);
+    fs.rmdirSync(level1Dir);
+  });
 });
