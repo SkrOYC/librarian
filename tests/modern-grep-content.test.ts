@@ -54,6 +54,14 @@ describe('Modern Grep Content Tool', () => {
     expect(result).toContain('attempts to escape the working directory sandbox');
   });
 
+  it('should handle non-existent search path', async () => {
+    const result = await grepTool.invoke({
+      searchPath: './nonexistent_subdir',
+      query: 'test'
+    }, { context: testContext });
+    expect(result).toContain('does not exist');
+  });
+
   it('should handle missing query parameter', async () => {
     // Test with empty query which should fail at runtime
     const result = await grepTool.invoke({
