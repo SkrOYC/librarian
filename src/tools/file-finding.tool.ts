@@ -57,6 +57,11 @@ export const findTool = tool(
 				throw new Error(`Search path "${searchPath}" is not a directory`);
 			}
 
+			// Validate that patterns array is not empty
+			if (!patterns || patterns.length === 0) {
+				throw new Error('The "patterns" parameter must contain at least one glob pattern');
+			}
+
 			// Initialize GitIgnoreService
 			const gitignore = new GitIgnoreService(workingDir);
 			await gitignore.initialize();

@@ -47,6 +47,29 @@ describe('GitIgnoreService', () => {
     expect(service.shouldIgnore(path.join(testDir, 'important.txt'))).toBe(false);
   });
 
+  it('should handle negation patterns that come before ignore patterns', async () => {
+    // This is the critical case: negation before ignore should still work
+    fs.writeFileSync(path.join(testDir, '.gitignore'), '!important.txt\n*.txt');
+    
+    const service = new GitIgnoreService(testDir);
+    await service.initialize();
+    
+    expect(service.shouldIgnore(path.join(testDir, 'important.txt'))).toBe(false);
+    expect(service.shouldIgnore(path.join(testDir, 'other.txt'))).toBe(true);
+  });
+
+  it('should handle multiple negation patterns', async () => {
+    fs.writeFileSync(path.join(testDir, '.gitignore'), '*.log\n!important.log\n!debug.log\n*.txt');
+    
+    const service = new GitIgnoreService(testDir);
+    await service.initialize();
+    
+    expect(service.shouldIgnore(path.join(testDir, 'error.log'))).toBe(true);
+    expect(service.shouldIgnore(path.join(testDir, 'important.log'))).toBe(false);
+    expect(service.shouldIgnore(path.join(testDir, 'debug.log'))).toBe(false);
+    expect(service.shouldIgnore(path.join(testDir, 'notes.txt'))).toBe(true);
+  });
+
   it('should handle directory patterns', async () => {
     fs.writeFileSync(path.join(testDir, '.gitignore'), 'dist/');
     
