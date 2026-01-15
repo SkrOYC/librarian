@@ -9,6 +9,9 @@
     "dist"
   ],
   "compilerOptions": {
-    "types": ["bun-types"]
+    "types": [
+      "bun-types"
+    ],
+    "strictNullChecks": true
   }
 }
