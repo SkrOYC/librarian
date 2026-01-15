@@ -24,6 +24,15 @@ Librarian CLI allows AI coding agents to:
 
 ## Installation
 
+### Quick Try
+
+```bash
+# Build and run directly with Nix
+nix run github:SkrOYC/librarian -- --help
+```
+
+### Bun Installation
+
 ```bash
 # Install globally
 bun add -g librarian-cli
@@ -32,11 +41,143 @@ bun add -g librarian-cli
 bun add librarian-cli
 ```
 
-## NixOS Installation
+### Nix Installation
 
 This project supports building with Nix using [bun2nix](https://github.com/nix-community/bun2nix).
 
-### Building with Nix
+#### Prerequisites
+
+Ensure you have Nix with flakes enabled:
+
+```bash
+# Add to ~/.config/nix/nix.conf or /etc/nix/nix.conf
+experimental-features = nix-command flakes
+```
+
+#### Option 1: NixOS System-wide
+
+Add the librarian flake to your system configuration:
+
+```nix
+# In your /etc/nixos/flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    librarian.url = "github:SkrOYC/librarian";
+  };
+
+  outputs = inputs: {
+    # ... your existing nixosConfiguration ...
+    nixosConfigurations.yourhost = inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        # Your existing modules
+        ({ pkgs, ... }: {
+          nixpkgs.overlays = [ inputs.librarian.overlays.default ];
+          environment.systemPackages = [ pkgs.librarian ];
+        })
+      ];
+    };
+  };
+}
+```
+
+Then rebuild:
+```bash
+sudo nixos-rebuild switch
+```
+
+#### Option 2: Home Manager (Recommended for multi-user systems)
+
+Add to your Home Manager configuration:
+
+```nix
+# In ~/.config/nixpkgs/home.nix or within your home-manager module
+{ inputs, pkgs, ... }:
+
+{
+  home = {
+    packages = [ pkgs.librarian ];
+  };
+
+  # Or if using flake-based Home Manager
+  programs.home-manager.enable = true;
+  home-manager.users.youruser = { pkgs, ... }: {
+    home.packages = [ pkgs.librarian ];
+  };
+}
+```
+
+With flakes:
+```nix
+# In your home-manager flake
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    home-manager.url = "github:nix-community/home-manager";
+    librarian.url = "github:SkrOYC/librarian";
+  };
+
+  outputs = inputs: {
+    homeManagerModules = {
+      my-home = { pkgs, ... }: {
+        home.packages = [ pkgs.librarian ];
+      };
+    };
+  };
+}
+```
+
+Then:
+```bash
+home-manager switch
+```
+
+#### Option 3: nix profile (User-wide, any Linux/macOS)
+
+Install to your user profile:
+
+```bash
+# Install latest version
+nix profile install github:SkrOYC/librarian
+
+# Or pin to a specific version
+nix profile install github:SkrOYC/librarian?ref=v0.1.0
+
+# Update
+nix profile upgrade librarian
+
+# List installed packages
+nix profile list
+
+# Remove
+nix profile remove librarian
+```
+
+#### Option 4: Flake Overlay (For your own flakes)
+
+Use librarian as an overlay in your flake:
+
+```nix
+# In your flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    librarian.url = "github:SkrOYC/librarian";
+  };
+
+  outputs = inputs: {
+    packages = inputs.nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (system: {
+      default = import inputs.nixpkgs {
+        inherit system;
+        overlays = [ inputs.librarian.overlays.default ];
+      }.librarian;
+    });
+  };
+}
+```
+
+#### Building from Source
 
 ```bash
 # Build the package (requires Nix flakes enabled)
@@ -46,31 +187,19 @@ nix build .#default
 ./result/bin/librarian --help
 ```
 
-### System-wide Installation
+#### Darwin/macOS Support
 
-Add the librarian flake to your NixOS system configuration:
+Librarian supports macOS on both x86_64 and Apple Silicon:
 
-```nix
-# In /etc/nixos/flake.nix
-inputs = {
-  librarian.url = "path:/home/oscar/GitHub/librarian";
-  # or for GitHub: librarian.url = "github:yourusername/librarian";
-};
-
-# In your nixosConfigurations module
-modules = [
-  ({ pkgs, ... }: {
-    # Add librarian overlay
-    nixpkgs.overlays = [ librarian.overlays.default ];
-    environment.systemPackages = [ pkgs.librarian ];
-  })
-];
-```
-
-Then rebuild:
 ```bash
-sudo nixos-rebuild switch
+# Run directly
+nix run github:SkrOYC/librarian -- --help
+
+# Install to profile
+nix profile install github:SkrOYC/librarian
 ```
+
+Note: Full system installation on macOS requires [nix-darwin](https://github.com/LnL7/nix-darwin):
 
 ## Quick Start
 

@@ -66,5 +66,20 @@
           '';
         };
       });
+
+      # Overlay for other flakes to consume
+      overlays.default = final: prev: {
+        librarian = final.callPackage ./default.nix {
+          inherit (final) bun2nix bun;
+        };
+      };
+
+      # Checks for nix flake check
+      checks = eachSystem (system: {
+        # Run basic binary test
+        works = pkgsFor.${system}.callPackage ./default.nix {
+          inherit (pkgsFor.${system}) bun2nix bun;
+        };
+      });
     };
 }

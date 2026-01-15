@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - prepare-open-source
+  pull_request:
+
+jobs:
+  # Validate flake structure and run basic tests
+  flake:
+    name: Flake Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            flakes = true
+            experimental-features = nix-command flakes
+
+      - name: Run flake check (includes passthru.tests)
+        run: nix flake check --impure
+
+  # Build on Linux (primary platform)
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            flakes = true
+            experimental-features = nix-command flakes
+
+      - name: Build for x86_64-linux
+        run: nix build .#default --system x86_64-linux
+
+      - name: Verify binary
+        run: ./result/bin/librarian --help
+
+      - name: Build for aarch64-linux
+        run: nix build .#default --system aarch64-linux
+
+  # Build and test on macOS
+  build-darwin:
+    name: Build (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            flakes = true
+            experimental-features = nix-command flakes
+
+      - name: Build for x86_64-darwin
+        run: nix build .#default --system x86_64-darwin
+
+      - name: Verify binary
+        run: ./result/bin/librarian --help
+
+      - name: Build for aarch64-darwin
+        run: nix build .#default --system aarch64-darwin
