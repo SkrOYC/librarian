@@ -163,7 +163,7 @@ function simpleMatch(str: string, pattern: string): boolean {
 }
 
 // Create the modernized tool using the tool() function
-export const fileFindTool = tool(
+export const findTool = tool(
 	async (
 		{
 			searchPath = ".",
@@ -175,9 +175,9 @@ export const fileFindTool = tool(
 		},
 		config,
 	) => {
-		const timingId = logger.timingStart("fileFind");
+		const timingId = logger.timingStart("find");
 
-		logger.info("TOOL", "file_find called", {
+		logger.info("TOOL", "find called", {
 			searchPath,
 			patterns,
 			exclude,
@@ -194,29 +194,13 @@ export const fileFindTool = tool(
 					"Context with workingDir is required for file operations",
 				);
 			}
-			logger.debug("TOOL", "Working directory", {
-				workingDir: workingDir.replace(Bun.env.HOME || "", "~"),
-			});
 
 			// Validate the path to prevent directory traversal
 			const resolvedPath = path.resolve(workingDir, searchPath);
 			const resolvedWorkingDir = path.resolve(workingDir);
 			const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
-			logger.debug("TOOL", "Path validation", {
-				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
-				relativePath,
-				validated: !relativePath.startsWith(".."),
-			});
-
 			if (relativePath.startsWith("..")) {
-				logger.error(
-					"PATH",
-					"Search path escapes working directory sandbox",
-					undefined,
-					{ searchPath, relativePath },
-				);
 				throw new Error(
 					`Search path "${searchPath}" attempts to escape the working directory sandbox`,
 				);
@@ -225,9 +209,6 @@ export const fileFindTool = tool(
 			// Validate that the search path exists and is a directory
 			const stats = await fs.stat(resolvedPath);
 			if (!stats.isDirectory()) {
-				logger.error("TOOL", "Search path is not a directory", undefined, {
-					searchPath,
-				});
 				throw new Error(`Search path "${searchPath}" is not a directory`);
 			}
 
@@ -239,30 +220,25 @@ export const fileFindTool = tool(
 				includeHidden,
 			});
 
-			logger.timingEnd(timingId, "TOOL", "file_find completed");
-			logger.debug("TOOL", "File search successful", {
-				searchPath,
-				foundCount: foundFiles.length,
-				patterns,
-			});
+			logger.timingEnd(timingId, "find completed");
 
 			if (foundFiles.length === 0) {
 				return `No files found matching patterns: ${patterns?.join(", ") || "*"}`;
 			}
 
-			// Format results
+			// Format results relative to working directory
 			let output = `Found ${foundFiles.length} files matching patterns [${patterns?.join(", ") || "*"}]:\n\n`;
 
 			for (const file of foundFiles) {
-				const relativePath = path.relative(resolvedPath, file);
-				output += `${relativePath}\n`;
+				const relativeToWorkingDir = path.relative(resolvedWorkingDir, file);
+				output += `${relativeToWorkingDir}\n`;
 			}
 
 			return output;
 		} catch (error) {
 			logger.error(
 				"TOOL",
-				"file_find failed",
+				"find failed",
 				error instanceof Error ? error : new Error(String(error)),
 				{ searchPath, patterns },
 			);
@@ -270,7 +246,7 @@ export const fileFindTool = tool(
 		}
 	},
 	{
-		name: "find_files",
+		name: "find",
 		description: `Discovers files using glob patterns. Respects .gitignore.
 Usage
 - Fast file pattern matching command that works with any codebase size

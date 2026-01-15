@@ -64,7 +64,7 @@ async function readLinesInRange(
 	while (true) {
 		const { done, value } = await reader.read();
 		if (done) {
-			if (partialLine || currentLine === 1) {
+			if (partialLine) {
 				totalLines++;
 				if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
 					lines.push(partialLine);
@@ -90,11 +90,11 @@ async function readLinesInRange(
 }
 
 // Create the modernized tool using the tool() function
-export const fileReadTool = tool(
+export const viewTool = tool(
 	async ({ filePath, viewRange }, config) => {
-		const timingId = logger.timingStart("fileRead");
+		const timingId = logger.timingStart("view");
 
-		logger.info("TOOL", "file_read called", { filePath, viewRange });
+		logger.info("TOOL", "view called", { filePath, viewRange });
 
 		try {
 			// Get working directory from config context - required for security
@@ -131,24 +131,20 @@ export const fileReadTool = tool(
 			const { lines, totalLines } = await readLinesInRange(resolvedPath, viewRange);
 
 			if (lines.length === 0 && totalLines === 0) {
-				return `Content of file: ${filePath}\n\n[File is empty]`;
+				return "[File is empty]";
 			}
 
 			// Format content with correct line numbers
 			const startLine = viewRange ? Math.max(1, viewRange[0]) : 1;
 			const formattedContent = withLineNumbers(lines, startLine);
 
-			logger.timingEnd(timingId, "TOOL", "file_read completed");
+			logger.timingEnd(timingId, "TOOL", "view completed");
 			
-			const rangeInfo = viewRange 
-				? ` (lines ${startLine} to ${viewRange[1] === -1 ? totalLines : Math.min(totalLines, viewRange[1])})` 
-				: "";
-
-			return `Content of file: ${filePath}${rangeInfo}\n\n${formattedContent}`;
+			return formattedContent;
 		} catch (error) {
 			logger.error(
 				"TOOL",
-				"file_read failed",
+				"view failed",
 				error instanceof Error ? error : new Error(String(error)),
 				{ filePath },
 			);
@@ -156,7 +152,7 @@ export const fileReadTool = tool(
 		}
 	},
 	{
-		name: "file_read",
+		name: "view",
 		description:
 			"Read the contents of a file. Use this to examine the content of a specific file.",
 		schema: z.object({

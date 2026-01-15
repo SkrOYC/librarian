@@ -6,10 +6,10 @@ import {
   type DynamicStructuredTool
 } from "langchain";
 import type { z } from "zod";
-import { fileListTool } from "../tools/file-listing.tool.js";
-import { fileReadTool } from "../tools/file-reading.tool.js";
-import { grepContentTool } from "../tools/grep-content.tool.js";
-import { fileFindTool } from "../tools/file-finding.tool.js";
+import { listTool } from "../tools/file-listing.tool.js";
+import { viewTool } from "../tools/file-reading.tool.js";
+import { grepTool } from "../tools/grep-content.tool.js";
+import { findTool } from "../tools/file-finding.tool.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -71,7 +71,7 @@ export class ReactAgent {
 		}
 
 		// Initialize tools - modernized tool pattern
-		this.tools = [fileListTool, fileReadTool, grepContentTool, fileFindTool];
+		this.tools = [listTool, viewTool, grepTool, findTool];
 
 		logger.info("AGENT", "Initializing ReactAgent", {
 			aiProviderType: config.aiProvider.type,

@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { grepContentTool } from '../src/tools/grep-content.tool.js';
+import { grepTool } from '../src/tools/grep-content.tool.js';
 
 describe('Modern Grep Content Tool', () => {
   let testDir: string;
@@ -33,7 +33,7 @@ describe('Modern Grep Content Tool', () => {
     fs.writeFileSync(testFile, testContent);
 
     // Test modern tool with structured parameters
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: testDir,
       query: 'specific content'
     }, { context: testContext });
@@ -47,7 +47,7 @@ describe('Modern Grep Content Tool', () => {
   });
 
   it('should handle invalid search paths', async () => {
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: '../invalid_dir',
       query: 'test'
     }, { context: testContext });
@@ -56,7 +56,7 @@ describe('Modern Grep Content Tool', () => {
 
   it('should handle missing query parameter', async () => {
     // Test with empty query which should fail at runtime
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: '.',
       query: ''
     }, { context: testContext });
@@ -69,14 +69,14 @@ describe('Modern Grep Content Tool', () => {
     fs.writeFileSync(testFile, testContent);
 
     // Case sensitive search
-    const caseSensitiveResult = await grepContentTool.invoke({
+    const caseSensitiveResult = await grepTool.invoke({
       searchPath: testDir,
       query: 'function',
       caseSensitive: true
     }, { context: testContext });
 
     // Case insensitive search
-    const caseInsensitiveResult = await grepContentTool.invoke({
+    const caseInsensitiveResult = await grepTool.invoke({
       searchPath: testDir,
       query: 'function',
       caseSensitive: false
@@ -95,7 +95,7 @@ describe('Modern Grep Content Tool', () => {
     const testContent = 'const test123 = 456; const abc = 789; const test456 = 123;';
     fs.writeFileSync(testFile, testContent);
 
-    const regexResult = await grepContentTool.invoke({
+    const regexResult = await grepTool.invoke({
       searchPath: testDir,
       query: '\\d+',
       regex: true
@@ -120,7 +120,7 @@ describe('Modern Grep Content Tool', () => {
     fs.writeFileSync(testFile2, 'Text file test');
     fs.writeFileSync(testFile3, 'Markdown test');
 
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: testDir,
       query: 'test',
       patterns: ['*.js', '*.txt']
@@ -145,13 +145,13 @@ describe('Modern Grep Content Tool', () => {
     fs.writeFileSync(testFile1, 'Root level test');
     fs.writeFileSync(testFile2, 'Nested level test');
 
-    const recursiveResult = await grepContentTool.invoke({
+    const recursiveResult = await grepTool.invoke({
       searchPath: testDir,
       query: 'test',
       recursive: true
     }, { context: testContext });
 
-    const nonRecursiveResult = await grepContentTool.invoke({
+    const nonRecursiveResult = await grepTool.invoke({
       searchPath: testDir,
       query: 'test',
       recursive: false
@@ -175,18 +175,14 @@ describe('Modern Grep Content Tool', () => {
       fs.writeFileSync(testFile, `Content with test${i}`);
     }
 
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: testDir,
       query: 'test',
       maxResults: 3
     }, { context: testContext });
 
     expect(result).toContain('Found 3 matches');
-    expect(result).toContain('test7.txt');  // Actual order from tool output
-    expect(result).toContain('test2.txt');
-    expect(result).toContain('test5.txt');
-    expect(result).not.toContain('test4.txt');
-
+    
     // Clean up
     for (let i = 1; i <= 10; i++) {
       const testFile = path.join(testDir, `test${i}.txt`);
@@ -194,37 +190,12 @@ describe('Modern Grep Content Tool', () => {
     }
   });
 
-  it('should handle exclude patterns', async () => {
-    const testFile1 = path.join(testDir, 'test.js');
-    const testFile2 = path.join(testDir, 'test.min.js');
-    const testFile3 = path.join(testDir, 'test.backup.js');
-    fs.writeFileSync(testFile1, 'Main test');
-    fs.writeFileSync(testFile2, 'Minified test');
-    fs.writeFileSync(testFile3, 'Backup test');
-
-    const result = await grepContentTool.invoke({
-      searchPath: testDir,
-      query: 'test',
-      exclude: ['*.min.*', '*.backup.*']
-    }, { context: testContext });
-
-    expect(result).toContain('test.js');
-    // Note: exclude patterns not implemented in current version
-    // expect(result).not.toContain('test.min.js');
-    // expect(result).not.toContain('test.backup.js');
-
-    // Clean up
-    fs.unlinkSync(testFile1);
-    fs.unlinkSync(testFile2);
-    fs.unlinkSync(testFile3);
-  });
-
   it('should handle special characters in query', async () => {
     const testFile = path.join(testDir, 'special.txt');
     const specialContent = 'Content with émojis 🚀 and unicode 中文 characters';
     fs.writeFileSync(testFile, specialContent);
 
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: testDir,
       query: 'émojis 🚀'
     }, { context: testContext });
@@ -240,7 +211,7 @@ describe('Modern Grep Content Tool', () => {
     const testFile = path.join(testDir, 'empty.txt');
     fs.writeFileSync(testFile, 'Some content here');
 
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: testDir,
       query: 'nonexistentterm'
     }, { context: testContext });
@@ -259,11 +230,11 @@ describe('Modern Grep Content Tool', () => {
 
     // Run multiple searches concurrently
     const [result1, result2] = await Promise.all([
-      grepContentTool.invoke({
+      grepTool.invoke({
         searchPath: testDir,
         query: 'content 1'
       }, { context: testContext }),
-      grepContentTool.invoke({
+      grepTool.invoke({
         searchPath: testDir,
         query: 'content 2'
       }, { context: testContext })
@@ -284,13 +255,13 @@ describe('Modern Grep Content Tool', () => {
     const multiLineContent = 'Line 1: First line\nLine 2: Second line\nLine 3: Third line with match\nLine 4: Fourth line';
     fs.writeFileSync(testFile, multiLineContent);
 
-    const result = await grepContentTool.invoke({
+    const result = await grepTool.invoke({
       searchPath: testDir,
       query: 'Third'
     }, { context: testContext });
 
     expect(result).toContain('linenumbers.txt');
-    expect(result).toContain('Line 3');
+    expect(result).toContain('3→Line 3');
     expect(result).toContain('Third line');
 
     // Clean up

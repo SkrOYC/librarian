@@ -113,11 +113,11 @@ async function listDirectoryDFS(
 }
 
 // Create the modernized tool using the tool() function
-export const fileListTool = tool(
+export const listTool = tool(
 	async ({ directoryPath = ".", includeHidden = false, recursive = false, maxDepth = 1 }, config) => {
-		const timingId = logger.timingStart("fileList");
+		const timingId = logger.timingStart("list");
 
-		logger.info("TOOL", "file_list called", { directoryPath, includeHidden, recursive, maxDepth });
+		logger.info("TOOL", "list called", { directoryPath, includeHidden, recursive, maxDepth });
 
 		try {
 			// Get working directory from config context - required for security
@@ -146,11 +146,13 @@ export const fileListTool = tool(
 			// Format the result for the AI
 			const treeOutput = formatDirectoryTree(entries);
 			
-			let result = `Contents of directory: ${resolvedPath}\n\n`;
+			// Use relative path for display
+			const displayPath = relativePath === "" ? "." : relativePath;
+			let result = `Contents of directory: ${displayPath}\n\n`;
 			result += `Total entries: ${entries.length}\n\n`;
 			result += treeOutput;
 
-			logger.timingEnd(timingId, "TOOL", "file_list completed");
+			logger.timingEnd(timingId, "TOOL", "list completed");
 			return result;
 		} catch (error) {
 			logger.error(
@@ -173,13 +175,13 @@ export const fileListTool = tool(
 				.optional()
 				.default(false)
 				.describe(
-					"Whether to include hidden files and directories. Defaults to \`false\`",
+					"Whether to include hidden files and directories. Defaults to `false`",
 				),
 			recursive: z
 				.boolean()
 				.optional()
 				.default(false)
-				.describe("Whether to list subdirectories recursively. Defaults to \`false\`"),
+				.describe("Whether to list subdirectories recursively. Defaults to `false`"),
 			maxDepth: z
 				.number()
 				.optional()
