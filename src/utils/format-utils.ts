@@ -1,0 +1,179 @@
+/**
+ * Formatting utility functions for tool outputs
+ */
+
+export interface FileSystemEntry {
+	name: string;
+	path: string;
+	isDirectory: boolean;
+	size?: number;
+	lineCount?: number;
+}
+
+export interface SearchMatch {
+	line: number;
+	column: number;
+	text: string;
+	context?: {
+		before: string[];
+		after: string[];
+	};
+}
+
+const MIN_LINE_NUM_WIDTH = 3;
+const FILE_SEPARATOR = "--";
+
+/**
+ * Add line numbers to content for display
+ */
+export function withLineNumbers(content: string, startLine = 1): string {
+	if (!content) return "";
+	const lines = content.split("\n");
+	const maxLineNumWidth = Math.max(
+		MIN_LINE_NUM_WIDTH,
+		String(startLine + lines.length - 1).length,
+	);
+
+	return lines
+		.map((line, index) => {
+			const lineNum = startLine + index;
+			const paddedNum = String(lineNum).padStart(maxLineNumWidth);
+			return `${paddedNum}→${line}`;
+		})
+		.join("\n");
+}
+
+/**
+ * Format content with optional line range
+ */
+export function formatContentWithRange(
+	content: string,
+	viewRange?: [number, number],
+): string {
+	if (!content || content.trim() === "") {
+		return "[File is empty]";
+	}
+
+	if (!viewRange) {
+		return withLineNumbers(content);
+	}
+
+	const lines = content.split("\n");
+	const [start, end] = viewRange;
+	const startIndex = Math.max(0, start - 1);
+	const endIndex = end === -1 ? lines.length : Math.min(lines.length, end);
+
+	const selectedLines = lines.slice(startIndex, endIndex);
+	return withLineNumbers(selectedLines.join("\n"), start);
+}
+
+/**
+ * Format directory listing in tree-like format
+ */
+export function formatDirectoryTree(entries: FileSystemEntry[]): string {
+	let output = "";
+
+	for (const entry of entries) {
+		let line = entry.isDirectory ? `${entry.name}/` : entry.name;
+
+		// For files, show line count if available
+		if (!entry.isDirectory && entry.lineCount !== undefined) {
+			line += ` (${entry.lineCount} lines)`;
+		} else if (!entry.isDirectory && entry.size !== undefined) {
+			line += ` (${entry.size} bytes)`;
+		}
+
+		output += `${line}\n`;
+	}
+
+	return output.trimEnd();
+}
+
+/**
+ * Format search results with context
+ */
+export function formatSearchResults(
+	results: { path: string; matches: SearchMatch[] }[],
+): string {
+	let output = "";
+	const totalMatches = results.reduce((sum, r) => sum + r.matches.length, 0);
+	
+	output += `Found ${totalMatches} matches in ${results.length} files:\n\n`;
+
+	for (let i = 0; i < results.length; i++) {
+		const result = results[i];
+		output += `${result.path}\n`;
+
+		const sortedMatches = [...result.matches].sort((a, b) => a.line - b.line);
+		const displayedLines = new Set<number>();
+		
+		// Calculate max line num width for this file
+		let maxLineNum = 0;
+		for (const match of sortedMatches) {
+			maxLineNum = Math.max(maxLineNum, match.line + (match.context?.after.length || 0));
+		}
+		const maxLineNumWidth = Math.max(MIN_LINE_NUM_WIDTH, String(maxLineNum).length);
+
+		for (const match of sortedMatches) {
+			// Before context
+			if (match.context?.before) {
+				const startLine = match.line - match.context.before.length;
+				for (let j = 0; j < match.context.before.length; j++) {
+					const lineNum = startLine + j;
+					if (!displayedLines.has(lineNum)) {
+						output += `${String(lineNum).padStart(maxLineNumWidth)}→${match.context.before[j]}\n`;
+						displayedLines.add(lineNum);
+					}
+				}
+			}
+
+			// Match line
+			if (!displayedLines.has(match.line)) {
+				output += `${String(match.line).padStart(maxLineNumWidth)}→${match.text}\n`;
+				displayedLines.add(match.line);
+			}
+
+			// After context
+			if (match.context?.after) {
+				const startLine = match.line + 1;
+				for (let j = 0; j < match.context.after.length; j++) {
+					const lineNum = startLine + j;
+					if (!displayedLines.has(lineNum)) {
+						output += `${String(lineNum).padStart(maxLineNumWidth)}→${match.context.after[j]}\n`;
+						displayedLines.add(lineNum);
+					}
+				}
+			}
+		}
+
+		if (i < results.length - 1) {
+			output += `${FILE_SEPARATOR}\n`;
+		}
+	}
+
+	return output;
+}
+
+/**
+ * Generate informative footer messages for various tool behaviors
+ */
+export function generateFooterMessage(
+	type: string,
+	context?: Record<string, any>,
+): string {
+	const footers: Record<string, (ctx?: any) => string> = {
+		searchResultsTruncated: (ctx) => {
+			const shown = ctx?.shown || 0;
+			const total = ctx?.total || 0;
+			const filesText = ctx?.totalFiles === 1 ? "1 file" : "files";
+			return `\n\nFound ${total} matches across ${filesText} (showing first ${shown} matches). Consider using more specific search patterns or file filters to narrow results.`;
+		},
+		noMatchesFound: (ctx) => {
+			const query = ctx?.query || "";
+			return `\n\nNo matches found for "${query}". Try adjusting your search pattern or check the file paths.`;
+		},
+	};
+
+	const generator = footers[type];
+	return generator ? generator(context) : "";
+}
