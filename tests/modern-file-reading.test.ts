@@ -64,7 +64,7 @@ describe('Modern File Reading Tool', () => {
     const result = await viewTool.invoke({
       filePath: 'non_existent_file.txt'
     }, { context: testContext });
-    expect(result).toContain('Error reading file');
+    expect(result).toContain('not found');
   });
 
   it('should handle invalid file paths', async () => {
@@ -153,7 +153,7 @@ describe('Modern File Reading Tool', () => {
       filePath: '/root/protected.txt'
     }, { context: testContext });
 
-    expect(result).toContain('Error reading file');
+    expect(result).toContain('view failed');
     expect(result).toContain('working directory sandbox');
   });
 

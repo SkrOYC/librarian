@@ -5,41 +5,8 @@ import path from "node:path";
 import { logger } from "../utils/logger.js";
 import { getFileLineCount } from "../utils/file-utils.js";
 import { formatDirectoryTree, type FileSystemEntry } from "../utils/format-utils.js";
-
-// Simplified function to check if a file should be ignored (basic .gitignore handling)
-async function shouldIgnoreFile(filePath: string): Promise<boolean> {
-	const basename = path.basename(filePath);
-
-	// Basic checks for common files/directories to ignore
-	if (basename.startsWith(".") && basename !== ".env") {
-		// Check for common gitignored items
-		const ignoredItems = [
-			"node_modules",
-			".git",
-			".DS_Store",
-			".idea",
-			".vscode",
-			".pytest_cache",
-		];
-		if (ignoredItems.includes(basename)) {
-			return true;
-		}
-	}
-
-	// Check for common build/output directories
-	const commonBuildDirs = ["dist", "build", "out", "target", "coverage"];
-	if (
-		commonBuildDirs.includes(basename) &&
-		(await fs
-			.stat(filePath)
-			.then((s) => s.isDirectory())
-			.catch(() => false))
-	) {
-		return true;
-	}
-
-	return false;
-}
+import { GitIgnoreService } from "../utils/gitignore-service.js";
+import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 
 /**
  * Improved listDirectory that sorts siblings before recursing to maintain DFS tree order.
@@ -51,6 +18,7 @@ async function listDirectoryDFS(
 	recursive = false,
 	maxDepth = 1,
 	currentDepth = 0,
+	gitignore?: GitIgnoreService,
 ): Promise<FileSystemEntry[]> {
 	if (currentDepth >= maxDepth) {
 		return [];
@@ -58,12 +26,19 @@ async function listDirectoryDFS(
 
 	const entries = await fs.readdir(dirPath, { withFileTypes: true });
 	
-	// Filter entries first
+	// Filter entries
 	const filteredEntries = [];
 	for (const entry of entries) {
-		if (!includeHidden && entry.name.startsWith(".")) continue;
 		const fullPath = path.join(dirPath, entry.name);
-		if (!includeHidden && (await shouldIgnoreFile(fullPath))) continue;
+		
+		// 1. Check hidden
+		if (!includeHidden && entry.name.startsWith(".")) continue;
+		
+		// 2. Check gitignore
+		if (gitignore && gitignore.shouldIgnore(fullPath, entry.isDirectory())) {
+			continue;
+		}
+
 		filteredEntries.push(entry);
 	}
 
@@ -119,6 +94,7 @@ async function listDirectoryDFS(
 				recursive,
 				maxDepth,
 				currentDepth + 1,
+				gitignore,
 			);
 			resultEntries.push(...subEntries);
 		}
@@ -155,8 +131,12 @@ export const listTool = tool(
 				);
 			}
 
+			// Initialize GitIgnoreService
+			const gitignore = new GitIgnoreService(workingDir);
+			await gitignore.initialize();
+
 			// List the directory using DFS to maintain tree order
-			const entries = await listDirectoryDFS(resolvedPath, includeHidden, recursive, maxDepth);
+			const entries = await listDirectoryDFS(resolvedPath, includeHidden, recursive, maxDepth, 0, gitignore);
 
 			// Format the result for the AI
 			const treeOutput = formatDirectoryTree(entries);
@@ -176,7 +156,13 @@ export const listTool = tool(
 				error instanceof Error ? error : new Error(String(error)),
 				{ directoryPath },
 			);
-			return `Error listing directory: ${(error as Error).message}`;
+			
+			return formatToolError({
+				operation: "list",
+				path: directoryPath,
+				cause: error,
+				suggestion: getToolSuggestion("list", directoryPath),
+			});
 		}
 	},
 	{

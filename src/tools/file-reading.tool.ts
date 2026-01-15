@@ -4,6 +4,7 @@ import path from "node:path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
 import { withLineNumbers } from "../utils/format-utils.js";
+import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 
 // Check if file is an image file
 function isImageFile(filePath: string): boolean {
@@ -158,7 +159,13 @@ export const viewTool = tool(
 				error instanceof Error ? error : new Error(String(error)),
 				{ filePath },
 			);
-			return `Error reading file: ${(error as Error).message}`;
+			
+			return formatToolError({
+				operation: "view",
+				path: filePath,
+				cause: error,
+				suggestion: getToolSuggestion("view", filePath),
+			});
 		}
 	},
 	{
