@@ -95,14 +95,18 @@ async function listDirectoryDFS(
 		}
 	}
 
-	// Calculate line counts in parallel for all files at this level
-	await Promise.all(
-		fileEntries
-			.filter((e) => !e.isDirectory)
-			.map(async (e) => {
+	// Calculate line counts in parallel for all files at this level, with throttling to avoid EMFILE
+	const CONCURRENCY_LIMIT = 50;
+	const files = fileEntries.filter((e) => !e.isDirectory);
+	
+	for (let i = 0; i < files.length; i += CONCURRENCY_LIMIT) {
+		const batch = files.slice(i, i + CONCURRENCY_LIMIT);
+		await Promise.all(
+			batch.map(async (e) => {
 				e.lineCount = await getFileLineCount(e.path);
 			}),
-	);
+		);
+	}
 
 	// Recursively process subdirectories
 	const resultEntries: FileSystemEntry[] = [];
