@@ -61,29 +61,39 @@ async function readLinesInRange(
 	
 	let partialLine = "";
 
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) {
-			if (partialLine) {
-				totalLines++;
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) {
+				if (partialLine) {
+					totalLines++;
+					if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
+						lines.push(partialLine);
+					}
+				}
+				break;
+			}
+
+			const chunk = decoder.decode(value, { stream: true });
+			const chunkLines = (partialLine + chunk).split("\n");
+			partialLine = chunkLines.pop() || "";
+
+			for (const line of chunkLines) {
 				if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
-					lines.push(partialLine);
+					lines.push(line);
+				}
+				currentLine++;
+				totalLines++;
+
+				// Optimization: Stop reading if we've passed the requested range
+				if (endLine !== -1 && currentLine > endLine) {
+					await reader.cancel();
+					return { lines, totalLines: -1 }; // totalLines unknown if we stop early
 				}
 			}
-			break;
 		}
-
-		const chunk = decoder.decode(value, { stream: true });
-		const chunkLines = (partialLine + chunk).split("\n");
-		partialLine = chunkLines.pop() || "";
-
-		for (const line of chunkLines) {
-			totalLines++;
-			if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
-				lines.push(line);
-			}
-			currentLine++;
-		}
+	} finally {
+		reader.releaseLock();
 	}
 
 	return { lines, totalLines };

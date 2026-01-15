@@ -121,6 +121,7 @@ export function formatSearchResults(
 
 		const sortedMatches = [...result.matches].sort((a, b) => a.line - b.line);
 		const displayedLines = new Set<number>();
+		let lastPrintedLine = -1;
 		
 		// Calculate max line num width for this file
 		let maxLineNum = 0;
@@ -137,16 +138,24 @@ export function formatSearchResults(
 				for (let j = 0; j < match.context.before.length; j++) {
 					const lineNum = startLine + j;
 					if (!displayedLines.has(lineNum)) {
+						if (lastPrintedLine !== -1 && lineNum > lastPrintedLine + 1) {
+							output += `${" ".repeat(maxLineNumWidth)}⁝\n`;
+						}
 						output += `${String(lineNum).padStart(maxLineNumWidth)}→${match.context.before[j]}\n`;
 						displayedLines.add(lineNum);
+						lastPrintedLine = lineNum;
 					}
 				}
 			}
 
 			// Match line
 			if (!displayedLines.has(match.line)) {
+				if (lastPrintedLine !== -1 && match.line > lastPrintedLine + 1) {
+					output += `${" ".repeat(maxLineNumWidth)}⁝\n`;
+				}
 				output += `${String(match.line).padStart(maxLineNumWidth)}→${match.text}\n`;
 				displayedLines.add(match.line);
+				lastPrintedLine = match.line;
 			}
 
 			// After context
@@ -155,8 +164,12 @@ export function formatSearchResults(
 				for (let j = 0; j < match.context.after.length; j++) {
 					const lineNum = startLine + j;
 					if (!displayedLines.has(lineNum)) {
+						if (lastPrintedLine !== -1 && lineNum > lastPrintedLine + 1) {
+							output += `${" ".repeat(maxLineNumWidth)}⁝\n`;
+						}
 						output += `${String(lineNum).padStart(maxLineNumWidth)}→${match.context.after[j]}\n`;
 						displayedLines.add(lineNum);
+						lastPrintedLine = lineNum;
 					}
 				}
 			}

@@ -19,7 +19,7 @@ async function findFiles(
 	const {
 		exclude = [],
 		recursive = true,
-		maxResults = 1000,
+		maxResults = 100,
 		includeHidden = false,
 	} = options;
 

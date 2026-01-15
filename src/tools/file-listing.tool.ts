@@ -42,7 +42,8 @@ async function shouldIgnoreFile(filePath: string): Promise<boolean> {
 }
 
 /**
- * Improved listDirectory that sorts siblings before recursing to maintain DFS tree order
+ * Improved listDirectory that sorts siblings before recursing to maintain DFS tree order.
+ * Processes line counts in parallel for performance.
  */
 async function listDirectoryDFS(
 	dirPath: string,
@@ -88,28 +89,38 @@ async function listDirectoryDFS(
 				depth: currentDepth,
 			};
 
-			if (!metadata.isDirectory) {
-				metadata.lineCount = await getFileLineCount(fullPath);
-			}
-
 			fileEntries.push(metadata);
-
-			if (metadata.isDirectory && recursive && currentDepth + 1 < maxDepth) {
-				const subEntries = await listDirectoryDFS(
-					fullPath,
-					includeHidden,
-					recursive,
-					maxDepth,
-					currentDepth + 1,
-				);
-				fileEntries.push(...subEntries);
-			}
 		} catch {
 			// Skip files that can't be accessed
 		}
 	}
 
-	return fileEntries;
+	// Calculate line counts in parallel for all files at this level
+	await Promise.all(
+		fileEntries
+			.filter((e) => !e.isDirectory)
+			.map(async (e) => {
+				e.lineCount = await getFileLineCount(e.path);
+			}),
+	);
+
+	// Recursively process subdirectories
+	const resultEntries: FileSystemEntry[] = [];
+	for (const entry of fileEntries) {
+		resultEntries.push(entry);
+		if (entry.isDirectory && recursive && currentDepth + 1 < maxDepth) {
+			const subEntries = await listDirectoryDFS(
+				entry.path,
+				includeHidden,
+				recursive,
+				maxDepth,
+				currentDepth + 1,
+			);
+			resultEntries.push(...subEntries);
+		}
+	}
+
+	return resultEntries;
 }
 
 // Create the modernized tool using the tool() function
