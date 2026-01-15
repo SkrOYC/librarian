@@ -193,4 +193,63 @@ describe('Modern File Reading Tool', () => {
     expect(result1).toContain('Path resolution test');
     expect(result2).toContain('Path resolution test');
   });
+
+  describe('viewRange validation', () => {
+    let testFile: string;
+
+    beforeEach(() => {
+      testFile = path.join(process.cwd(), 'test_viewrange.txt');
+      fs.writeFileSync(testFile, 'Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10');
+    });
+
+    afterEach(() => {
+      if (fs.existsSync(testFile)) {
+        fs.unlinkSync(testFile);
+      }
+    });
+
+    it('should reject viewRange with start less than 1', async () => {
+      const result = await viewTool.invoke({
+        filePath: testFile,
+        viewRange: [0, 5] as [number, number]
+      }, { context: testContext });
+
+      expect(result).toContain('Invalid viewRange');
+      expect(result).toContain('start must be >= 1');
+    });
+
+    it('should reject viewRange with end less than start', async () => {
+      const result = await viewTool.invoke({
+        filePath: testFile,
+        viewRange: [10, 5] as [number, number]
+      }, { context: testContext });
+
+      expect(result).toContain('Invalid viewRange');
+      expect(result).toContain('end (5) must be >= start (10)');
+    });
+
+    it('should accept valid viewRange', async () => {
+      const result = await viewTool.invoke({
+        filePath: testFile,
+        viewRange: [2, 4] as [number, number]
+      }, { context: testContext });
+
+      expect(result).toContain('Line 2');
+      expect(result).toContain('Line 3');
+      expect(result).toContain('Line 4');
+      expect(result).not.toContain('Line 1');
+      expect(result).not.toContain('Line 5');
+    });
+
+    it('should accept viewRange with end as -1 for end of file', async () => {
+      const result = await viewTool.invoke({
+        filePath: testFile,
+        viewRange: [8, -1] as [number, number]
+      }, { context: testContext });
+
+      expect(result).toContain('Line 8');
+      expect(result).toContain('Line 9');
+      expect(result).toContain('Line 10');
+    });
+  });
 });

@@ -86,18 +86,24 @@ async function readLinesInRange(
 
 	try {
 		while (true) {
-			const { done, value } = await reader.read();
-			if (done) {
-				if (partialLine) {
-					totalLines++;
-					if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
-						lines.push(partialLine);
+			let chunk: string;
+			try {
+				const { done, value } = await reader.read();
+				if (done) {
+					if (partialLine) {
+						totalLines++;
+						if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
+							lines.push(partialLine);
+						}
 					}
+					break;
 				}
-				break;
+				chunk = decoder.decode(value, { stream: true });
+			} catch (readError) {
+				reader.releaseLock();
+				throw new Error(`Failed to read file ${filePath}: ${(readError as Error).message}`);
 			}
 
-			const chunk = decoder.decode(value, { stream: true });
 			const chunkLines = (partialLine + chunk).split("\n");
 			partialLine = chunkLines.pop() || "";
 
@@ -130,6 +136,17 @@ export const viewTool = tool(
 		logger.info("TOOL", "view called", { filePath, viewRange });
 
 		try {
+			// Validate viewRange if provided
+			if (viewRange) {
+				const [start, end] = viewRange;
+				if (start < 1) {
+					throw new Error(`Invalid viewRange: start must be >= 1, got ${start}`);
+				}
+				if (end !== -1 && end < start) {
+					throw new Error(`Invalid viewRange: end (${end}) must be >= start (${start}) or -1 for end of file`);
+				}
+			}
+
 			// Get working directory from config context - required for security
 			const workingDir = config?.context?.workingDir;
 			if (!workingDir) {

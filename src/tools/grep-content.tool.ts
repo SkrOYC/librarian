@@ -90,10 +90,11 @@ async function searchFileWithContext(
 			};
 
 			if (contextBefore > 0 || contextAfter > 0) {
-				searchMatch.context = {
-					before: [...beforeBuffer],
+				const context: { before: string[]; after: string[] } = {
+					before: contextBefore > 0 ? [...beforeBuffer] : [],
 					after: [],
 				};
+				searchMatch.context = context;
 				
 				if (contextAfter > 0) {
 					pendingMatches.push({

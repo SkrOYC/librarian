@@ -79,11 +79,26 @@ async function listDirectoryDFS(
 	
 	for (let i = 0; i < files.length; i += CONCURRENCY_LIMIT) {
 		const batch = files.slice(i, i + CONCURRENCY_LIMIT);
-		await Promise.all(
-			batch.map(async (e) => {
-				e.lineCount = await getFileLineCount(e.path);
-			}),
-		);
+		
+		// Process batch with EMFILE retry logic
+		let retries = 3;
+		while (retries > 0) {
+			try {
+				await Promise.all(
+					batch.map(async (e) => {
+						e.lineCount = await getFileLineCount(e.path);
+					}),
+				);
+				break; // Success, exit retry loop
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "EMFILE" && retries > 0) {
+					retries--;
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				} else {
+					throw error;
+				}
+			}
+		}
 	}
 
 	// Recursively process subdirectories
