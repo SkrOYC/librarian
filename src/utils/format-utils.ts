@@ -71,7 +71,7 @@ export function formatLinesWithRange(
  * Legacy wrapper for formatLinesWithRange that accepts a string
  * @deprecated Use formatLinesWithRange with pre-split lines for better performance
  */
-export function formatContentWithRange(
+function formatContentWithRange(
 	content: string,
 	viewRange?: [number, number],
 ): string {
