@@ -4,6 +4,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
+import { formatSearchResults, type SearchMatch } from "../utils/format-utils.js";
 
 // Safe file read with encoding detection
 async function readFileContent(filePath: string): Promise<string> {
@@ -16,10 +17,15 @@ async function readFileContent(filePath: string): Promise<string> {
 	}
 }
 
-// Search for content in a single file
-function searchFileContent(content: string, regex: RegExp) {
+// Search for content in a single file with context
+function searchFileContent(
+	content: string,
+	regex: RegExp,
+	contextBefore = 0,
+	contextAfter = 0,
+): SearchMatch[] {
 	const lines = content.split("\n");
-	const matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> = [];
+	const matches: SearchMatch[] = [];
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
@@ -30,12 +36,20 @@ function searchFileContent(content: string, regex: RegExp) {
 		const match = regex.exec(line);
 
 		if (match) {
-			matches.push({
+			const searchMatch: SearchMatch = {
 				line: i + 1,
 				column: match.index + 1,
 				text: line,
-				match,
-			});
+			};
+
+			if (contextBefore > 0 || contextAfter > 0) {
+				searchMatch.context = {
+					before: lines.slice(Math.max(0, i - contextBefore), i),
+					after: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextAfter)),
+				};
+			}
+
+			matches.push(searchMatch);
 			regex.lastIndex = 0;
 		}
 	}
@@ -61,7 +75,10 @@ async function findFiles(
 				const subDirFiles = await findFiles(fullPath, pattern, recursive);
 				foundFiles.push(...subDirFiles);
 			}
-		} else if (entry.isFile() && (pattern === "*" || entry.name.includes(pattern.replace(/\*/g, "")))) {
+		} else if (
+			entry.isFile() &&
+			(pattern === "*" || entry.name.includes(pattern.replace(/\*/g, "")))
+		) {
 			foundFiles.push(fullPath);
 		}
 	}
@@ -69,7 +86,10 @@ async function findFiles(
 	return foundFiles;
 }
 
-async function validateAndResolvePath(workingDir: string, searchPath: string): Promise<string> {
+async function validateAndResolvePath(
+	workingDir: string,
+	searchPath: string,
+): Promise<string> {
 	const resolvedPath = path.resolve(workingDir, searchPath);
 	const resolvedWorkingDir = path.resolve(workingDir);
 	const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
@@ -123,7 +143,11 @@ async function findFilesToSearch(
 	return filesToSearch;
 }
 
-function compileSearchRegex(query: string, regex: boolean, caseSensitive: boolean): RegExp {
+function compileSearchRegex(
+	query: string,
+	regex: boolean,
+	caseSensitive: boolean,
+): RegExp {
 	const flags = caseSensitive ? "gm" : "gim";
 
 	if (regex) {
@@ -156,8 +180,10 @@ async function performGrepSearch(
 	filesToSearch: string[],
 	searchRegex: RegExp,
 	maxResults: number,
-): Promise<Array<{ path: string; matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> }>> {
-	const results: Array<{ path: string; matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> }> = [];
+	contextBefore = 0,
+	contextAfter = 0,
+): Promise<Array<{ path: string; matches: SearchMatch[] }>> {
+	const results: Array<{ path: string; matches: SearchMatch[] }> = [];
 	let totalMatches = 0;
 
 	for (const file of filesToSearch) {
@@ -167,7 +193,12 @@ async function performGrepSearch(
 		if (await isTextFile(file)) {
 			try {
 				const content = await readFileContent(file);
-				const fileMatches = searchFileContent(content, searchRegex);
+				const fileMatches = searchFileContent(
+					content,
+					searchRegex,
+					contextBefore,
+					contextAfter,
+				);
 				if (fileMatches.length > 0) {
 					const limitedMatches = fileMatches.slice(
 						0,
@@ -185,27 +216,6 @@ async function performGrepSearch(
 	return results;
 }
 
-function formatGrepResults(
-	results: Array<{ path: string; matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> }>,
-	query: string,
-): string {
-	if (results.length === 0) {
-		return `No matches found for query "${query}" in the searched files`;
-	}
-
-	const totalMatches = results.reduce((sum, r) => sum + r.matches.length, 0);
-	let output = `Found ${totalMatches} matches for query "${query}" in ${results.length} files:\n\n`;
-	for (const result of results) {
-		output += `File: ${result.path}\n`;
-		for (const match of result.matches) {
-			output += `  Line ${match.line}, Col ${match.column}: ${match.text}\n`;
-		}
-		output += "\n";
-	}
-
-	return output;
-}
-
 // Create the modernized tool using the tool() function
 export const grepContentTool = tool(
 	async (
@@ -217,6 +227,8 @@ export const grepContentTool = tool(
 			regex = false,
 			recursive = true,
 			maxResults = 100,
+			contextBefore = 0,
+			contextAfter = 0,
 		},
 		config,
 	) => {
@@ -230,6 +242,8 @@ export const grepContentTool = tool(
 			regex,
 			recursive,
 			maxResults,
+			contextBefore,
+			contextAfter,
 		});
 
 		try {
@@ -249,10 +263,20 @@ export const grepContentTool = tool(
 			}
 
 			const resolvedPath = await validateAndResolvePath(workingDir, searchPath);
-			const filesToSearch = await findFilesToSearch(resolvedPath, patterns, recursive);
+			const filesToSearch = await findFilesToSearch(
+				resolvedPath,
+				patterns,
+				recursive,
+			);
 
 			const searchRegex = compileSearchRegex(query, regex, caseSensitive);
-			const results = await performGrepSearch(filesToSearch, searchRegex, maxResults);
+			const results = await performGrepSearch(
+				filesToSearch,
+				searchRegex,
+				maxResults,
+				contextBefore,
+				contextAfter,
+			);
 
 			logger.timingEnd(timingId, "TOOL", "grep_content completed");
 			logger.debug("TOOL", "Search completed", {
@@ -261,7 +285,11 @@ export const grepContentTool = tool(
 				totalMatches: results.reduce((sum, r) => sum + r.matches.length, 0),
 			});
 
-			return formatGrepResults(results, query);
+			if (results.length === 0) {
+				return `No matches found for query "${query}" in the searched files`;
+			}
+
+			return formatSearchResults(results);
 		} catch (error) {
 			logger.error(
 				"TOOL",
@@ -299,27 +327,41 @@ Usage:
 				.optional()
 				.default(false)
 				.describe(
-					"Whether the search should be case-sensitive. Defaults to `false`",
+					"Whether the search should be case-sensitive. Defaults to \`false\`",
 				),
 			regex: z
 				.boolean()
 				.optional()
 				.default(false)
 				.describe(
-					"Whether the query should be treated as a regular expression. Defaults to `false`",
+					"Whether the query should be treated as a regular expression. Defaults to \`false\`",
 				),
 			recursive: z
 				.boolean()
 				.optional()
 				.default(true)
 				.describe(
-					"Whether to search recursively in subdirectories. Defaults to `true`",
+					"Whether to search recursively in subdirectories. Defaults to \`true\`",
 				),
 			maxResults: z
 				.number()
 				.optional()
 				.default(100)
 				.describe("Maximum number of matches to return. Defaults to 100"),
+			contextBefore: z
+				.number()
+				.optional()
+				.default(0)
+				.describe(
+					"Number of lines of context to show before each match. Defaults to 0",
+				),
+			contextAfter: z
+				.number()
+				.optional()
+				.default(0)
+				.describe(
+					"Number of lines of context to show after each match. Defaults to 0",
+				),
 		}),
 	},
 );

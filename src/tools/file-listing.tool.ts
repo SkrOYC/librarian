@@ -3,6 +3,8 @@ import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../utils/logger.js";
+import { isTextFile } from "../utils/file-utils.js";
+import { formatDirectoryTree } from "../utils/format-utils.js";
 
 // Define types for file system operations
 interface FileSystemEntry {
@@ -19,6 +21,19 @@ interface DirectoryListing {
 	entries: FileSystemEntry[];
 	totalCount: number;
 	filteredCount?: number;
+}
+
+// Get line count for a file
+async function getFileLineCount(filePath: string): Promise<number> {
+	try {
+		if (await isTextFile(filePath)) {
+			const content = await Bun.file(filePath).text();
+			return content.split("\n").length;
+		}
+		return 0;
+	} catch {
+		return 0;
+	}
 }
 
 // Simplified function to check if a file should be ignored (basic .gitignore handling)
@@ -62,7 +77,14 @@ async function shouldIgnoreFile(filePath: string): Promise<boolean> {
 async function listDirectory(
 	dirPath: string,
 	includeHidden = false,
-): Promise<DirectoryListing> {
+	recursive = false,
+	maxDepth = 1,
+	currentDepth = 0,
+): Promise<FileSystemEntry[]> {
+	if (currentDepth >= maxDepth) {
+		return [];
+	}
+
 	const entries = await fs.readdir(dirPath, { withFileTypes: true });
 	const fileEntries: FileSystemEntry[] = [];
 
@@ -82,13 +104,8 @@ async function listDirectory(
 			const stats = await fs.stat(fullPath);
 			const name = path.basename(fullPath);
 
-			logger.debug("TOOL", "Processing file entry", {
-				name,
-				isDirectory: stats.isDirectory(),
-			});
-
 			const metadata: FileSystemEntry = {
-				name,
+				name: recursive && currentDepth > 0 ? path.relative(dirPath, fullPath) : name,
 				path: fullPath,
 				isDirectory: stats.isDirectory(),
 				size: stats.isFile() ? stats.size : undefined,
@@ -96,33 +113,52 @@ async function listDirectory(
 				permissions: stats.mode?.toString(8),
 			};
 
+			if (!metadata.isDirectory) {
+				metadata.lineCount = await getFileLineCount(fullPath);
+			}
+
 			fileEntries.push(metadata);
+
+			if (metadata.isDirectory && recursive && currentDepth + 1 < maxDepth) {
+				const subEntries = await listDirectory(
+					fullPath,
+					includeHidden,
+					recursive,
+					maxDepth,
+					currentDepth + 1,
+				);
+				
+				for (const subEntry of subEntries) {
+					fileEntries.push({
+						...subEntry,
+						name: `${name}/${subEntry.name}`
+					});
+				}
+			}
 		} catch {
 			// Skip files that can't be accessed or have metadata errors
 		}
 	}
 
 	// Sort: directories first, then by name
-	fileEntries.sort((a, b) => {
-		if (a.isDirectory !== b.isDirectory) {
-			return a.isDirectory ? -1 : 1;
-		}
-		return a.name.localeCompare(b.name);
-	});
+	if (currentDepth === 0) {
+		fileEntries.sort((a, b) => {
+			if (a.isDirectory !== b.isDirectory) {
+				return a.isDirectory ? -1 : 1;
+			}
+			return a.name.localeCompare(b.name);
+		});
+	}
 
-	return {
-		entries: fileEntries,
-		totalCount: fileEntries.length,
-		filteredCount: fileEntries.length,
-	};
+	return fileEntries;
 }
 
 // Create the modernized tool using the tool() function
 export const fileListTool = tool(
-	async ({ directoryPath = ".", includeHidden = false }, config) => {
+	async ({ directoryPath = ".", includeHidden = false, recursive = false, maxDepth = 1 }, config) => {
 		const timingId = logger.timingStart("fileList");
 
-		logger.info("TOOL", "file_list called", { directoryPath, includeHidden });
+		logger.info("TOOL", "file_list called", { directoryPath, includeHidden, recursive, maxDepth });
 
 		try {
 			// Get working directory from config context - required for security
@@ -162,25 +198,19 @@ export const fileListTool = tool(
 			}
 
 			// List the directory
-			const listing = await listDirectory(resolvedPath, includeHidden);
+			const entries = await listDirectory(resolvedPath, includeHidden, recursive, maxDepth);
 
 			// Format the result for the AI
+			const treeOutput = formatDirectoryTree(entries);
+			
 			let result = `Contents of directory: ${resolvedPath}\n\n`;
-			result += `Total entries: ${listing.totalCount}\n\n`;
-
-			for (const entry of listing.entries) {
-				const type = entry.isDirectory ? "DIR" : "FILE";
-				const size = entry.size ? ` (${entry.size} bytes)` : "";
-				const lineCount = entry.lineCount ? ` (${entry.lineCount} lines)` : "";
-				result += `${type}  ${entry.name}${size}${lineCount}\n`;
-			}
+			result += `Total entries: ${entries.length}\n\n`;
+			result += treeOutput;
 
 			logger.timingEnd(timingId, "TOOL", "file_list completed");
 			logger.debug("TOOL", "Directory listing successful", {
 				directoryPath,
-				entryCount: listing.totalCount,
-				dirCount: listing.entries.filter((e) => e.isDirectory).length,
-				fileCount: listing.entries.filter((e) => !e.isDirectory).length,
+				entryCount: entries.length,
 			});
 
 			return result;
@@ -205,8 +235,18 @@ export const fileListTool = tool(
 				.optional()
 				.default(false)
 				.describe(
-					"Whether to include hidden files and directories. Defaults to `false`",
+					"Whether to include hidden files and directories. Defaults to \`false\`",
 				),
+			recursive: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe("Whether to list subdirectories recursively. Defaults to \`false\`"),
+			maxDepth: z
+				.number()
+				.optional()
+				.default(1)
+				.describe("Maximum depth for recursive listing. Defaults to 1"),
 		}),
 	},
 );

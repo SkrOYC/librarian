@@ -3,6 +3,7 @@ import { z } from "zod";
 import path from "node:path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
+import { formatContentWithRange } from "../utils/format-utils.js";
 
 // Check if file is an image file
 function isImageFile(filePath: string): boolean {
@@ -52,10 +53,10 @@ async function readFileContent(filePath: string): Promise<string> {
 
 // Create the modernized tool using the tool() function
 export const fileReadTool = tool(
-	async ({ filePath }, config) => {
+	async ({ filePath, viewRange }, config) => {
 		const timingId = logger.timingStart("fileRead");
 
-		logger.info("TOOL", "file_read called", { filePath });
+		logger.info("TOOL", "file_read called", { filePath, viewRange });
 
 		try {
 			// Get working directory from config context - required for security
@@ -114,25 +115,33 @@ export const fileReadTool = tool(
 			// Read file content
 			const content = await readFileContent(resolvedPath);
 
+			// Format content with line range and line numbers
+			const formattedContent = formatContentWithRange(content, viewRange);
+
 			// Limit content size to avoid overwhelming the AI
 			const maxContentLength = 50_000; // 50KB limit
-			if (content.length > maxContentLength) {
+			let result = `Content of file: ${filePath}\n\n`;
+			
+			if (formattedContent.length > maxContentLength) {
 				logger.debug("TOOL", "File content truncated", {
 					filePath,
-					originalSize: content.length,
+					originalSize: formattedContent.length,
 					maxSize: maxContentLength,
 				});
 				logger.timingEnd(timingId, "TOOL", "file_read completed (truncated)");
-				return `File content is too large (${content.length} characters). First ${maxContentLength} characters:\n\n${content.substring(0, maxContentLength)}\n\n[Content truncated due to length]`;
+				result += `[File content is too large (${formattedContent.length} characters). Showing first ${maxContentLength} characters]\n\n`;
+				result += `${formattedContent.substring(0, maxContentLength)}\n\n[Content truncated due to length]`;
+				return result;
 			}
 
 			logger.timingEnd(timingId, "TOOL", "file_read completed");
 			logger.debug("TOOL", "File read successful", {
 				filePath,
-				contentLength: content.length,
+				contentLength: formattedContent.length,
 			});
 
-			return `Content of file: ${filePath}\n\n${content}`;
+			result += formattedContent;
+			return result;
 		} catch (error) {
 			logger.error(
 				"TOOL",
@@ -149,6 +158,12 @@ export const fileReadTool = tool(
 			"Read the contents of a file. Use this to examine the content of a specific file.",
 		schema: z.object({
 			filePath: z.string().describe("The path to the file to read"),
+			viewRange: z
+				.tuple([z.number(), z.number()])
+				.optional()
+				.describe(
+					"Optional tuple of [start, end] line numbers to display. Use -1 for end of file.",
+				),
 		}),
 	},
 );
