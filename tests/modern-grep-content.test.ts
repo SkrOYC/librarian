@@ -267,4 +267,89 @@ describe('Modern Grep Content Tool', () => {
     // Clean up
     fs.unlinkSync(testFile);
   });
+
+  it('should handle exclude parameter', async () => {
+    const testFile1 = path.join(testDir, 'include.txt');
+    const testFile2 = path.join(testDir, 'exclude.txt');
+    const subDir = path.join(testDir, 'dist');
+    if (!fs.existsSync(subDir)) fs.mkdirSync(subDir);
+    const testFile3 = path.join(subDir, 'bundle.js');
+    
+    fs.writeFileSync(testFile1, 'Match here');
+    fs.writeFileSync(testFile2, 'Match here');
+    fs.writeFileSync(testFile3, 'Match here');
+
+    const result = await grepTool.invoke({
+      searchPath: '.',
+      query: 'Match here',
+      exclude: ['exclude.txt', 'dist/**']
+    }, { context: testContext });
+
+    expect(result).toContain('include.txt');
+    expect(result).not.toContain('exclude.txt');
+    expect(result).not.toContain('dist/bundle.js');
+
+    // Clean up
+    fs.unlinkSync(testFile1);
+    fs.unlinkSync(testFile2);
+    fs.unlinkSync(testFile3);
+    fs.rmdirSync(subDir);
+  });
+
+  it('should handle includeHidden parameter', async () => {
+    const normalFile = path.join(testDir, 'normal.txt');
+    const hiddenFile = path.join(testDir, '.hidden.txt');
+    
+    fs.writeFileSync(normalFile, 'Match here');
+    fs.writeFileSync(hiddenFile, 'Match here');
+
+    const resultWithoutHidden = await grepTool.invoke({
+      searchPath: '.',
+      query: 'Match here',
+      includeHidden: false
+    }, { context: testContext });
+
+    const resultWithHidden = await grepTool.invoke({
+      searchPath: '.',
+      query: 'Match here',
+      includeHidden: true
+    }, { context: testContext });
+
+    expect(resultWithoutHidden).toContain('normal.txt');
+    expect(resultWithoutHidden).not.toContain('.hidden.txt');
+    expect(resultWithHidden).toContain('normal.txt');
+    expect(resultWithHidden).toContain('.hidden.txt');
+
+    // Clean up
+    fs.unlinkSync(normalFile);
+    fs.unlinkSync(hiddenFile);
+  });
+
+  it('should handle context lines correctly with streaming search', async () => {
+    const testFile = path.join(testDir, 'context_test.txt');
+    const lines = [
+      'Line 1',
+      'Line 2',
+      'Target Match',
+      'Line 4',
+      'Line 5'
+    ];
+    fs.writeFileSync(testFile, lines.join('\n'));
+
+    const result = await grepTool.invoke({
+      searchPath: '.',
+      query: 'Target Match',
+      contextBefore: 2,
+      contextAfter: 2
+    }, { context: testContext });
+
+    expect(result).toContain('1→Line 1');
+    expect(result).toContain('2→Line 2');
+    expect(result).toContain('3→Target Match');
+    expect(result).toContain('4→Line 4');
+    expect(result).toContain('5→Line 5');
+
+    // Clean up
+    fs.unlinkSync(testFile);
+  });
 });

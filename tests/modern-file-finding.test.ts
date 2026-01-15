@@ -100,6 +100,30 @@ describe('Modern File Finding Tool', () => {
     fs.unlinkSync(testFile3);
   });
 
+  it('should handle recursive directory exclusion', async () => {
+    const subDir = path.join(testDir, 'node_modules');
+    if (!fs.existsSync(subDir)) fs.mkdirSync(subDir);
+    const testFile1 = path.join(testDir, 'src.ts');
+    const testFile2 = path.join(subDir, 'dep.ts');
+    
+    fs.writeFileSync(testFile1, 'src');
+    fs.writeFileSync(testFile2, 'dep');
+
+    const result = await findTool.invoke({
+      searchPath: '.',
+      patterns: ['**/*.ts'],
+      exclude: ['**/node_modules/**']
+    }, { context: testContext });
+
+    expect(result).toContain('src.ts');
+    expect(result).not.toContain('node_modules/dep.ts');
+
+    // Clean up
+    fs.unlinkSync(testFile1);
+    fs.unlinkSync(testFile2);
+    fs.rmdirSync(subDir);
+  });
+
   it('should handle recursive search', async () => {
     const subDir = path.join(testDir, 'subdir');
     fs.mkdirSync(subDir, { recursive: true });

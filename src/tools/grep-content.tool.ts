@@ -19,32 +19,92 @@ async function searchFileWithContext(
 	contextBefore = 0,
 	contextAfter = 0,
 ): Promise<SearchMatch[]> {
-	const content = await Bun.file(filePath).text();
-	const lines = content.split("\n");
+	const file = Bun.file(filePath);
+	const stream = file.stream();
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	
 	const matches: SearchMatch[] = [];
+	const beforeBuffer: string[] = [];
+	let currentLineNum = 1;
+	let partialLine = "";
+	
+	// Track matches that are still waiting for their contextAfter lines
+	const pendingMatches: Array<{
+		match: SearchMatch;
+		linesRemaining: number;
+	}> = [];
 
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) {
+				if (partialLine) {
+					processLine(partialLine);
+				}
+				break;
+			}
+
+			const chunk = decoder.decode(value, { stream: true });
+			const lines = (partialLine + chunk).split("\n");
+			partialLine = lines.pop() || "";
+
+			for (const line of lines) {
+				processLine(line);
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
+
+	function processLine(line: string) {
+		// Update pending matches
+		for (const pending of pendingMatches) {
+			if (pending.linesRemaining > 0) {
+				pending.match.context!.after.push(line);
+				pending.linesRemaining--;
+			}
+		}
+
+		// Check for new match
 		regex.lastIndex = 0;
-		let match: RegExpExecArray | null;
-
-		while ((match = regex.exec(line)) !== null) {
+		let matchExec: RegExpExecArray | null;
+		
+		// We only take the first match on a line for context-aware grep to avoid duplication
+		// or complex context merging if there are multiple matches on the same line.
+		if ((matchExec = regex.exec(line)) !== null) {
 			const searchMatch: SearchMatch = {
-				line: i + 1,
-				column: match.index + 1,
+				line: currentLineNum,
+				column: matchExec.index + 1,
 				text: line,
 			};
 
 			if (contextBefore > 0 || contextAfter > 0) {
 				searchMatch.context = {
-					before: lines.slice(Math.max(0, i - contextBefore), i),
-					after: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextAfter)),
+					before: [...beforeBuffer],
+					after: [],
 				};
+				
+				if (contextAfter > 0) {
+					pendingMatches.push({
+						match: searchMatch,
+						linesRemaining: contextAfter,
+					});
+				}
 			}
 
 			matches.push(searchMatch);
-			if (!regex.global) break;
 		}
+
+		// Update before buffer
+		if (contextBefore > 0) {
+			beforeBuffer.push(line);
+			if (beforeBuffer.length > contextBefore) {
+				beforeBuffer.shift();
+			}
+		}
+
+		currentLineNum++;
 	}
 
 	return matches;
@@ -110,6 +170,8 @@ export const grepTool = tool(
 			maxResults = 100,
 			contextBefore = 0,
 			contextAfter = 0,
+			exclude = [],
+			includeHidden = false,
 		},
 		config,
 	) => {
@@ -125,6 +187,8 @@ export const grepTool = tool(
 			maxResults,
 			contextBefore,
 			contextAfter,
+			exclude,
+			includeHidden,
 		});
 
 		try {
@@ -159,15 +223,20 @@ export const grepTool = tool(
 				resolvedPath,
 				patterns,
 				recursive,
-				false, // includeHidden
+				includeHidden,
 			);
 
 			const searchRegex = compileSearchRegex(query, regex, caseSensitive);
+			const excludeGlobs = exclude.map((pattern) => new Glob(pattern));
 			const results: Array<{ path: string; matches: SearchMatch[] }> = [];
 			let totalMatches = 0;
 
 			for (const file of filesToSearch) {
 				if (totalMatches >= maxResults) break;
+
+				const relativeFileToWorkingDir = path.relative(workingDir, file);
+				const isExcluded = excludeGlobs.some((eg) => eg.match(relativeFileToWorkingDir));
+				if (isExcluded) continue;
 
 				if (await isTextFile(file)) {
 					try {
@@ -272,6 +341,20 @@ Usage:
 				.default(0)
 				.describe(
 					"Number of lines of context to show after each match. Defaults to 0",
+				),
+			exclude: z
+				.array(z.string())
+				.optional()
+				.default([])
+				.describe(
+					"Array of glob patterns to exclude from results (e.g., ['dist/**', 'node_modules/**'])",
+				),
+			includeHidden: z
+				.boolean()
+				.optional()
+				.default(false)
+				.describe(
+					"Whether to include hidden files and directories in the search. Defaults to `false`",
 				),
 		}),
 	},
