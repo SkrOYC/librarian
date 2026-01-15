@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Glob } from "bun";
 import { logger } from "../utils/logger.js";
+import { GitIgnoreService } from "../utils/gitignore-service.js";
+import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 
 // Create the modernized tool using the tool() function
 export const findTool = tool(
@@ -55,6 +57,10 @@ export const findTool = tool(
 				throw new Error(`Search path "${searchPath}" is not a directory`);
 			}
 
+			// Initialize GitIgnoreService
+			const gitignore = new GitIgnoreService(workingDir);
+			await gitignore.initialize();
+
 			const foundFiles: string[] = [];
 			const excludeGlobs = exclude.map((pattern) => new Glob(pattern));
 
@@ -82,7 +88,12 @@ export const findTool = tool(
 					const fullPath = path.resolve(resolvedPath, file);
 					const relativeToWorkingDir = path.relative(resolvedWorkingDir, fullPath);
 
-					// Check if file should be excluded
+					// 1. Check if file should be ignored by .gitignore
+					if (gitignore.shouldIgnore(fullPath, false)) {
+						continue;
+					}
+
+					// 2. Check if file should be excluded by manual exclude patterns
 					const isExcluded = excludeGlobs.some((eg) => eg.match(relativeToWorkingDir));
 					if (isExcluded) continue;
 
@@ -112,7 +123,13 @@ export const findTool = tool(
 				error instanceof Error ? error : new Error(String(error)),
 				{ searchPath, patterns },
 			);
-			return `Error finding files: ${(error as Error).message}`;
+			
+			return formatToolError({
+				operation: "find",
+				path: searchPath,
+				cause: error,
+				suggestion: getToolSuggestion("find", searchPath),
+			});
 		}
 	},
 	{

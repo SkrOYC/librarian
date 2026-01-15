@@ -72,7 +72,7 @@ describe('React Agent and Tools Integration', () => {
 
     it('should handle permission errors gracefully', async () => {
       const result = await fileListTool.invoke({ directoryPath: '/root/nonexistent' }, { context: testContext });
-      expect(result).toContain('Error');
+      expect(result).toContain('failed');
     });
   });
 
@@ -93,12 +93,12 @@ describe('React Agent and Tools Integration', () => {
 
     it('should handle file not found', async () => {
       const result = await fileReadTool.invoke({ filePath: '../nonexistent_file.txt' }, { context: testContext });
-      expect(result).toContain('Error reading file');
+      expect(result).toContain('failed');
     });
 
     it('should handle permission denied', async () => {
       const result = await fileReadTool.invoke({ filePath: '/root/protected.txt' }, { context: testContext });
-      expect(result).toContain('Error reading file');
+      expect(result).toContain('failed');
     });
 
     it('should handle different file types', async () => {
@@ -169,7 +169,7 @@ describe('React Agent and Tools Integration', () => {
         recursive: true,
         maxResults: 10
       }, { context: testContext });
-      expect(result).toContain('Error searching content');
+      expect(result).toContain('failed');
     });
 
     it('should respect case sensitivity', async () => {
@@ -303,7 +303,7 @@ describe('React Agent and Tools Integration', () => {
         maxResults: 10,
         includeHidden: false
       }, { context: testContext });
-      expect(result).toContain('Error finding files');
+      expect(result).toContain('failed');
     });
 
     it('should exclude specified directories', async () => {
@@ -533,8 +533,7 @@ describe('React Agent and Tools Integration', () => {
       const nonExistentFile = path.join(testDir, 'nonexistent.txt');
       const result = await fileReadTool.invoke({ filePath: nonExistentFile }, { context: testContext });
 
-      expect(result).toContain('Error');
-      expect(result).toContain('reading file');
+      expect(result).toContain('not found');
     });
   });
 

@@ -232,7 +232,7 @@ describe('Modern File Finding Tool', () => {
       patterns: ['*.*']
     }, { context: testContext });
 
-    expect(result).toContain('Error finding files');
+    expect(result).toContain('find failed');
     expect(result).toContain('nonexistent');
   });
 

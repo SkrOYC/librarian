@@ -121,7 +121,7 @@ describe('Modern File Listing Tool', () => {
       includeHidden: false
     }, { context: testContext });
 
-    expect(result).toContain('Error');
+    expect(result).toContain('list failed');
     expect(result).toContain('directory');
   });
 

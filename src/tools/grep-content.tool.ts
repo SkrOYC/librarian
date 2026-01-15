@@ -6,6 +6,8 @@ import { Glob } from "bun";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
 import { formatSearchResults, type SearchMatch } from "../utils/format-utils.js";
+import { GitIgnoreService } from "../utils/gitignore-service.js";
+import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 
 /**
  * Robust search for context-aware grep.
@@ -219,6 +221,10 @@ export const grepTool = tool(
 				throw new Error(`Search path "${searchPath}" is not a directory`);
 			}
 
+			// Initialize GitIgnoreService
+			const gitignore = new GitIgnoreService(workingDir);
+			await gitignore.initialize();
+
 			const filesToSearch = await findFilesToSearch(
 				resolvedPath,
 				patterns,
@@ -235,6 +241,13 @@ export const grepTool = tool(
 				if (totalMatches >= maxResults) break;
 
 				const relativeFileToWorkingDir = path.relative(workingDir, file);
+				
+				// 1. Check if file should be ignored by .gitignore
+				if (gitignore.shouldIgnore(file, false)) {
+					continue;
+				}
+
+				// 2. Check if file should be excluded by manual exclude patterns
 				const isExcluded = excludeGlobs.some((eg) => eg.match(relativeFileToWorkingDir));
 				if (isExcluded) continue;
 
@@ -277,7 +290,13 @@ export const grepTool = tool(
 				error instanceof Error ? error : new Error(String(error)),
 				{ searchPath, query },
 			);
-			return `Error searching content: ${(error as Error).message}`;
+			
+			return formatToolError({
+				operation: "grep",
+				path: searchPath,
+				cause: error,
+				suggestion: getToolSuggestion("grep", searchPath),
+			});
 		}
 	},
 	{
