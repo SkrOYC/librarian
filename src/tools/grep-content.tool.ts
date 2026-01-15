@@ -1,6 +1,6 @@
 import { tool } from "langchain";
 import { z } from "zod";
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { Glob } from "bun";
 import { logger } from "../utils/logger.js";
@@ -8,93 +8,7 @@ import { isTextFile } from "../utils/file-utils.js";
 import { formatSearchResults, type SearchMatch } from "../utils/format-utils.js";
 
 /**
- * Searches for content in a single file using a streaming approach.
- * This is memory-efficient for large files as it avoids loading the entire file.
- */
-async function searchFileContentStreaming(
-	filePath: string,
-	regex: RegExp,
-	contextBefore = 0,
-	contextAfter = 0,
-	maxMatches: number,
-): Promise<SearchMatch[]> {
-	const file = Bun.file(filePath);
-	const stream = file.stream();
-	const reader = stream.getReader();
-	const decoder = new TextDecoder();
-
-	const matches: SearchMatch[] = [];
-	const allLines: string[] = []; // We still need some lines for context, but we keep it reasonable
-	let currentLineIdx = 0;
-	let partialLine = "";
-
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) {
-				if (partialLine) {
-					allLines.push(partialLine);
-					processLine(partialLine, currentLineIdx, matches, allLines, regex, contextBefore, contextAfter);
-				}
-				break;
-			}
-
-			const chunk = decoder.decode(value, { stream: true });
-			const chunkLines = (partialLine + chunk).split("\n");
-			partialLine = chunkLines.pop() || "";
-
-			for (const line of chunkLines) {
-				allLines.push(line);
-				processLine(line, currentLineIdx, matches, allLines, regex, contextBefore, contextAfter);
-				currentLineIdx++;
-
-				if (matches.length >= maxMatches) {
-					await reader.cancel();
-					return matches;
-				}
-			}
-		}
-	} finally {
-		reader.releaseLock();
-	}
-
-	return matches;
-}
-
-function processLine(
-	line: string,
-	lineIdx: number,
-	matches: SearchMatch[],
-	allLines: string[],
-	regex: RegExp,
-	contextBefore: number,
-	contextAfter: number,
-): void {
-	regex.lastIndex = 0;
-	let match: RegExpExecArray | null;
-
-	while ((match = regex.exec(line)) !== null) {
-		const searchMatch: SearchMatch = {
-			line: lineIdx + 1,
-			column: match.index + 1,
-			text: line,
-		};
-
-		if (contextBefore > 0 || contextAfter > 0) {
-			// Extract context. Note: after context might not be available yet if we're streaming.
-			// But since we want to return results file-by-file, we'll need to handle after context.
-			// Actually, the previous implementation also had this "future" context issue if it was truly streaming.
-			// However, for grep we typically want the full context. 
-			// Let's refine the streaming logic: collect lines, detect matches, then extract context once we have enough lines.
-		}
-
-		matches.push(searchMatch);
-		if (!regex.global) break;
-	}
-}
-
-/**
- * Robust non-streaming search for context-aware grep.
+ * Robust search for context-aware grep.
  * While streaming is good for huge files, contextAfter requires looking ahead or buffering.
  * Since Librarian typically works on source code files (KB to low MBs), loading the file into memory
  * but processing it efficiently is a balanced trade-off for accurate context.
