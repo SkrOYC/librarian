@@ -41,6 +41,7 @@ export class GitIgnoreService {
 		if (relativePath === "" || relativePath === ".") return false;
 
 		let ignored = false;
+		let hasNegationMatch = false;
 		for (const p of this.patterns) {
 			if (p.glob.match(relativePath)) {
 				// If it's a directory-only pattern like "dist/", it should only match 
@@ -52,7 +53,13 @@ export class GitIgnoreService {
 					// This is not perfect for nested files but good enough for common cases.
 					continue;
 				}
-				ignored = !p.isNegation;
+				if (p.isNegation) {
+					ignored = false;
+					hasNegationMatch = true;
+				} else if (!hasNegationMatch) {
+					// Only set ignored to true if we haven't seen a negation pattern yet
+					ignored = true;
+				}
 			}
 		}
 		return ignored;

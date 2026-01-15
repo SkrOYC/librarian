@@ -80,5 +80,10 @@ export function getToolSuggestion(operation: string, targetPath?: string): strin
 		return "Check if the search path exists and the patterns are valid glob patterns.";
 	}
 
+	// Generic permission suggestion for any operation
+	if (targetPath && (operation === "view" || operation === "list" || operation === "find")) {
+		return "Check file permissions and ensure you have read access to the path.";
+	}
+
 	return undefined;
 }
