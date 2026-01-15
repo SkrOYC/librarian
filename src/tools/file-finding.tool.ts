@@ -142,7 +142,7 @@ Usage
 				.optional()
 				.default([])
 				.describe(
-					"Array of glob patterns to exclude from results. Use full glob patterns for exclusions (e.g., 'dist/**' to exclude a directory and its contents). Defaults to none",
+					"Array of glob patterns to exclude from results. Use full glob patterns for exclusions (e.g., '**/node_modules/**' to exclude a directory and its contents recursively). Defaults to none",
 				),
 			recursive: z
 				.boolean()
@@ -156,7 +156,7 @@ Usage
 				.optional()
 				.default(100)
 				.describe(
-					"Maximum number of files to return. Maximum of 100 by default",
+					"Maximum number of files to return. Defaults to 100",
 				),
 			includeHidden: z
 				.boolean()
