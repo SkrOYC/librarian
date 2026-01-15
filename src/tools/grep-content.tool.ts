@@ -182,7 +182,7 @@ async function performGrepSearch(
 }
 
 // Create the modernized tool using the tool() function
-export const grepContentTool = tool(
+export const grepTool = tool(
 	async (
 		{
 			searchPath = ".",
@@ -197,9 +197,9 @@ export const grepContentTool = tool(
 		},
 		config,
 	) => {
-		const timingId = logger.timingStart("grepContent");
+		const timingId = logger.timingStart("grep");
 
-		logger.info("TOOL", "grep_content called", {
+		logger.info("TOOL", "grep called", {
 			searchPath,
 			query,
 			patterns,
@@ -231,7 +231,7 @@ export const grepContentTool = tool(
 			);
 
 			const searchRegex = compileSearchRegex(query, regex, caseSensitive);
-			const results = await performGrepSearch(
+			const rawResults = await performGrepSearch(
 				filesToSearch,
 				searchRegex,
 				maxResults,
@@ -239,7 +239,13 @@ export const grepContentTool = tool(
 				contextAfter,
 			);
 
-			logger.timingEnd(timingId, "TOOL", "grep_content completed");
+			// Convert paths to relative paths for formatting
+			const results = rawResults.map(r => ({
+				path: path.relative(workingDir, r.path),
+				matches: r.matches
+			}));
+
+			logger.timingEnd(timingId, "grep completed");
 
 			if (results.length === 0) {
 				return `No matches found for query "${query}" in the searched files`;
@@ -249,7 +255,7 @@ export const grepContentTool = tool(
 		} catch (error) {
 			logger.error(
 				"TOOL",
-				"grep_content failed",
+				"grep failed",
 				error instanceof Error ? error : new Error(String(error)),
 				{ searchPath, query },
 			);
@@ -257,7 +263,7 @@ export const grepContentTool = tool(
 		}
 	},
 	{
-		name: "grep_content",
+		name: "grep",
 		description: `A powerful search tool built on ripgrep
 
 Usage:

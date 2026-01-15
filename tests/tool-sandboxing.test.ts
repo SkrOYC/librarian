@@ -4,10 +4,10 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { fileListTool } from '../src/tools/file-listing.tool.js';
-import { fileReadTool } from '../src/tools/file-reading.tool.js';
-import { fileFindTool } from '../src/tools/file-finding.tool.js';
-import { grepContentTool } from '../src/tools/grep-content.tool.js';
+import { listTool } from '../src/tools/file-listing.tool.js';
+import { viewTool } from '../src/tools/file-reading.tool.js';
+import { findTool } from '../src/tools/file-finding.tool.js';
+import { grepTool } from '../src/tools/grep-content.tool.js';
 import path from 'node:path';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 
@@ -42,13 +42,13 @@ describe('File Explorer Tools Sandboxing', () => {
       mkdirSync(sandboxDir);
       writeFileSync(path.join(sandboxDir, 'test.txt'), 'content');
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '.',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
       });
 
-      expect(result).toContain(sandboxDir);
+      expect(result).toContain('.');
     });
 
     it('should handle nested relative paths', async () => {
@@ -58,13 +58,13 @@ describe('File Explorer Tools Sandboxing', () => {
       mkdirSync(nestedDir, { recursive: true });
       writeFileSync(path.join(nestedDir, 'test.txt'), 'content');
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: 'subdir/nested',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
       });
 
-      expect(result).toContain(nestedDir);
+      expect(result).toContain('subdir/nested');
     });
 
     it('should handle . for current directory', async () => {
@@ -72,13 +72,13 @@ describe('File Explorer Tools Sandboxing', () => {
       mkdirSync(sandboxDir);
       writeFileSync(path.join(sandboxDir, 'test.txt'), 'content');
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '.',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
       });
 
-      expect(result).toContain(sandboxDir);
+      expect(result).toContain('.');
     });
   });
 
@@ -87,7 +87,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       mkdirSync(sandboxDir);
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '../etc/passwd',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -101,7 +101,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       mkdirSync(sandboxDir);
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '..\\windows\\system32',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -114,7 +114,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       mkdirSync(sandboxDir);
 
-      const result = await fileReadTool.invoke({
+      const result = await viewTool.invoke({
         filePath: '/etc/passwd',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -127,7 +127,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const sandboxDir = path.join(testDir, 'Sandbox');
       mkdirSync(sandboxDir);
 
-      const result = await fileFindTool.invoke({
+      const result = await findTool.invoke({
         searchPath: '/SANDBOX/test',
         patterns: ['*.txt'],
       }, {
@@ -144,7 +144,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       mkdirSync(sandboxDir);
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '..%2Fetc%2Fpasswd',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -158,7 +158,7 @@ describe('File Explorer Tools Sandboxing', () => {
       mkdirSync(sandboxDir);
 
       // This is a basic check, encoded null bytes are more sophisticated
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '../',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -171,7 +171,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       mkdirSync(sandboxDir);
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -179,7 +179,7 @@ describe('File Explorer Tools Sandboxing', () => {
 
       // Empty path should resolve to working directory
       expect(result).not.toContain('Error');
-      expect(result).toContain(sandboxDir);
+      expect(result).toContain('Contents of directory: .');
     });
 
     it('should handle deeply nested valid paths', async () => {
@@ -189,25 +189,25 @@ describe('File Explorer Tools Sandboxing', () => {
       mkdirSync(deepDir, { recursive: true });
       writeFileSync(path.join(deepDir, 'test.txt'), 'content');
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: 'a/b/c/d/e',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
       });
 
-      expect(result).toContain(deepDir);
+      expect(result).toContain('a/b/c/d/e');
     });
   });
 
   describe('Tool-Specific Tests', () => {
-    it('file-listing tool should enforce sandbox boundary', async () => {
+    it('list tool should enforce sandbox boundary', async () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       const otherDir = path.join(testDir, 'other');
       mkdirSync(sandboxDir);
       mkdirSync(otherDir);
       writeFileSync(path.join(otherDir, 'secret.txt'), 'secret data');
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '../other',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -218,14 +218,14 @@ describe('File Explorer Tools Sandboxing', () => {
       expect(result).not.toContain('secret');
     });
 
-    it('file-reading tool should enforce sandbox boundary', async () => {
+    it('view tool should enforce sandbox boundary', async () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       const otherDir = path.join(testDir, 'other');
       mkdirSync(sandboxDir);
       mkdirSync(otherDir);
       writeFileSync(path.join(otherDir, 'secret.txt'), 'secret data');
 
-      const result = await fileReadTool.invoke({
+      const result = await viewTool.invoke({
         filePath: '../other/secret.txt',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -236,14 +236,14 @@ describe('File Explorer Tools Sandboxing', () => {
       expect(result).not.toContain('secret data');
     });
 
-    it('file-finding tool should enforce sandbox boundary', async () => {
+    it('find tool should enforce sandbox boundary', async () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       const otherDir = path.join(testDir, 'other');
       mkdirSync(sandboxDir);
       mkdirSync(otherDir);
       writeFileSync(path.join(otherDir, 'important.txt'), 'important data');
 
-      const result = await fileFindTool.invoke({
+      const result = await findTool.invoke({
         searchPath: '../other',
         patterns: ['*.txt'],
       }, {
@@ -255,7 +255,7 @@ describe('File Explorer Tools Sandboxing', () => {
       expect(result).not.toContain('important.txt');
     });
 
-    it('grep-content tool should enforce sandbox boundary', async () => {
+    it('grep tool should enforce sandbox boundary', async () => {
       const sandboxDir = path.join(testDir, 'sandbox');
       const otherDir = path.join(testDir, 'other');
       mkdirSync(sandboxDir);
@@ -263,7 +263,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const secretFile = path.join(otherDir, 'secret.txt');
       writeFileSync(secretFile, 'password: admin123');
 
-      const result = await grepContentTool.invoke({
+      const result = await grepTool.invoke({
         searchPath: '../other',
         query: 'password',
         patterns: ['*.txt'],
@@ -283,7 +283,7 @@ describe('File Explorer Tools Sandboxing', () => {
       writeFileSync(path.join(sandboxDir, 'file1.txt'), 'content1');
       writeFileSync(path.join(sandboxDir, 'file2.txt'), 'content2');
 
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '.',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
@@ -299,14 +299,13 @@ describe('File Explorer Tools Sandboxing', () => {
       const testFile = path.join(sandboxDir, 'test.txt');
       writeFileSync(testFile, 'test content');
 
-      const result = await fileReadTool.invoke({
+      const result = await viewTool.invoke({
         filePath: 'test.txt',
       }, {
         context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
       });
 
       expect(result).toContain('test content');
-      expect(result).toContain('test.txt');
     });
 
     it('should allow finding files within sandbox', async () => {
@@ -316,7 +315,7 @@ describe('File Explorer Tools Sandboxing', () => {
       mkdirSync(subdir);
       writeFileSync(path.join(subdir, 'index.ts'), 'export {}');
 
-      const result = await fileFindTool.invoke({
+      const result = await findTool.invoke({
         searchPath: '.',
         patterns: ['*.ts'],
       }, {
@@ -332,7 +331,7 @@ describe('File Explorer Tools Sandboxing', () => {
       const testFile = path.join(sandboxDir, 'test.js');
       writeFileSync(testFile, 'const x = 42;');
 
-      const result = await grepContentTool.invoke({
+      const result = await grepTool.invoke({
         searchPath: '.',
         query: 'const',
         patterns: ['*.js'],

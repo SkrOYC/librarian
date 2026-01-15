@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileReadTool } from '../src/tools/file-reading.tool.js';
-import { fileListTool } from '../src/tools/file-listing.tool.js';
-import { grepContentTool } from '../src/tools/grep-content.tool.js';
+import { viewTool } from '../src/tools/file-reading.tool.js';
+import { listTool } from '../src/tools/file-listing.tool.js';
+import { grepTool } from '../src/tools/grep-content.tool.js';
 
 describe('New Tooling Features', () => {
   const testDir = path.join(process.cwd(), 'test-new-features');
@@ -31,9 +31,9 @@ describe('New Tooling Features', () => {
     }
   });
 
-  describe('file_read viewRange', () => {
+  describe('view viewRange', () => {
     it('should read only the specified line range', async () => {
-      const result = await fileReadTool.invoke({
+      const result = await viewTool.invoke({
         filePath: 'multiline.txt',
         viewRange: [3, 5]
       }, { context: testContext });
@@ -43,10 +43,12 @@ describe('New Tooling Features', () => {
       expect(result).toContain('5→Line 5');
       expect(result).not.toContain('2→Line 2');
       expect(result).not.toContain('6→Line 6');
+      // Verify NO header
+      expect(result).not.toContain('Content of file');
     });
 
     it('should handle -1 as end of file', async () => {
-      const result = await fileReadTool.invoke({
+      const result = await viewTool.invoke({
         filePath: 'multiline.txt',
         viewRange: [8, -1]
       }, { context: testContext });
@@ -57,9 +59,9 @@ describe('New Tooling Features', () => {
     });
   });
 
-  describe('file_list recursive', () => {
+  describe('list recursive', () => {
     it('should list files recursively up to maxDepth with indentation', async () => {
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '.',
         recursive: true,
         maxDepth: 2
@@ -69,10 +71,12 @@ describe('New Tooling Features', () => {
       expect(result).toContain('multiline.txt (10 lines)');
       // Check for indentation in the new tree format
       expect(result).toContain('  nested.txt (1 lines)');
+      // Check for relative path in header
+      expect(result).toContain('Contents of directory: .');
     });
 
     it('should not recurse beyond maxDepth', async () => {
-      const result = await fileListTool.invoke({
+      const result = await listTool.invoke({
         directoryPath: '.',
         recursive: true,
         maxDepth: 1
@@ -83,9 +87,9 @@ describe('New Tooling Features', () => {
     });
   });
 
-  describe('grep_content context', () => {
+  describe('grep context', () => {
     it('should include context lines around matches', async () => {
-      const result = await grepContentTool.invoke({
+      const result = await grepTool.invoke({
         searchPath: '.',
         query: 'Line 5',
         contextBefore: 1,
@@ -97,6 +101,9 @@ describe('New Tooling Features', () => {
       expect(result).toContain('6→Line 6');
       expect(result).not.toContain('3→Line 3');
       expect(result).not.toContain('7→Line 7');
+      // Verify relative path
+      expect(result).toContain('multiline.txt');
+      expect(result).not.toContain(testDir);
     });
   });
 });
