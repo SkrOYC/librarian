@@ -52,7 +52,16 @@ export const findTool = tool(
 			}
 
 			// Validate that the search path exists and is a directory
-			const stats = await fs.stat(resolvedPath);
+			let stats;
+			try {
+				stats = await fs.stat(resolvedPath);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					throw new Error(`Search path "${searchPath}" does not exist`);
+				}
+				throw error;
+			}
+			
 			if (!stats.isDirectory()) {
 				throw new Error(`Search path "${searchPath}" is not a directory`);
 			}

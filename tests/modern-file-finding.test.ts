@@ -226,14 +226,23 @@ describe('Modern File Finding Tool', () => {
     fs.unlinkSync(testFile2);
   });
 
-  it('should handle invalid search path', async () => {
+  it('should handle non-existent search path', async () => {
     const result = await findTool.invoke({
-      searchPath: '/nonexistent/path',
+      searchPath: './nonexistent_subdir',
       patterns: ['*.*']
     }, { context: testContext });
 
-    expect(result).toContain('find failed');
-    expect(result).toContain('nonexistent');
+    expect(result).toContain('does not exist');
+    expect(result).toContain('nonexistent_subdir');
+  });
+
+  it('should handle empty patterns array', async () => {
+    const result = await findTool.invoke({
+      searchPath: testDir,
+      patterns: []
+    }, { context: testContext });
+
+    expect(result).toContain('patterns');
   });
 
   it('should handle empty results', async () => {

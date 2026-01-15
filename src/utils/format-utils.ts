@@ -134,7 +134,7 @@ export function formatSearchResults(
 		for (const match of sortedMatches) {
 			// Before context
 			if (match.context?.before) {
-				const startLine = match.line - match.context.before.length;
+				const startLine = Math.max(1, match.line - match.context.before.length);
 				for (let j = 0; j < match.context.before.length; j++) {
 					const lineNum = startLine + j;
 					if (!displayedLines.has(lineNum)) {
