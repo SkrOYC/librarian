@@ -1,5 +1,9 @@
 # Librarian CLI - Technology Research Agent
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![npm version](https://img.shields.io/npm/v/@skroyc/librarian.svg)](https://www.npmjs.com/package/@skroyc/librarian)
+![Nix](https://img.shields.io/badge/Nix-5277C3?logo=nixos&logoColor=fff)
+
 A powerful CLI tool that enables AI coding agents to query specific technology repositories and receive detailed technical responses through autonomous exploration.
 
 ## Overview
