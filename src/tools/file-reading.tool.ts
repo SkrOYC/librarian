@@ -41,6 +41,28 @@ function isAudioFile(filePath: string): boolean {
 	return audioExtensions.has(ext);
 }
 
+// Check if file is a binary file that cannot be read as text
+function isBinaryFile(filePath: string): boolean {
+	const binaryExtensions = new Set([
+		".pdf",
+		".zip",
+		".gz",
+		".tar",
+		".rar",
+		".7z",
+		".exe",
+		".dll",
+		".so",
+		".dylib",
+		".class",
+		".jar",
+		".war",
+		".ear",
+	]);
+	const ext = path.extname(filePath).toLowerCase();
+	return binaryExtensions.has(ext);
+}
+
 /**
  * Reads lines from a file within a specific range using a streaming approach.
  * This is memory-efficient for large files as it avoids loading the entire file.
@@ -130,6 +152,11 @@ export const viewTool = tool(
 			// Check if it's a media file
 			if (isImageFile(resolvedPath) || isAudioFile(resolvedPath)) {
 				return `This is a media file (${isImageFile(resolvedPath) ? "image" : "audio"}). Media files cannot be read as text. Path: ${filePath}`;
+			}
+
+			// Check if it's a binary file
+			if (isBinaryFile(resolvedPath)) {
+				return `This is a binary file (${path.extname(filePath)}). Binary files cannot be read as text. Path: ${filePath}`;
 			}
 
 			// Check if it's a text file

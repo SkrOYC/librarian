@@ -68,6 +68,14 @@ async function searchFileWithContext(
 			}
 		}
 
+		// Remove completed matches from pendingMatches to prevent memory leak
+		// This keeps the array small for files with many matches
+		for (let i = pendingMatches.length - 1; i >= 0; i--) {
+			if (pendingMatches[i].linesRemaining === 0) {
+				pendingMatches.splice(i, 1);
+			}
+		}
+
 		// Check for new match
 		regex.lastIndex = 0;
 		let matchExec: RegExpExecArray | null;
@@ -145,7 +153,7 @@ function compileSearchRegex(
 	regex: boolean,
 	caseSensitive: boolean,
 ): RegExp {
-	const flags = caseSensitive ? "g" : "gi";
+	const flags = caseSensitive ? "gm" : "gim";
 
 	if (regex) {
 		try {
