@@ -1,166 +1,9 @@
 import { tool } from "langchain";
 import { z } from "zod";
 import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
 import path from "node:path";
+import { Glob } from "bun";
 import { logger } from "../utils/logger.js";
-
-// Find files matching glob patterns in a directory
-async function findFiles(
-	searchPath: string,
-	patterns: string[],
-	options: {
-		exclude?: string[];
-		recursive?: boolean;
-		maxResults?: number;
-		includeHidden?: boolean;
-	} = {},
-): Promise<string[]> {
-	const {
-		exclude = [],
-		recursive = true,
-		maxResults = 100,
-		includeHidden = false,
-	} = options;
-
-	const foundFiles: string[] = [];
-	const processedPaths = new Set<string>();
-
-	// Process each pattern
-	for (const pattern of patterns) {
-		// Only add **/ prefix if recursive and pattern doesn't already contain path separators
-		const effectivePattern =
-			recursive && !pattern.includes("**") && !pattern.includes("/")
-				? `**/${pattern}`
-				: pattern;
-
-		// Simple glob matching implementation
-		const matchingFiles = await simpleGlobSearch(searchPath, effectivePattern, {
-			recursive,
-			includeHidden,
-		});
-
-		for (const file of matchingFiles) {
-			if (foundFiles.length >= maxResults) {
-				break;
-			}
-
-			if (processedPaths.has(file)) {
-				continue;
-			}
-
-			processedPaths.add(file);
-
-			// Check if file should be excluded
-			const relativePath = path.relative(searchPath, file);
-			if (exclude.some((excl) => simpleMatch(relativePath, excl))) {
-				continue;
-			}
-
-			foundFiles.push(file);
-		}
-
-		if (foundFiles.length >= maxResults) {
-			break;
-		}
-	}
-
-	return foundFiles.slice(0, maxResults);
-}
-
-async function handleDirectoryEntry(
-	entry: Dirent,
-	basePath: string,
-	pattern: string,
-	options: { recursive: boolean; includeHidden: boolean },
-	results: string[],
-): Promise<void> {
-	const fullPath = path.join(basePath, entry.name);
-
-	if (pattern === "**" || pattern.includes("**") || options.recursive) {
-		const basePattern = pattern.split("/")[0] || pattern;
-		if (simpleMatch(entry.name, basePattern)) {
-			results.push(fullPath);
-		}
-
-		if (options.recursive) {
-			const subDirResults = await simpleGlobSearch(
-				fullPath,
-				pattern,
-				options,
-			);
-			results.push(...subDirResults);
-		}
-	}
-}
-
-function handleFileEntry(
-	entry: Dirent,
-	basePath: string,
-	pattern: string,
-	results: string[],
-): void {
-	const fullPath = path.join(basePath, entry.name);
-	const relativePath = path.relative(basePath, fullPath);
-	const basePattern = pattern.includes("**/")
-		? pattern.split("**/")[1] || ""
-		: pattern;
-	if (
-		simpleMatch(entry.name, basePattern) ||
-		simpleMatch(relativePath, basePattern)
-	) {
-		results.push(fullPath);
-	}
-}
-
-// Simple glob search implementation (basic pattern matching)
-async function simpleGlobSearch(
-	basePath: string,
-	pattern: string,
-	options: {
-		recursive: boolean;
-		includeHidden: boolean;
-	},
-): Promise<string[]> {
-	const results: string[] = [];
-
-	try {
-		const entries = await fs.readdir(basePath, { withFileTypes: true });
-
-		for (const entry of entries) {
-			if (!options.includeHidden && entry.name.startsWith(".")) {
-				continue;
-			}
-
-			if (entry.isDirectory()) {
-				await handleDirectoryEntry(entry, basePath, pattern, options, results);
-			} else if (entry.isFile()) {
-				handleFileEntry(entry, basePath, pattern, results);
-			}
-		}
-	} catch {
-		return [];
-	}
-
-	return results;
-}
-
-// Simple pattern matching (supports * and ? wildcards)
-function simpleMatch(str: string, pattern: string): boolean {
-	// Handle exact match first
-	if (pattern === str) {
-		return true;
-	}
-
-	// Convert glob pattern to regex
-	const regexPattern = pattern
-		.replace(/\./g, "\\.") // Escape dots
-		.replace(/\*/g, ".*") // Replace * with .*
-		.replace(/\?/g, "."); // Replace ? with .
-
-	const regex = new RegExp(`^${regexPattern}$`);
-	return regex.test(str);
-}
 
 // Create the modernized tool using the tool() function
 export const findTool = tool(
@@ -170,7 +13,7 @@ export const findTool = tool(
 			patterns,
 			exclude = [],
 			recursive = true,
-			maxResults = 1000,
+			maxResults = 100,
 			includeHidden = false,
 		},
 		config,
@@ -212,27 +55,54 @@ export const findTool = tool(
 				throw new Error(`Search path "${searchPath}" is not a directory`);
 			}
 
-			// Find matching files
-			const foundFiles = await findFiles(resolvedPath, patterns || ["*"], {
-				exclude,
-				recursive,
-				maxResults,
-				includeHidden,
-			});
+			const foundFiles: string[] = [];
+			const excludeGlobs = exclude.map((pattern) => new Glob(pattern));
 
-			logger.timingEnd(timingId, "find completed");
+			// Process each pattern using Bun's native Glob for accuracy and performance
+			for (const pattern of patterns) {
+				if (foundFiles.length >= maxResults) break;
+
+				// If recursive and no directory component in pattern, prepend **/
+				const effectivePattern =
+					recursive && !pattern.includes("/") && !pattern.includes("**")
+						? `**/${pattern}`
+						: pattern;
+
+				const glob = new Glob(effectivePattern);
+
+				// Scan using resolvedPath as cwd
+				for await (const file of glob.scan({
+					cwd: resolvedPath,
+					onlyFiles: true,
+					dot: includeHidden,
+				})) {
+					if (foundFiles.length >= maxResults) break;
+
+					// file is relative to resolvedPath
+					const fullPath = path.resolve(resolvedPath, file);
+					const relativeToWorkingDir = path.relative(resolvedWorkingDir, fullPath);
+
+					// Check if file should be excluded
+					const isExcluded = excludeGlobs.some((eg) => eg.match(relativeToWorkingDir));
+					if (isExcluded) continue;
+
+					if (!foundFiles.includes(relativeToWorkingDir)) {
+						foundFiles.push(relativeToWorkingDir);
+					}
+				}
+			}
+
+			logger.timingEnd(timingId, "TOOL", "find completed");
 
 			if (foundFiles.length === 0) {
-				return `No files found matching patterns: ${patterns?.join(", ") || "*"}`;
+				return `No files found matching patterns: ${patterns.join(", ")}`;
 			}
+
+			foundFiles.sort();
 
 			// Format results relative to working directory
-			let output = `Found ${foundFiles.length} files matching patterns [${patterns?.join(", ") || "*"}]:\n\n`;
-
-			for (const file of foundFiles) {
-				const relativeToWorkingDir = path.relative(resolvedWorkingDir, file);
-				output += `${relativeToWorkingDir}\n`;
-			}
+			let output = `Found ${foundFiles.length} files matching patterns [${patterns.join(", ")}]:\n\n`;
+			output += foundFiles.join("\n");
 
 			return output;
 		} catch (error) {

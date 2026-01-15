@@ -117,7 +117,7 @@ describe('Modern File Finding Tool', () => {
 
     expect(result).toContain('test.txt');
     expect(result).toContain('nested.js');
-    expect(result).toContain('Found 3 files matching patterns');  // Includes subdirectory
+    expect(result).toContain('Found 2 files matching patterns');  // Now correctly excludes subdirectories
 
     // Clean up
     fs.unlinkSync(testFile1);
