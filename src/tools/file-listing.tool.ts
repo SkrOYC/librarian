@@ -20,6 +20,9 @@ async function listDirectoryDFS(
 	currentDepth = 0,
 	gitignore?: GitIgnoreService,
 ): Promise<FileSystemEntry[]> {
+	// At maxDepth=1:
+	// - currentDepth=0: process entries, DON'T recurse (0 + 1 < 1 is FALSE)
+	// - currentDepth=1: return early (stop recursion)
 	if (currentDepth >= maxDepth) {
 		return [];
 	}
@@ -86,8 +89,20 @@ async function listDirectoryDFS(
 	// Recursively process subdirectories
 	const resultEntries: FileSystemEntry[] = [];
 	for (const entry of fileEntries) {
-		resultEntries.push(entry);
-		if (entry.isDirectory && recursive && currentDepth + 1 < maxDepth) {
+		// Determine if we should recurse into this entry
+		// Only recurse if: it's a directory, recursive is true, and next depth is within maxDepth
+		const willRecurse = entry.isDirectory && recursive && currentDepth + 1 < maxDepth;
+		
+		// Add the entry if:
+		// 1. It's a file (files are always included)
+		// 2. It's a directory AND (recursive is false OR we will recurse into it)
+		// 3. It's a directory AND we're at currentDepth=0 (show top-level directories but not their contents)
+		if (!entry.isDirectory || !recursive || willRecurse || (entry.isDirectory && currentDepth === 0)) {
+			resultEntries.push(entry);
+		}
+		
+		// Recurse if allowed
+		if (willRecurse) {
 			const subEntries = await listDirectoryDFS(
 				entry.path,
 				includeHidden,
