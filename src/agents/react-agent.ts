@@ -503,13 +503,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
             yield data.content;
           } else if (data.type === "content_block_delta" && data.delta?.text) {
             yield data.delta.text;
-          } else if (data.type === "message" && data.content) {
+          } else if (data.type === "message" && Array.isArray(data.content)) {
             // Final message might come as a whole
-            if (Array.isArray(data.content)) {
-              for (const block of data.content) {
-                if (block.type === "text" && block.text) {
-                  yield block.text;
-                }
+            for (const block of data.content) {
+              if (block.type === "text" && block.text) {
+                yield block.text;
               }
             }
           }

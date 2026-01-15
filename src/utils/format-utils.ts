@@ -188,23 +188,3 @@ export function formatSearchResults(
 
   return output;
 }
-
-/**
- * Generate informative footer messages for various tool behaviors
- */
-export function generateFooterMessage(
-  type: string,
-  context?: Record<string, any>
-): string {
-  const footers: Record<string, (ctx?: any) => string> = {
-    searchResultsTruncated: (ctx) => {
-      const shown = ctx?.shown || 0;
-      const total = ctx?.total || 0;
-      const filesText = ctx?.totalFiles === 1 ? "1 file" : "files";
-      return `\n\nFound ${total} matches across ${filesText} (showing first ${shown} matches). Consider using more specific search patterns or file filters to narrow results.`;
-    },
-  };
-
-  const generator = footers[type];
-  return generator ? generator(context) : "";
-}

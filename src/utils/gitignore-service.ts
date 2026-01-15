@@ -9,6 +9,9 @@ interface GitIgnorePattern {
   glob: Glob;
 }
 
+// Regex for parsing gitignore line endings (moved to module level for performance)
+const LINE_ENDING_REGEX = /\r?\n/;
+
 /**
  * Service to handle .gitignore patterns and filtering.
  * Uses Bun's native Glob for high performance.
@@ -77,7 +80,7 @@ export class GitIgnoreService {
   }
 
   private parseGitIgnore(content: string): GitIgnorePattern[] {
-    const lines = content.split(/\r?\n/);
+    const lines = content.split(LINE_ENDING_REGEX);
     const patterns: GitIgnorePattern[] = [];
 
     for (let line of lines) {
