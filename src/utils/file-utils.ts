@@ -81,51 +81,7 @@ export async function isTextFile(filePath: string): Promise<boolean> {
 
 /**
  * Counts the number of lines in a file using a memory-efficient streaming approach.
- * Returns 0 for empty files.
- */
-export async function countLines(filePath: string): Promise<number> {
-	try {
-		const file = Bun.file(filePath);
-		if (file.size === 0) return 0;
-
-		const stream = file.stream();
-		const reader = stream.getReader();
-		let count = 0;
-		let hasContent = false;
-
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-
-			hasContent = true;
-			for (let i = 0; i < value.length; i++) {
-				if (value[i] === 10) {
-					// '\n'
-					count++;
-				}
-			}
-		}
-
-		// If the file has content but doesn't end with a newline, we still count the last line
-		// (Common behavior for most line counters)
-		// However, split('\n').length behavior is: "line1\nline2" -> 2, "line1" -> 1, "" -> 1 (buggy)
-		// We want: "" -> 0, "a" -> 1, "a\n" -> 1, "a\nb" -> 2
-		// Our loop counts '\n'. 
-		// If file is "a", count=0, hasContent=true -> return 1
-		// If file is "a\n", count=1, but the last char was \n. 
-		// Let's refine the logic to match "number of lines" properly.
-		
-		// Actually, let's just use a simpler check: if last byte was not \n, add 1.
-		// But we need to know the last byte.
-		
-		return count + 1; // Basic implementation, usually files have at least one line if not empty
-	} catch {
-		return 0;
-	}
-}
-
-/**
- * Improved countLines that handles empty files and trailing newlines correctly
+ * Handles empty files and trailing newlines correctly.
  */
 export async function getFileLineCount(filePath: string): Promise<number> {
 	try {

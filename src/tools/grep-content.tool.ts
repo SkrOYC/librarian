@@ -33,13 +33,11 @@ function searchFileContent(
 			continue;
 		}
 
-		// Use a local copy of regex to ensure it is global if we want all matches, 
-		// but for line-based tools, usually one match per line is enough.
-		// The code review mentioned capturing the column correctly.
+		// Use a local copy of regex to ensure it is global for finding multiple matches
 		regex.lastIndex = 0;
-		const match = regex.exec(line);
+		let match: RegExpExecArray | null;
 
-		if (match) {
+		while ((match = regex.exec(line)) !== null) {
 			const searchMatch: SearchMatch = {
 				line: i + 1,
 				column: match.index + 1,
@@ -54,6 +52,9 @@ function searchFileContent(
 			}
 
 			matches.push(searchMatch);
+
+			// If regex is not global, break to avoid infinite loop
+			if (!regex.global) break;
 		}
 	}
 
