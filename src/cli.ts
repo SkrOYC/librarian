@@ -5,8 +5,65 @@ import { Librarian } from './index.js';
 import { loadConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { expandTilde } from './utils/path-utils.js';
-import path from 'path';
-import os from 'os';
+import path from 'node:path';
+import os from 'node:os';
+
+async function handleStreamingOutput(stream: AsyncIterable<string>): Promise<void> {
+  try {
+    for await (const chunk of stream) {
+      Bun.stdout.write(new TextEncoder().encode(chunk));
+    }
+  } catch (error) {
+    console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');
+    process.exit(1);
+  }
+}
+
+async function handleTechnologyQuery(
+  librarian: Librarian,
+  techName: string,
+  query: string,
+  noStream: boolean,
+): Promise<void> {
+  if (noStream) {
+    const result = await librarian.queryRepository(techName, query);
+    console.log(result);
+    logger.info('CLI', 'Explore query completed (non-streaming)');
+  } else {
+    await handleStreamingOutput(librarian.streamRepository(techName, query));
+  }
+}
+
+async function handleGroupQuery(
+  librarian: Librarian,
+  groupName: string,
+  query: string,
+  noStream: boolean,
+): Promise<void> {
+  if (noStream) {
+    const result = await librarian.queryGroup(groupName, query);
+    console.log(result);
+    logger.info('CLI', 'Explore group query completed (non-streaming)');
+  } else {
+    await handleStreamingOutput(librarian.streamGroup(groupName, query));
+  }
+}
+
+function displayTechnologies(groups: Record<string, Record<string, { description?: string; branch?: string }>>): void {
+  console.log('Available Technologies:');
+  for (const [groupName, techs] of Object.entries(groups)) {
+    if (!techs || Object.keys(techs).length === 0) {
+      continue;
+    }
+
+    console.log(`\n[${groupName}]`);
+    for (const [techName, details] of Object.entries(techs)) {
+      const desc = details.description ? ` - ${details.description}` : '';
+      const branch = details.branch ? ` (${details.branch})` : '';
+      console.log(`  - ${techName}${branch}${desc}`);
+    }
+  }
+}
 
 export function createProgram() {
   const program = new Command();
@@ -29,15 +86,15 @@ export function createProgram() {
       try {
         // Set debug mode from global options
         const programOptions = program.opts();
-        logger.setDebugMode(programOptions.debug || false);
+        logger.setDebugMode(programOptions.debug);
 
         // Log command execution
         logger.info('CLI', 'Starting explore command', {
           queryLength: query.length,
           tech: options.tech || null,
           group: options.group || null,
-          noStream: options.noStream || false,
-          debug: programOptions.debug || false
+          noStream: options.noStream,
+          debug: programOptions.debug
         });
 
         // Validate: only one of --tech or --group should be specified
@@ -57,43 +114,9 @@ export function createProgram() {
             throw new Error(`Technology ${options.tech} not found in configuration`);
           }
 
-          if (!options.noStream) {
-            // Use streaming for real-time output
-            try {
-              const stream = librarian.streamRepository(techDetails.name, query);
-
-              for await (const chunk of stream) {
-                // Output each chunk as it arrives
-                Bun.stdout.write(new TextEncoder().encode(chunk));
-              }
-            } catch (error) {
-              console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');
-              process.exit(1);
-            }
-          } else {
-            // Use traditional synchronous query
-            const result = await librarian.queryRepository(techDetails.name, query);
-            console.log(result);
-            logger.info('CLI', 'Explore query completed (non-streaming)');
-          }
+          await handleTechnologyQuery(librarian, techDetails.name, query, options.noStream);
         } else if (options.group) {
-          // Query the entire group using a single agent
-          if (!options.noStream) {
-            try {
-              const stream = librarian.streamGroup(options.group, query);
-
-              for await (const chunk of stream) {
-                Bun.stdout.write(new TextEncoder().encode(chunk));
-              }
-            } catch (error) {
-              console.error('\nStreaming interrupted or failed:', error instanceof Error ? error.message : 'Unknown error');
-              process.exit(1);
-            }
-          } else {
-            const result = await librarian.queryGroup(options.group, query);
-            console.log(result);
-            logger.info('CLI', 'Explore group query completed (non-streaming)');
-          }
+          await handleGroupQuery(librarian, options.group, query, options.noStream);
         } else {
           console.error('Error: Either --tech or --group must be specified');
           process.exit(1);
@@ -117,31 +140,21 @@ export function createProgram() {
       try {
         // Set debug mode from global options
         const programOptions = program.opts();
-        logger.setDebugMode(programOptions.debug || false);
+        logger.setDebugMode(programOptions.debug);
 
         logger.info('CLI', 'Starting list command', { group: options.group || null });
 
         const config = await loadConfig(options.config);
 
         const groupsToDisplay = options.group
-          ? { [options.group]: config.technologies[options.group] }
+          ? { [options.group]: config.technologies[options.group]! }
           : config.technologies;
 
         if (options.group && !config.technologies[options.group]) {
           throw new Error(`Group ${options.group} not found in configuration`);
         }
 
-        console.log('Available Technologies:');
-        for (const [groupName, techs] of Object.entries(groupsToDisplay)) {
-          if (!techs || Object.keys(techs).length === 0) continue;
-          
-          console.log(`\n[${groupName}]`);
-          for (const [techName, details] of Object.entries(techs)) {
-            const desc = details.description ? ` - ${details.description}` : '';
-            const branch = details.branch ? ` (${details.branch})` : '';
-            console.log(`  - ${techName}${branch}${desc}`);
-          }
-        }
+        displayTechnologies(groupsToDisplay);
 
         logger.info('CLI', 'List command completed');
       } catch (error: unknown) {
@@ -163,9 +176,9 @@ export function createProgram() {
     .action((options) => {
       // Set debug mode from global options
       const programOptions = program.opts();
-      logger.setDebugMode(programOptions.debug || false);
+      logger.setDebugMode(programOptions.debug);
 
-      logger.info('CLI', 'Starting config command', { path: options.path || false });
+      logger.info('CLI', 'Starting config command', { path: options.path });
 
       if (options.path) {
         const configPath = options.config

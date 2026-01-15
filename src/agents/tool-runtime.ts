@@ -11,7 +11,7 @@ export interface ToolRuntime {
 	context?: Context;
 
 	/** Additional runtime properties if needed for future extensions */
-	[key: string]: any;
+	[key: string]: unknown;
 }
 
 /**

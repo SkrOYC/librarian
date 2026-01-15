@@ -5,16 +5,16 @@
  * Metadata-only logging (no sensitive data)
  */
 
-import { mkdir } from 'fs/promises';
-import path from 'path';
-import os from 'os';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import type { FileSink } from "bun";
 
 export type LogLevel = 'INFO' | 'DEBUG' | 'WARN' | 'ERROR';
 export type LogComponent = 'CLI' | 'CONFIG' | 'LIBRARIAN' | 'AGENT' | 'TOOL' | 'LLM' | 'GIT' | 'PATH' | 'LOGGER' | 'TIMING';
 
 interface LogMetadata {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface TimingOperation {
@@ -25,8 +25,8 @@ interface TimingOperation {
 class Logger {
   private static instance: Logger;
   private writer: FileSink | null = null;
-  private debugMode: boolean = false;
-  private timingOperations: Map<string, TimingOperation> = new Map();
+  private debugMode = false;
+  private readonly timingOperations: Map<string, TimingOperation> = new Map();
 
   private constructor() {
     this.initializeLogFile().catch(() => {
@@ -117,35 +117,45 @@ class Logger {
     const redacted: LogMetadata = {};
 
     for (const [key, value] of Object.entries(metadata)) {
-      // Redact sensitive keys
-      if (['apiKey', 'token', 'secret', 'password'].includes(key.toLowerCase())) {
-        redacted[key] = '[REDACTED]';
-      } else if (key === 'query' && typeof value === 'string') {
-        // Redact full query content, only log length
-        redacted[`${key}Length`] = value.length;
-      } else if (key === 'content' && typeof value === 'string') {
-        // Redact full content, only log length
-        redacted[`${key}Length`] = value.length;
-      } else if ((key === 'repoUrl' || key === 'baseURL') && typeof value === 'string') {
-        // Redact URLs, only show host
-        try {
-          const url = new URL(value);
-          redacted[`${key}Host`] = url.hostname;
-        } catch {
-          redacted[key] = '[INVALID_URL]';
-        }
-      } else if (key === 'workingDir' && typeof value === 'string') {
-        // Replace home directory with ~
-        redacted[key] = value.replace(os.homedir(), '~');
-      } else if (typeof value === 'string' && (value.includes(os.homedir()) || value.includes('/home/'))) {
-        // Redact any path containing home directory
-        redacted[key] = value.replace(os.homedir(), '~');
-      } else {
-        redacted[key] = value;
-      }
+      redacted[key] = this.getRedactedValue(key, value);
     }
 
     return redacted;
+  }
+
+  private getRedactedValue(key: string, value: unknown): unknown {
+    const lowerKey = key.toLowerCase();
+
+    if (['apiKey', 'token', 'secret', 'password'].includes(lowerKey)) {
+      return '[REDACTED]';
+    }
+
+    if ((key === 'query' || key === 'content') && typeof value === 'string') {
+      return value.length;
+    }
+
+    if ((key === 'repoUrl' || key === 'baseURL') && typeof value === 'string') {
+      return this.redactUrl(value);
+    }
+
+    if (key === 'workingDir' && typeof value === 'string') {
+      return value.replace(os.homedir(), '~');
+    }
+
+    if (typeof value === 'string' && (value.includes(os.homedir()) || value.includes('/home/'))) {
+      return value.replace(os.homedir(), '~');
+    }
+
+    return value;
+  }
+
+  private redactUrl(value: string): string {
+    try {
+      const url = new URL(value);
+      return url.hostname;
+    } catch {
+      return '[INVALID_URL]';
+    }
   }
 
   /**
@@ -169,7 +179,7 @@ class Logger {
    private writeLog(entry: string): void {
      try {
        if (this.writer) {
-         this.writer.write(entry + '\n');
+         this.writer.write(`${entry}\n`);
        }
      } catch {
        // Silent - do nothing on write errors

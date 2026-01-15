@@ -7,8 +7,8 @@ import { fileListTool } from './src/tools/file-listing.tool.js';
 import { fileReadTool } from './src/tools/file-reading.tool.js';
 import { fileFindTool } from './src/tools/file-finding.tool.js';
 import { grepContentTool } from './src/tools/grep-content.tool.js';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
-import path from 'path';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 async function testSandboxing() {
   const sandboxDir = path.join(process.cwd(), 'verification-sandbox');
@@ -45,7 +45,8 @@ async function testSandboxing() {
   }, {
     context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
   });
-  console.log(`✓ Security ENFORCED: ${escapeResult.includes('attempts to escape') ? 'Correctly rejected' : 'Security FAILED: ' + escapeResult}`);
+  const escapeStatus = escapeResult.includes('attempts to escape') ? 'Correctly rejected' : `Security FAILED: ${escapeResult}`;
+  console.log(`✓ Security ENFORCED: ${escapeStatus}`);
 
   // Test 3: Try to escape sandbox with absolute path (should fail)
   console.log('\nTest 3: Try to escape sandbox with absolute path (should fail)');
@@ -54,7 +55,8 @@ async function testSandboxing() {
   }, {
     context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
   });
-  console.log(`✓ Security ENFORCED: ${absPathResult.includes('attempts to escape') ? 'Correctly rejected' : 'Security FAILED: ' + absPathResult}`);
+  const absPathStatus = absPathResult.includes('attempts to escape') ? 'Correctly rejected' : `Security FAILED: ${absPathResult}`;
+  console.log(`✓ Security ENFORCED: ${absPathStatus}`);
 
   // Test 4: Find files within sandbox (should succeed)
   console.log('\nTest 4: Find files within sandbox (should succeed)');

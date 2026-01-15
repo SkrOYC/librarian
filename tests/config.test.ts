@@ -5,9 +5,13 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { createReadmeAlignedConfig, setupTestEnvironment, teardownTestEnvironment } from './helpers/test-config.js';
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import yaml from 'yaml';
+
+const HTTP_URL_REGEX = /^https?:\/\/.+/;
+const TILDE_REGEX = /^~/;
+const ABSOLUTE_PATH_REGEX = /^\//;
 
 describe('Configuration', () => {
   let testDir: string;
@@ -20,7 +24,7 @@ describe('Configuration', () => {
     await fs.mkdir(configDir, { recursive: true });
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     teardownTestEnvironment(testDir);
   });
 
@@ -54,10 +58,10 @@ describe('Configuration', () => {
         'openai', 'anthropic', 'google', 'openai-compatible'
       ];
 
-      providers.forEach(provider => {
+      for (const provider of providers) {
         const config = createReadmeAlignedConfig({ llm_provider: provider });
         expect(config.llm_provider).toBe(provider);
-      });
+      }
     });
 
     it('should support optional fields', () => {
@@ -143,10 +147,10 @@ describe('Configuration', () => {
         'repos'
       ];
 
-      validPaths.forEach(repos_path => {
+      for (const repos_path of validPaths) {
         const config = createReadmeAlignedConfig({ repos_path });
         expect(config.repos_path).toBe(repos_path);
-      });
+      }
     });
 
     it('should validate technology repository URLs', () => {
@@ -160,7 +164,7 @@ describe('Configuration', () => {
         }
       });
 
-      expect(config.technologies.test['test-repo'].repo).toMatch(/^https?:\/\/.+/);
+      expect(config.technologies.test['test-repo'].repo).toMatch(HTTP_URL_REGEX);
     });
 
     it('should validate optional branch specification', () => {
@@ -284,7 +288,7 @@ describe('Configuration', () => {
       });
 
       // The actual expansion would happen in the config loading logic
-      expect(config.repos_path).toMatch(/^~/);
+      expect(config.repos_path).toMatch(TILDE_REGEX);
     });
 
     it('should handle relative paths', () => {
@@ -300,7 +304,7 @@ describe('Configuration', () => {
         repos_path: '/absolute/path/to/repos'
       });
 
-      expect(config.repos_path).toMatch(/^\//);
+      expect(config.repos_path).toMatch(ABSOLUTE_PATH_REGEX);
     });
   });
 });

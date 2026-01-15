@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { Librarian, LibrarianConfig } from '../src/index.js';
-import fs from 'fs';
-import path from 'path';
+import { Librarian, type LibrarianConfig } from '../src/index.js';
+import fs from 'node:fs';
 
 describe('AI Provider Integration', () => {
   const testWorkingDir = './test-work';

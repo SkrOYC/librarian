@@ -9,10 +9,10 @@ import { fileReadTool } from '../src/tools/file-reading.tool.js';
 import { grepContentTool } from '../src/tools/grep-content.tool.js';
 import { fileFindTool } from '../src/tools/file-finding.tool.js';
 import { createContext } from '../src/agents/context-schema.js';
-import path from 'path';
-import fs from 'fs';
-import { existsSync, mkdirSync, rmSync } from 'fs';
-import { rm } from 'fs/promises';
+import path from 'node:path';
+import fs from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 
 describe('Tool Context Integration', () => {
   let testDir: string;

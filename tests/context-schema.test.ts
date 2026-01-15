@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { z } from 'zod';
-import { contextSchema, Context, createContext } from '../src/agents/context-schema.js';
+import type { z } from 'zod';
+import { contextSchema, createContext } from '../src/agents/context-schema.js';
 
 describe('Context Schema', () => {
   describe('Schema Validation', () => {

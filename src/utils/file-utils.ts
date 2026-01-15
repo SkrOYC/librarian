@@ -3,7 +3,7 @@
  * Shared utilities for file type detection and file operations
  */
 
-import path from 'path';
+import path from 'node:path';
 
 /**
  * Check if a file is text-based
@@ -28,7 +28,9 @@ export async function isTextFile(filePath: string): Promise<boolean> {
      const buffer = await Bun.file(filePath).arrayBuffer();
      const uint8Array = new Uint8Array(buffer);
      for (let i = 0; i < Math.min(512, uint8Array.length); i++) {
-       if (uint8Array[i] === 0) return false;
+       if (uint8Array[i] === 0) {
+         return false;
+       }
      }
      return true;
    } catch {

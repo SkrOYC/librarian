@@ -6,15 +6,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { TestCLIHelper, createMockRepoStructure, createStandardMockRepos } from './helpers/cli-test-helpers.js';
 import { createReadmeAlignedConfig } from './helpers/test-config.js';
-import fsSync from 'fs';
-import path from 'path';
+import fsSync from 'node:fs';
+import path from 'node:path';
 
 describe('CLI Integration', () => {
   let testDir: string;
   let helper: TestCLIHelper;
   let mockConfig: any;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     testDir = path.resolve(fsSync.mkdtempSync('cli-integration-test-'));
     helper = new TestCLIHelper(testDir);
     const reposDir = path.join(testDir, 'repos');
@@ -34,7 +34,7 @@ describe('CLI Integration', () => {
       branch: 'main',
       description: 'JavaScript library for building user interfaces'
     };
-    delete mockConfig.technologies.default.react;
+    mockConfig.technologies.default.react = undefined;
 
     mockConfig.technologies.langchain = {
       'langchain-mock': {
@@ -44,7 +44,7 @@ describe('CLI Integration', () => {
     };
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     // Clean up test directory
     if (fsSync.existsSync(testDir)) {
       fsSync.rmSync(testDir, { recursive: true, force: true });
@@ -144,7 +144,7 @@ describe('CLI Integration', () => {
 
       // Should fail gracefully due to missing API key, but not crash
       expect([0, 1]).toContain(result.exitCode);
-    }, 10000); // Increase timeout for this test
+    }, 10_000); // Increase timeout for this test
 
     it('should validate required query argument', async () => {
       const result = await helper.runCommand(['explore'], mockConfig);

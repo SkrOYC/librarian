@@ -1,6 +1,6 @@
 import { tool } from "langchain";
-import * as z from "zod";
-import path from "path";
+import { z } from "zod";
+import path from "node:path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
 
@@ -115,7 +115,7 @@ export const fileReadTool = tool(
 			const content = await readFileContent(resolvedPath);
 
 			// Limit content size to avoid overwhelming the AI
-			const maxContentLength = 50000; // 50KB limit
+			const maxContentLength = 50_000; // 50KB limit
 			if (content.length > maxContentLength) {
 				logger.debug("TOOL", "File content truncated", {
 					filePath,

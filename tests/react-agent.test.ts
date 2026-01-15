@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { fileListTool } from '../src/tools/file-listing.tool.js';
 import { fileReadTool as fileReadToolModern } from '../src/tools/file-reading.tool.js';
 import { grepContentTool as grepContentToolModern } from '../src/tools/grep-content.tool.js';
@@ -499,7 +499,7 @@ describe('React Agent and Tools Integration', () => {
 
     it('should handle large files efficiently', async () => {
       const largeFile = path.join(testDir, 'large.txt');
-      const largeContent = 'A'.repeat(10000); // 10KB file
+      const largeContent = 'A'.repeat(10_000); // 10KB file
       fs.writeFileSync(largeFile, largeContent);
 
       const startTime = Date.now();
@@ -561,12 +561,12 @@ describe('React Agent and Tools Integration', () => {
 
       try {
         await fileReadTool.invoke({ filePath: testDir }, { context: testContext }); // Try to read a directory
-      } catch (error) {
+      } catch (_error) {
         // Expected to fail
       }
 
       const endTime = Date.now();
-      expect(endTime - startTime).toBeLessThan(10000); // Should complete or fail within 10 seconds
+      expect(endTime - startTime).toBeLessThan(10_000); // Should complete or fail within 10 seconds
     });
   });
 });

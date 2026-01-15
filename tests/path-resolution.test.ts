@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { Librarian, LibrarianConfig } from '../src/index';
-import path from 'path';
-import fs from 'fs';
+import { Librarian, type LibrarianConfig } from '../src/index';
+import path from 'node:path';
+import fs from 'node:fs';
 
 describe('Path Resolution and Sandboxing', () => {
   const testReposPath = './test-repos';
@@ -42,31 +42,31 @@ describe('Path Resolution and Sandboxing', () => {
     // For now let's assume we'll have a getTechPath and getGroupPath
     const techDetails = librarian.resolveTechnology('react');
     expect(techDetails).toBeDefined();
-    
-    // @ts-ignore - testing internal/private-ish logic if needed or public API
-    const repoPath = librarian['getSecureRepoPath'](techDetails!.name, techDetails!.group);
+
+    // @ts-expect-error - testing internal/private-ish logic if needed or public API
+    const repoPath = librarian.getSecureRepoPath(techDetails?.name, techDetails?.group);
     const expectedPath = path.join(testReposPath, 'default', 'react');
-    expect(path.resolve(repoPath)).toBe(path.resolve(expectedPath));
+    expect(path.resolve(repoPath ?? '')).toBe(path.resolve(expectedPath));
   });
 
   it('should resolve group path to {repos_path}/{group}', () => {
-    // @ts-ignore
-    const groupPath = librarian['getSecureGroupPath']('langchain');
+    // @ts-expect-error
+    const groupPath = librarian.getSecureGroupPath('langchain');
     const expectedPath = path.join(testReposPath, 'langchain');
     expect(path.resolve(groupPath)).toBe(path.resolve(expectedPath));
   });
 
   it('should prevent directory traversal in tech name', () => {
     expect(() => {
-      // @ts-ignore
-      librarian['getSecureRepoPath']('../evil', 'default');
+      // @ts-expect-error
+      librarian.getSecureRepoPath('../evil', 'default');
     }).toThrow();
   });
 
   it('should prevent directory traversal in group name', () => {
     expect(() => {
-      // @ts-ignore
-      librarian['getSecureGroupPath']('../evil');
+      // @ts-expect-error
+      librarian.getSecureGroupPath('../evil');
     }).toThrow();
   });
 });

@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { fileFindTool } from '../src/tools/file-finding.tool.js';
 
 describe('Modern File Finding Tool', () => {

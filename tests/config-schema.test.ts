@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'bun:test';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { parse, stringify } from 'yaml';
 import { loadConfig } from '../src/config.js';
 import { createDefaultConfig } from '../src/config.js';
@@ -10,7 +10,7 @@ const TEST_CONFIG_PATH = path.join(process.cwd(), 'test-config.yaml');
 const TEST_ENV_PATH = path.join(process.cwd(), '.env');
 
 // Helper to create a temp .env file for tests
-function createTestEnv() {
+function _createTestEnv() {
     if (!fs.existsSync(TEST_ENV_PATH)) {
         fs.writeFileSync(TEST_ENV_PATH, 'LIBRARIAN_API_KEY=test-api-key');
     }

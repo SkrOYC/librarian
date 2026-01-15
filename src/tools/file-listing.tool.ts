@@ -1,7 +1,7 @@
 import { tool } from "langchain";
-import * as z from "zod";
-import fs from "fs/promises";
-import path from "path";
+import { z } from "zod";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { logger } from "../utils/logger.js";
 
 // Define types for file system operations

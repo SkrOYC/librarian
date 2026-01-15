@@ -3,9 +3,12 @@
  * Centralized test configuration factory with README-aligned structures
  */
 
-import { LibrarianConfig } from '../../src/index.js';
-import fs from 'fs';
-import path from 'path';
+import type { LibrarianConfig } from '../../src/index.js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Type for bun:test expect object
+type BunTestExpect = ReturnType<typeof import('bun:test').expect>;
 
 // README-aligned configuration types
 export interface ReadmeConfig {
@@ -125,7 +128,7 @@ export function createTestLibrarianConfig(overrides: Partial<LibrarianConfig> = 
 /**
  * Create temporary test directory
  */
-export function createTestDir(baseName: string = 'test'): string {
+export function createTestDir(baseName = 'test'): string {
   const testDir = path.join(process.cwd(), `${baseName}-${Date.now()}`);
   fs.mkdirSync(testDir, { recursive: true });
   return testDir;
@@ -144,7 +147,7 @@ export function cleanupTestDir(testDir: string): void {
  * Mock configuration builder class for fluent interface
  */
 export class MockConfigBuilder {
-  private config: ReadmeConfig;
+  private readonly config: ReadmeConfig;
 
   constructor() {
     this.config = createReadmeAlignedConfig();
@@ -184,16 +187,16 @@ export class MockConfigBuilder {
  * Assert README configuration structure
  * Note: This function requires expect to be imported in the test file
  */
-export function assertReadmeConfig(actual: any, expected: ReadmeConfig, expect: any): void {
+export function assertReadmeConfig(actual: ReadmeConfig, expected: ReadmeConfig, expect: BunTestExpect): void {
   expect(actual).toBeDefined();
   expect(actual.repos_path).toBe(expected.repos_path);
   expect(actual.llm_provider).toBe(expected.llm_provider);
   expect(actual.technologies).toEqual(expected.technologies);
-  
+
   if (expected.llm_model) {
     expect(actual.llm_model).toBe(expected.llm_model);
   }
-  
+
   if (expected.base_url) {
     expect(actual.base_url).toBe(expected.base_url);
   }

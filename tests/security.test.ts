@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { Librarian, LibrarianConfig } from '../src/index.js';
-import fs from 'fs';
-import path from 'path';
+import { Librarian, type LibrarianConfig } from '../src/index.js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const INVALID_PATH_CHARS_REGEX = /contains invalid path characters/;
 
 describe('Security and Path Resolution', () => {
   const testWorkingDir = './test-work';
@@ -42,7 +44,7 @@ describe('Security and Path Resolution', () => {
       
       expect(() => {
         (librarian as any).getSecureRepoPath(maliciousRepoName);
-      }).toThrow(/contains invalid path characters/);
+      }).toThrow(INVALID_PATH_CHARS_REGEX);
     });
 
     it('should properly sanitize repository names', async () => {

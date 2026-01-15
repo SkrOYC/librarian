@@ -1,7 +1,7 @@
 import { tool } from "langchain";
-import * as z from "zod";
-import { readdir, stat } from "fs/promises";
-import path from "path";
+import { z } from "zod";
+import { readdir, stat } from "node:fs/promises";
+import path from "node:path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
 
@@ -19,11 +19,13 @@ async function readFileContent(filePath: string): Promise<string> {
 // Search for content in a single file
 function searchFileContent(content: string, regex: RegExp) {
 	const lines = content.split("\n");
-	const matches = [];
+	const matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> = [];
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		if (line === undefined) continue;
+		if (line === undefined) {
+			continue;
+		}
 
 		const match = regex.exec(line);
 
@@ -32,6 +34,7 @@ function searchFileContent(content: string, regex: RegExp) {
 				line: i + 1,
 				column: match.index + 1,
 				text: line,
+				match,
 			});
 			regex.lastIndex = 0;
 		}
@@ -44,7 +47,7 @@ function searchFileContent(content: string, regex: RegExp) {
 async function findFiles(
 	dirPath: string,
 	pattern: string,
-	recursive: boolean = true,
+	recursive = true,
 ): Promise<string[]> {
 	const foundFiles: string[] = [];
 
@@ -58,14 +61,149 @@ async function findFiles(
 				const subDirFiles = await findFiles(fullPath, pattern, recursive);
 				foundFiles.push(...subDirFiles);
 			}
-		} else if (entry.isFile()) {
-			if (pattern === "*" || entry.name.includes(pattern.replace(/\*/g, ""))) {
-				foundFiles.push(fullPath);
-			}
+		} else if (entry.isFile() && (pattern === "*" || entry.name.includes(pattern.replace(/\*/g, "")))) {
+			foundFiles.push(fullPath);
 		}
 	}
 
 	return foundFiles;
+}
+
+async function validateAndResolvePath(workingDir: string, searchPath: string): Promise<string> {
+	const resolvedPath = path.resolve(workingDir, searchPath);
+	const resolvedWorkingDir = path.resolve(workingDir);
+	const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
+
+	logger.debug("TOOL", "Path validation", {
+		resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
+		resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
+		relativePath,
+		validated: !relativePath.startsWith(".."),
+	});
+
+	if (relativePath.startsWith("..")) {
+		logger.error(
+			"PATH",
+			"Search path escapes working directory sandbox",
+			undefined,
+			{ searchPath, relativePath },
+		);
+		throw new Error(
+			`Search path "${searchPath}" attempts to escape the working directory sandbox`,
+		);
+	}
+
+	const stats = await stat(resolvedPath);
+	if (!stats.isDirectory()) {
+		logger.error("TOOL", "Search path is not a directory", undefined, {
+			searchPath,
+		});
+		throw new Error(`Search path "${searchPath}" is not a directory`);
+	}
+
+	return resolvedPath;
+}
+
+async function findFilesToSearch(
+	resolvedPath: string,
+	patterns: string[],
+	recursive: boolean,
+): Promise<string[]> {
+	let filesToSearch: string[] = [];
+	for (const pattern of patterns) {
+		const foundFiles = await findFiles(resolvedPath, pattern, recursive);
+		filesToSearch = [...filesToSearch, ...foundFiles];
+	}
+
+	logger.debug("TOOL", "Files to search", {
+		count: filesToSearch.length,
+		patterns,
+	});
+
+	return filesToSearch;
+}
+
+function compileSearchRegex(query: string, regex: boolean, caseSensitive: boolean): RegExp {
+	const flags = caseSensitive ? "gm" : "gim";
+
+	if (regex) {
+		try {
+			const searchRegex = new RegExp(query, flags);
+			logger.debug("TOOL", "Regex pattern compiled", { query, flags });
+			return searchRegex;
+		} catch (e) {
+			logger.error(
+				"TOOL",
+				"Invalid regex pattern",
+				e instanceof Error ? e : new Error(String(e)),
+				{ query },
+			);
+			throw new Error(`Invalid regex pattern: ${(e as Error).message}`);
+		}
+	}
+
+	const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const searchRegex = new RegExp(escapedQuery, flags);
+	logger.debug("TOOL", "Escaped query compiled to regex", {
+		originalQuery: query,
+		flags,
+	});
+
+	return searchRegex;
+}
+
+async function performGrepSearch(
+	filesToSearch: string[],
+	searchRegex: RegExp,
+	maxResults: number,
+): Promise<Array<{ path: string; matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> }>> {
+	const results: Array<{ path: string; matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> }> = [];
+	let totalMatches = 0;
+
+	for (const file of filesToSearch) {
+		if (totalMatches >= maxResults) {
+			break;
+		}
+		if (await isTextFile(file)) {
+			try {
+				const content = await readFileContent(file);
+				const fileMatches = searchFileContent(content, searchRegex);
+				if (fileMatches.length > 0) {
+					const limitedMatches = fileMatches.slice(
+						0,
+						maxResults - totalMatches,
+					);
+					results.push({ path: file, matches: limitedMatches });
+					totalMatches += limitedMatches.length;
+				}
+			} catch {
+				// Silent fail for unreadable files
+			}
+		}
+	}
+
+	return results;
+}
+
+function formatGrepResults(
+	results: Array<{ path: string; matches: Array<{ line: number; text: string; column: number; match: RegExpExecArray | null }> }>,
+	query: string,
+): string {
+	if (results.length === 0) {
+		return `No matches found for query "${query}" in the searched files`;
+	}
+
+	const totalMatches = results.reduce((sum, r) => sum + r.matches.length, 0);
+	let output = `Found ${totalMatches} matches for query "${query}" in ${results.length} files:\n\n`;
+	for (const result of results) {
+		output += `File: ${result.path}\n`;
+		for (const match of result.matches) {
+			output += `  Line ${match.line}, Col ${match.column}: ${match.text}\n`;
+		}
+		output += "\n";
+	}
+
+	return output;
 }
 
 // Create the modernized tool using the tool() function
@@ -95,7 +233,6 @@ export const grepContentTool = tool(
 		});
 
 		try {
-			// Get working directory from config context - required for security
 			const workingDir = config?.context?.workingDir;
 			if (!workingDir) {
 				throw new Error(
@@ -111,118 +248,20 @@ export const grepContentTool = tool(
 				throw new Error('The "query" parameter is required');
 			}
 
-			// Validate the path to prevent directory traversal
-			const resolvedPath = path.resolve(workingDir, searchPath);
-			const resolvedWorkingDir = path.resolve(workingDir);
-			const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
+			const resolvedPath = await validateAndResolvePath(workingDir, searchPath);
+			const filesToSearch = await findFilesToSearch(resolvedPath, patterns, recursive);
 
-			logger.debug("TOOL", "Path validation", {
-				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
-				relativePath,
-				validated: !relativePath.startsWith(".."),
-			});
-
-			if (relativePath.startsWith("..")) {
-				logger.error(
-					"PATH",
-					"Search path escapes working directory sandbox",
-					undefined,
-					{ searchPath, relativePath },
-				);
-				throw new Error(
-					`Search path "${searchPath}" attempts to escape the working directory sandbox`,
-				);
-			}
-
-			const stats = await stat(resolvedPath);
-			if (!stats.isDirectory()) {
-				logger.error("TOOL", "Search path is not a directory", undefined, {
-					searchPath,
-				});
-				throw new Error(`Search path "${searchPath}" is not a directory`);
-			}
-
-			let searchRegex: RegExp;
-			const flags = caseSensitive ? "gm" : "gim";
-
-			if (regex) {
-				try {
-					searchRegex = new RegExp(query, flags);
-					logger.debug("TOOL", "Regex pattern compiled", { query, flags });
-				} catch (e) {
-					logger.error(
-						"TOOL",
-						"Invalid regex pattern",
-						e instanceof Error ? e : new Error(String(e)),
-						{ query },
-					);
-					return `Invalid regex pattern: ${(e as Error).message}`;
-				}
-			} else {
-				const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-				searchRegex = new RegExp(escapedQuery, flags);
-				logger.debug("TOOL", "Escaped query compiled to regex", {
-					originalQuery: query,
-					flags,
-				});
-			}
-
-			let filesToSearch: string[] = [];
-			for (const pattern of patterns) {
-				const foundFiles = await findFiles(resolvedPath, pattern, recursive);
-				filesToSearch = [...filesToSearch, ...foundFiles];
-			}
-
-			logger.debug("TOOL", "Files to search", {
-				count: filesToSearch.length,
-				patterns,
-			});
-
-			const results = [];
-			let totalMatches = 0;
-
-			for (const file of filesToSearch) {
-				if (totalMatches >= maxResults) break;
-				if (await isTextFile(file)) {
-					try {
-						const content = await readFileContent(file);
-						const fileMatches = searchFileContent(content, searchRegex);
-						if (fileMatches.length > 0) {
-							const limitedMatches = fileMatches.slice(
-								0,
-								maxResults - totalMatches,
-							);
-							results.push({ path: file, matches: limitedMatches });
-							totalMatches += limitedMatches.length;
-						}
-					} catch {
-						continue;
-					}
-				}
-			}
+			const searchRegex = compileSearchRegex(query, regex, caseSensitive);
+			const results = await performGrepSearch(filesToSearch, searchRegex, maxResults);
 
 			logger.timingEnd(timingId, "TOOL", "grep_content completed");
 			logger.debug("TOOL", "Search completed", {
 				filesSearched: filesToSearch.length,
 				filesWithMatches: results.length,
-				totalMatches,
+				totalMatches: results.reduce((sum, r) => sum + r.matches.length, 0),
 			});
 
-			if (results.length === 0) {
-				return `No matches found for query "${query}" in the searched files`;
-			}
-
-			let output = `Found ${totalMatches} matches for query "${query}" in ${results.length} files:\n\n`;
-			for (const result of results) {
-				output += `File: ${result.path}\n`;
-				for (const match of result.matches) {
-					output += `  Line ${match.line}, Col ${match.column}: ${match.text}\n`;
-				}
-				output += "\n";
-			}
-
-			return output;
+			return formatGrepResults(results, query);
 		} catch (error) {
 			logger.error(
 				"TOOL",
@@ -241,7 +280,7 @@ Usage:
 - ALWAYS use grep_content for search tasks.
 - Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
 - Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
-- Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use \`interface\{\}\` to find \`interface{}\` in Go code)
+- Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use \`interface{}\` to find \`interface{}\` in Go code)
 `,
 		schema: z.object({
 			searchPath: z.string().describe("The directory path to search in"),

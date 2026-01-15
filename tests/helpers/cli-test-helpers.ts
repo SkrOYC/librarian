@@ -3,10 +3,13 @@
  * CLI testing utilities and mock command execution
  */
 
-import { spawn, ChildProcess } from 'child_process';
-import { ReadmeConfig, MockRepo } from './test-config.js';
-import fs from 'fs';
-import path from 'path';
+import { spawn, type ChildProcess } from 'node:child_process';
+import type { ReadmeConfig, MockRepo } from './test-config.js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Type for bun:test expect object
+type BunTestExpect = ReturnType<typeof import('bun:test').expect>;
 
 export interface CLICommandTest {
   command: string[];
@@ -31,7 +34,7 @@ export interface OutputCapture {
  * CLI testing helper class
  */
 export class TestCLIHelper {
-  private testDir: string;
+  private readonly testDir: string;
   private configPath?: string;
   private outputCapture: OutputCapture = { stdout: [], stderr: [] };
 
@@ -69,6 +72,7 @@ export class TestCLIHelper {
     for (const [groupName, technologies] of Object.entries(config.technologies)) {
       yamlSections.push(`  ${groupName}:`);
       for (const [techName, techConfig] of Object.entries(technologies)) {
+        if (!techConfig) continue;
         yamlSections.push(`    ${techName}:`);
         yamlSections.push(`      repo: "${techConfig.repo}"`);
         if (techConfig.branch !== undefined) {
@@ -113,7 +117,7 @@ export class TestCLIHelper {
   /**
    * Run CLI command and capture output
    */
-  async runCommand(args: string[], config?: ReadmeConfig): Promise<TestResult> {
+  runCommand(args: string[], config?: ReadmeConfig): Promise<TestResult> {
     // If config is provided, set it up before running
     if (config) {
       this.setConfig(config);
@@ -218,7 +222,7 @@ export function createMockRepoStructure(basePath: string, repo: MockRepo): void 
 /**
  * Create standard mock repositories
  */
-export function createStandardMockRepos(basePath: string): MockRepo[] {
+export function createStandardMockRepos(_basePath: string): MockRepo[] {
   return [
     {
       name: 'react-mock',
@@ -255,9 +259,9 @@ export function createStandardMockRepos(basePath: string): MockRepo[] {
  * Note: This function requires expect to be imported in the test file
  */
 export function assertCLIResult(
-  result: TestResult, 
+  result: TestResult,
   expected: CLICommandTest,
-  expect: any
+  expect: BunTestExpect,
 ): void {
   if (expected.expectedExitCode !== undefined) {
     expect(result.exitCode).toBe(expected.expectedExitCode);

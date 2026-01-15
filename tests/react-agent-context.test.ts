@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { ReactAgent, AgentContext } from '../src/agents/react-agent.js';
+import { ReactAgent, type AgentContext } from '../src/agents/react-agent.js';
 
 describe('React Agent with Context Schema', () => {
   describe('Agent Creation with contextSchema', () => {
@@ -51,11 +51,11 @@ describe('React Agent with Context Schema', () => {
 
       try {
         await agent.initialize();
-      } catch (error) {
+      } catch (_error) {
         // Expected due to invalid API key
       }
 
-      const context: AgentContext = {
+      const _context: AgentContext = {
         workingDir: '/sandbox/dir',
         group: 'default',
         technology: 'react',
@@ -79,7 +79,7 @@ describe('React Agent with Context Schema', () => {
 
       try {
         await agent.initialize();
-      } catch (error) {
+      } catch (_error) {
         // Expected due to invalid API key
       }
 
@@ -98,7 +98,7 @@ describe('React Agent with Context Schema', () => {
 
       try {
         await agent.initialize();
-      } catch (error) {
+      } catch (_error) {
         // Expected due to invalid API key
       }
 
@@ -119,7 +119,7 @@ describe('React Agent with Context Schema', () => {
 
       try {
         await agent.initialize();
-      } catch (error) {
+      } catch (_error) {
         // Expected due to invalid API key
       }
 
@@ -139,7 +139,7 @@ describe('React Agent with Context Schema', () => {
 
       try {
         await agent.initialize();
-      } catch (error) {
+      } catch (_error) {
         // Expected due to invalid API key
       }
 
@@ -159,7 +159,7 @@ describe('React Agent with Context Schema', () => {
 
       try {
         await agent.initialize();
-      } catch (error) {
+      } catch (_error) {
         // Expected due to invalid API key
       }
 

@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import path from 'path';
-import os from 'os';
+import path from 'node:path';
+import os from 'node:os';
 
 describe('Working Directory Resolution', () => {
   const mockReposPath = path.join(os.homedir(), '.local', 'share', 'librarian', 'repos');
@@ -34,10 +34,14 @@ describe('Working Directory Resolution', () => {
 
     it('should resolve working directory with qualified technology name (group:tech)', () => {
       const qualifiedName = 'langchain:anthropic';
-      const [group, technology] = qualifiedName.split(':');
-      const expectedPath = path.join(mockReposPath, group!, technology);
+      const parts = qualifiedName.split(':');
+      if (parts.length !== 2) {
+        throw new Error('Invalid qualified name format');
+      }
+      const [group, technology] = parts;
+      const expectedPath = path.join(mockReposPath, group, technology);
 
-      const actualPath = path.join(mockReposPath, group!, technology);
+      const actualPath = path.join(mockReposPath, group, technology);
 
       expect(actualPath).toBe(expectedPath);
     });
@@ -169,7 +173,7 @@ describe('Working Directory Resolution', () => {
     });
 
     it('should handle missing group gracefully', () => {
-      const tech = 'react';
+      const _tech = 'react';
       const group = undefined as any;
 
       // When group is undefined, should handle gracefully

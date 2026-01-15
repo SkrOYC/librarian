@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { Librarian, LibrarianConfig } from '../src/index.js';
-import fs from 'fs';
-import path from 'path';
+import { Librarian, type LibrarianConfig } from '../src/index.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 describe('Repository Management', () => {
   const testWorkingDir = './test-work';
@@ -48,7 +48,7 @@ describe('Repository Management', () => {
       
       // We can't actually clone from a fake URL, but we can test the path logic
       // For this test, we'll just verify that the method constructs the right path
-      // @ts-ignore
+      // @ts-expect-error
       const repoPath = librarian.getSecureRepoPath('test-repo', 'default');
       expect(repoPath).toBe(path.join(testWorkingDir, 'default', 'test-repo'));
     });
@@ -63,7 +63,7 @@ describe('Repository Management', () => {
 
       // Verify that secure path construction works correctly
       // Just test the path resolution logic, don't attempt actual clone
-      const constructedPath = librarian['getSecureRepoPath']('test-repo', 'default');
+      const constructedPath = librarian.getSecureRepoPath('test-repo', 'default');
       expect(constructedPath).toBe(repoPath);
     });
   });
@@ -136,7 +136,7 @@ describe('Repository Management', () => {
       
       try {
         const stream = librarian.streamRepository('nonexistent-repo', 'test query');
-        for await (const chunk of stream) {
+        for await (const _chunk of stream) {
           // Should not reach here
           expect.fail('Should have thrown error for nonexistent repository');
         }
@@ -147,14 +147,14 @@ describe('Repository Management', () => {
 
     it('should return an async generator', async () => {
       const librarian = new Librarian(mockConfig);
-      
+
       // Test that method returns an async generator
       const stream = librarian.streamRepository('test-repo', 'test query');
       expect(typeof stream[Symbol.asyncIterator]).toBe('function');
-      
+
       // Should throw error for nonexistent repository during sync
       try {
-        for await (const chunk of stream) {
+        for await (const _chunk of stream) {
           // Should not reach here for non-existent repo
           expect.fail('Should have thrown error for invalid repository');
         }
@@ -164,38 +164,38 @@ describe('Repository Management', () => {
       }
     });
 
-    it('should handle streaming flow with mocked ReactAgent', async () => {
+    it('should handle streaming flow with mocked ReactAgent', () => {
       // Create a test config with valid repo URL format
       const testConfig = { ...mockConfig };
       const librarian = new Librarian(testConfig);
-      
+
       // Mock the syncRepository method to avoid git operations
-      const originalSyncRepository = librarian['syncRepository'];
-      librarian['syncRepository'] = async () => '/fake/repo/path';
-      
+      const originalSyncRepository = librarian.syncRepository;
+      librarian.syncRepository = async () => '/fake/repo/path';
+
       // Mock ReactAgent constructor and methods
       const mockStream = {
-        async *[Symbol.asyncIterator]() {
+        *[Symbol.asyncIterator]() {
           yield 'Test streaming chunk 1';
           yield 'Test streaming chunk 2';
         }
       };
 
-      const mockAgent = {
-        initialize: async () => {},
-        streamRepository: async () => mockStream
+      const _mockAgent = {
+        initialize: () => { /* mock implementation */ },
+        streamRepository: () => mockStream
       };
 
-      const originalReactAgent = librarian['ReactAgent'];
+      const _originalReactAgent = librarian.ReactAgent;
       // This is a bit of a hack since we can't easily mock ReactAgent constructor
       // but we can test that the method exists and returns correct type
       const stream = librarian.streamRepository('test-repo', 'test query');
-      
+
       // Verify it's an async generator
       expect(typeof stream[Symbol.asyncIterator]).toBe('function');
-      
+
       // Restore original method
-      librarian['syncRepository'] = originalSyncRepository;
+      librarian.syncRepository = originalSyncRepository;
     });
   });
 });

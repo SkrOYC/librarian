@@ -3,8 +3,8 @@
  * Shared utilities for path manipulation
  */
 
-import path from 'path';
-import os from 'os';
+import path from 'node:path';
+import os from 'node:os';
 
 /**
  * Expand tilde (~) in file paths to home directory

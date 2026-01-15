@@ -1,7 +1,8 @@
 import { tool } from "langchain";
-import * as z from "zod";
-import fs from "fs/promises";
-import path from "path";
+import { z } from "zod";
+import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import path from "node:path";
 import { logger } from "../utils/logger.js";
 
 // Find files matching glob patterns in a directory
@@ -67,6 +68,51 @@ async function findFiles(
 	return foundFiles.slice(0, maxResults);
 }
 
+async function handleDirectoryEntry(
+	entry: Dirent,
+	basePath: string,
+	pattern: string,
+	options: { recursive: boolean; includeHidden: boolean },
+	results: string[],
+): Promise<void> {
+	const fullPath = path.join(basePath, entry.name);
+
+	if (pattern === "**" || pattern.includes("**") || options.recursive) {
+		const basePattern = pattern.split("/")[0] || pattern;
+		if (simpleMatch(entry.name, basePattern)) {
+			results.push(fullPath);
+		}
+
+		if (options.recursive) {
+			const subDirResults = await simpleGlobSearch(
+				fullPath,
+				pattern,
+				options,
+			);
+			results.push(...subDirResults);
+		}
+	}
+}
+
+function handleFileEntry(
+	entry: Dirent,
+	basePath: string,
+	pattern: string,
+	results: string[],
+): void {
+	const fullPath = path.join(basePath, entry.name);
+	const relativePath = path.relative(basePath, fullPath);
+	const basePattern = pattern.includes("**/")
+		? pattern.split("**/")[1] || ""
+		: pattern;
+	if (
+		simpleMatch(entry.name, basePattern) ||
+		simpleMatch(relativePath, basePattern)
+	) {
+		results.push(fullPath);
+	}
+}
+
 // Simple glob search implementation (basic pattern matching)
 async function simpleGlobSearch(
 	basePath: string,
@@ -82,47 +128,17 @@ async function simpleGlobSearch(
 		const entries = await fs.readdir(basePath, { withFileTypes: true });
 
 		for (const entry of entries) {
-			// Skip hidden files/directories if not including them
 			if (!options.includeHidden && entry.name.startsWith(".")) {
 				continue;
 			}
 
-			const fullPath = path.join(basePath, entry.name);
-
 			if (entry.isDirectory()) {
-				// Handle directory matching
-				if (pattern === "**" || pattern.includes("**") || options.recursive) {
-					const basePattern = pattern.split("/")[0] || pattern;
-					if (simpleMatch(entry.name, basePattern)) {
-						results.push(fullPath);
-					}
-
-					if (options.recursive) {
-						const subDirResults = await simpleGlobSearch(
-							fullPath,
-							pattern,
-							options,
-						);
-						results.push(...subDirResults);
-					}
-				}
+				await handleDirectoryEntry(entry, basePath, pattern, options, results);
 			} else if (entry.isFile()) {
-				// Handle file matching
-				const relativePath = path.relative(basePath, fullPath);
-				// For files, match against pattern or against base pattern for **/prefix patterns
-				const basePattern = pattern.includes("**/")
-					? pattern.split("**/")[1] || ""
-					: pattern;
-				if (
-					simpleMatch(entry.name, basePattern) ||
-					simpleMatch(relativePath, basePattern)
-				) {
-					results.push(fullPath);
-				}
+				handleFileEntry(entry, basePath, pattern, results);
 			}
 		}
-	} catch (error) {
-		// If directory can't be read, just return empty results
+	} catch {
 		return [];
 	}
 

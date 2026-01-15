@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { fileReadTool } from '../src/tools/file-reading.tool.js';
 
 describe('Modern File Reading Tool', () => {
@@ -15,12 +15,12 @@ describe('Modern File Reading Tool', () => {
     testContext = { workingDir: process.cwd(), group: 'test', technology: 'test' };
     // Clean up any existing test files
     const testFiles = ['test_modern_file_read.txt', 'test_binary.bin'];
-    testFiles.forEach(file => {
+    for (const file of testFiles) {
       const filePath = path.join(process.cwd(), file);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
-    });
+    }
   });
 
   afterEach(() => {
@@ -33,12 +33,12 @@ describe('Modern File Reading Tool', () => {
       'test_empty.txt',
       'test_path.txt'
     ];
-    testFiles.forEach(file => {
+    for (const file of testFiles) {
       const filePath = path.join(process.cwd(), file);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
-    });
+    }
   });
 
   it('should read file content with structured parameters', async () => {
@@ -86,7 +86,7 @@ describe('Modern File Reading Tool', () => {
 
   it('should handle large files efficiently', async () => {
     const testFile = path.join(process.cwd(), 'test_large.txt');
-    const largeContent = 'A'.repeat(50000); // 50KB file
+    const largeContent = 'A'.repeat(50_000); // 50KB file
     fs.writeFileSync(testFile, largeContent);
 
     const startTime = Date.now();
@@ -138,7 +138,7 @@ describe('Modern File Reading Tool', () => {
       fs.writeFileSync(filePath, testFile.content);
 
       const result = await fileReadTool.invoke({
-        filePath: filePath
+        filePath
       }, { context: testContext });
 
       expect(result).toContain(testFile.content);

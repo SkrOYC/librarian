@@ -8,8 +8,8 @@ import { fileListTool } from '../src/tools/file-listing.tool.js';
 import { fileReadTool } from '../src/tools/file-reading.tool.js';
 import { fileFindTool } from '../src/tools/file-finding.tool.js';
 import { grepContentTool } from '../src/tools/grep-content.tool.js';
-import path from 'path';
-import { existsSync, mkdirSync, rmSync, writeFileSync, chmodSync } from 'fs';
+import path from 'node:path';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 
 describe('File Explorer Tools Sandboxing', () => {
   let testDir: string;

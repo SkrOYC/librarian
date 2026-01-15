@@ -1,8 +1,11 @@
-import { 
-  createAgent, 
-  anthropicPromptCachingMiddleware, 
-  todoListMiddleware 
+import {
+  createAgent,
+  anthropicPromptCachingMiddleware,
+  todoListMiddleware,
+  tool as createTool,
+  type DynamicStructuredTool
 } from "langchain";
+import type { z } from "zod";
 import { fileListTool } from "../tools/file-listing.tool.js";
 import { fileReadTool } from "../tools/file-reading.tool.js";
 import { grepContentTool } from "../tools/grep-content.tool.js";
@@ -12,12 +15,12 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
 import { logger } from "../utils/logger.js";
-import os from "os";
-import { mkdir, rm } from "fs/promises";
-import path from "path";
-import { AgentContext } from "./context-schema.js";
-import { spawn } from "child_process"; // Using child_process for better streaming control in Node/Bun mix
-import { Readable } from "stream";
+import os from "node:os";
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { Readable } from "node:stream";
+import type { AgentContext } from "./context-schema.js";
 
 /**
  * Configuration interface for ReactAgent
@@ -46,15 +49,15 @@ export interface ReactAgentConfig {
 		branch: string;
 	};
 	/** Optional context schema for runtime context validation */
-	contextSchema?: any;
+	contextSchema?: z.ZodType | undefined;
 }
 
 export class ReactAgent {
-	private aiModel?: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
-	private tools: any[];
-	private agent: any;
-	private config: ReactAgentConfig;
-	private contextSchema?: any;
+	private readonly aiModel?: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
+	private readonly tools: DynamicStructuredTool[];
+	private agent?: ReturnType<typeof createAgent>;
+	private readonly config: ReactAgentConfig;
+	private readonly contextSchema?: z.ZodType | undefined;
 
 	constructor(config: ReactAgentConfig) {
 		this.config = config;
@@ -84,9 +87,7 @@ export class ReactAgent {
 	 * @returns A context-aware system prompt string
 	 */
 	createDynamicSystemPrompt(): string {
-		const { workingDir, technology, aiProvider } = this.config;
-		const isClaudeCli = aiProvider.type === "claude-code";
-		const isGeminiCli = aiProvider.type === "gemini-cli";
+		const { workingDir, technology } = this.config;
 
 		// Dynamic system prompt generation code
 		let prompt = `
@@ -376,35 +377,33 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		return prompt;
 	}
 
-	private async *streamGeminiCli(
-		query: string,
-		context?: AgentContext,
-	): AsyncGenerator<string, void, unknown> {
-		const workingDir = context?.workingDir || this.config.workingDir;
-		const systemPrompt = this.createDynamicSystemPrompt();
-
-		// Create a temporary directory for Gemini CLI config
+	private async createGeminiTempDir(): Promise<string> {
 		const tempDir = path.join(os.tmpdir(), `librarian-gemini-${Date.now()}`);
 		await mkdir(tempDir, { recursive: true });
+		return tempDir;
+	}
 
+	private async setupGeminiConfig(
+		tempDir: string,
+		systemPrompt: string,
+		_model: string,
+	): Promise<{ systemPromptPath: string; settingsPath: string }> {
 		const systemPromptPath = path.join(tempDir, "system.md");
 		const settingsPath = path.join(tempDir, "settings.json");
 
-		// Write system prompt to file using Bun native API
 		await Bun.write(systemPromptPath, systemPrompt);
 
-		// Write restrictive settings to file using Bun native API
 		const settings = {
 			tools: {
 				core: ["list_directory", "read_file", "glob", "search_file_content"],
 				autoAccept: true,
 			},
-			mcpServers: {}, // Ensure no host MCP servers are loaded
+			mcpServers: {},
 			mcp: {
-				excluded: ["*"], // Extra safety to exclude all servers
+				excluded: ["*"],
 			},
 			experimental: {
-				enableAgents: false, // Disable experimental subagents
+				enableAgents: false,
 			},
 			output: {
 				format: "json",
@@ -412,83 +411,29 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		};
 		await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
 
-		const model = this.config.aiProvider.model || "gemini-2.5-flash";
+		return { systemPromptPath, settingsPath };
+	}
 
-		const args = [
-			"gemini",
-			"-p",
-			query,
-			"--output-format",
-			"stream-json",
-			"--yolo",
-		];
+	private buildGeminiEnv(tempDir: string, model: string): Record<string, string | undefined> {
+		const settingsPath = path.join(tempDir, "settings.json");
+		const systemPromptPath = path.join(tempDir, "system.md");
 
-		const env = {
+		return {
 			...Bun.env,
 			GEMINI_SYSTEM_MD: systemPromptPath,
-			GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath, // Override defaults
-			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath, // Override system settings (highest precedence)
+			GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath,
+			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
 			GEMINI_MODEL: model,
 		};
+	}
 
-		logger.debug("AGENT", "Spawning Gemini CLI", {
-			args,
-			workingDir,
-			model,
-		});
-
-		// Using Bun.spawn for native Bun performance and streaming
-		const proc = Bun.spawn(args, {
-			cwd: workingDir,
-			env,
-			stdout: "pipe",
-			stderr: "pipe", // Suppress internal CLI status messages
-		});
-
-		let buffer = "";
-
-		const reader = proc.stdout.getReader();
-
+	private async cleanupGeminiTempDir(tempDir: string): Promise<void> {
 		try {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				buffer += new TextDecoder().decode(value);
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-
-				for (const line of lines) {
-					if (!line.trim()) continue;
-					try {
-						const data = JSON.parse(line);
-						// Filter for message events from the assistant
-						if (
-							data.type === "message" &&
-							data.role === "assistant" &&
-							data.content
-						) {
-							yield data.content;
-						}
-					} catch (e) {
-						// Silent fail for non-JSON or partial lines
-					}
-				}
-			}
-
-			const exitCode = await proc.exited;
-			if (exitCode !== 0) {
-				throw new Error(`Gemini CLI exited with code ${exitCode}`);
-			}
-		} finally {
-			// Cleanup temporary files
-			try {
-				await rm(tempDir, { recursive: true, force: true });
-			} catch (err) {
-				logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
-					error: err,
-				});
-			}
+			await rm(tempDir, { recursive: true, force: true });
+		} catch (err) {
+			logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
+				error: err,
+			});
 		}
 	}
 
@@ -527,7 +472,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		const proc = spawn("claude", args, {
 			cwd: workingDir,
 			env,
-			stdio: ["pipe", "pipe", "ignore"], // Suppress internal CLI status messages/noise on stderr
 		});
 
 		let buffer = "";
@@ -548,7 +492,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				try {
 					const data = JSON.parse(line);
 					// Filter for text content blocks in the stream
-					// Note: Adjusting to handle different stream message types
 					if (data.type === "text" && data.content) {
 						yield data.content;
 					} else if (data.type === "content_block_delta" && data.delta?.text) {
@@ -563,7 +506,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 							}
 						}
 					}
-				} catch (e) {
+				} catch {
 					// Silent fail for non-JSON or partial lines
 				}
 			}
@@ -577,6 +520,91 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			});
 			proc.on("error", reject);
 		});
+	}
+
+	private async *streamGeminiCli(
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		const workingDir = context?.workingDir || this.config.workingDir;
+		const systemPrompt = this.createDynamicSystemPrompt();
+
+		const tempDir = await this.createGeminiTempDir();
+		const model = this.config.aiProvider.model || "gemini-2.5-flash";
+
+		try {
+			await this.setupGeminiConfig(tempDir, systemPrompt, model);
+
+			const args = [
+				"gemini",
+				"-p",
+				query,
+				"--output-format",
+				"stream-json",
+				"--yolo",
+			];
+
+			const env = this.buildGeminiEnv(tempDir, model);
+
+			logger.debug("AGENT", "Spawning Gemini CLI", {
+				args,
+				workingDir,
+				model,
+			});
+
+			const proc = Bun.spawn(args, {
+				cwd: workingDir,
+				env,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+
+			const reader = proc.stdout.getReader();
+			let buffer = "";
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) {
+					break;
+				}
+
+				buffer += new TextDecoder().decode(value);
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+
+				for (const line of lines) {
+					if (!line.trim()) {
+						continue;
+					}
+					try {
+						const data = JSON.parse(line);
+						const text = this.parseGeminiStreamLine(data);
+						if (text) {
+							yield text;
+						}
+					} catch {
+						// Silent fail for non-JSON or partial lines
+					}
+				}
+			}
+
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				throw new Error(`Gemini CLI exited with code ${exitCode}`);
+			}
+		} finally {
+			await this.cleanupGeminiTempDir(tempDir);
+		}
+	}
+
+	private parseGeminiStreamLine(data: unknown): string | null {
+		if (data && typeof data === "object" && "type" in data && "role" in data && "content" in data) {
+			const typedData = data as { type: string; role: string; content: string };
+			if (typedData.type === "message" && typedData.role === "assistant" && typedData.content) {
+				return typedData.content;
+			}
+		}
+		return null;
 	}
 
 	private createAIModel(
@@ -641,7 +669,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		}
 	}
 
-	async initialize(): Promise<void> {
+	initialize(): Promise<void> {
 		if (
 			this.config.aiProvider.type === "claude-code" ||
 			this.config.aiProvider.type === "gemini-cli"
@@ -650,7 +678,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 				"AGENT",
 				`${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`,
 			);
-			return;
+			return Promise.resolve();
 		}
 
 		if (!this.aiModel) {
@@ -675,6 +703,8 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			toolCount: this.tools.length,
 			hasContextSchema: !!this.contextSchema,
 		});
+
+		return Promise.resolve();
 	}
 
 	/**
@@ -686,7 +716,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 	 * @returns The agent's response as a string
 	 */
 	async queryRepository(
-		repoPath: string,
+		_repoPath: string,
 		query: string,
 		context?: AgentContext,
 	): Promise<string> {
@@ -739,7 +769,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 		);
 
 		// Extract the last message content from the state
-		const lastMessage = result.messages[result.messages.length - 1];
+		const lastMessage = result.messages.at(-1);
 		const content =
 			typeof lastMessage.content === "string"
 				? lastMessage.content
@@ -762,7 +792,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 	 * @returns Async generator yielding string chunks
 	 */
 	async *streamRepository(
-		repoPath: string,
+		_repoPath: string,
 		query: string,
 		context?: AgentContext,
 	): AsyncGenerator<string, void, unknown> {
@@ -792,7 +822,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			throw new Error("Agent not initialized. Call initialize() first.");
 		}
 
-		// Prepare messages for the agent - system prompt already set during initialization
 		const messages = [new HumanMessage(query)];
 
 		logger.debug("AGENT", "Invoking agent stream with messages", {
@@ -800,76 +829,28 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			hasContext: !!context,
 		});
 
-		// Set up interruption handling
-		let isInterrupted = false;
 		const cleanup = () => {
-			isInterrupted = true;
+			// Signal interruption for potential future use
 		};
 
-		// Listen for interruption signals (Ctrl+C)
 		logger.debug("AGENT", "Setting up interruption handlers for streaming");
 		process.on("SIGINT", cleanup);
 		process.on("SIGTERM", cleanup);
 
 		try {
-			// Use invoke() to get clean final response only
-			// Note: streaming is suppressed to avoid intermediate tool outputs
 			const result = await this.agent.invoke(
 				{ messages },
 				context ? { context, recursionLimit: 100 } : { recursionLimit: 100 }
 			);
 
-			// Extract the final message content
-			if (result.messages && result.messages.length > 0) {
-				const lastMessage = result.messages[result.messages.length - 1];
-				if (lastMessage?.content) {
-					const content = lastMessage.content;
-					if (typeof content === "string") {
-						yield content;
-					} else if (Array.isArray(content)) {
-						// Handle content blocks - only output text blocks
-						for (const block of content) {
-							if (block && typeof block === "object") {
-								const blockObj = block as { type?: string; text?: unknown };
-								if (blockObj.type === "text" && blockObj.text) {
-									const text = blockObj.text;
-									if (typeof text === "string") {
-										yield text;
-									}
-								}
-							}
-						}
-					}
-				}
+			const content = extractMessageContent(result);
+			if (content) {
+				yield content;
 			}
 
 			yield "\n";
 		} catch (error) {
-			// Enhanced error handling for different error types
-			let errorMessage = "Unknown streaming error";
-
-			if (error instanceof Error) {
-				// Handle common streaming errors with specific messages
-				if (error.message.includes("timeout")) {
-					errorMessage =
-						"Streaming timeout - request took too long to complete";
-				} else if (
-					error.message.includes("network") ||
-					error.message.includes("ENOTFOUND")
-				) {
-					errorMessage = "Network error - unable to connect to AI provider";
-				} else if (error.message.includes("rate limit")) {
-					errorMessage = "Rate limit exceeded - please try again later";
-				} else if (
-					error.message.includes("authentication") ||
-					error.message.includes("unauthorized")
-				) {
-					errorMessage = "Authentication error - check your API credentials";
-				} else {
-					errorMessage = `Streaming error: ${error.message}`;
-				}
-			}
-
+			const errorMessage = getStreamingErrorMessage(error);
 			logger.error(
 				"AGENT",
 				"Streaming error",
@@ -878,10 +859,70 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 			yield `\n\n[Error: ${errorMessage}]`;
 			throw error;
 		} finally {
-			// Clean up event listeners
 			process.removeListener("SIGINT", cleanup);
 			process.removeListener("SIGTERM", cleanup);
 			logger.timingEnd(timingId, "AGENT", "Streaming completed");
 		}
 	}
+}
+
+/**
+ * Extract content from the last message in the result
+ */
+function extractMessageContent(result: { messages?: Array<{ content: unknown }> }): string | null {
+	if (!result.messages || result.messages.length === 0) {
+		return null;
+	}
+
+	const lastMessage = result.messages.at(-1);
+	if (!lastMessage?.content) {
+		return null;
+	}
+
+	const content = lastMessage.content;
+	if (typeof content === "string") {
+		return content;
+	}
+
+	if (Array.isArray(content)) {
+		const parts: string[] = [];
+		for (const block of content) {
+			if (block && typeof block === "object") {
+				const blockObj = block as { type?: string; text?: unknown };
+				if (blockObj.type === "text" && typeof blockObj.text === "string") {
+					parts.push(blockObj.text);
+				}
+			}
+		}
+		return parts.length > 0 ? parts.join("") : null;
+	}
+
+	return null;
+}
+
+/**
+ * Get user-friendly error message for streaming errors
+ */
+function getStreamingErrorMessage(error: unknown): string {
+	if (!(error instanceof Error)) {
+		return "Unknown streaming error";
+	}
+
+	if (error.message.includes("timeout")) {
+		return "Streaming timeout - request took too long to complete";
+	}
+
+	if (error.message.includes("network") || error.message.includes("ENOTFOUND")) {
+		return "Network error - unable to connect to AI provider";
+	}
+
+	if (error.message.includes("rate limit")) {
+		return "Rate limit exceeded - please try again later";
+	}
+
+	if (error.message.includes("authentication") || error.message.includes("unauthorized")) {
+		return "Authentication error - check your API credentials";
+	}
+
+	return `Streaming error: ${error.message}`;
 }

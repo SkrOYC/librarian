@@ -5,17 +5,13 @@
 
 import { clone, fetch, checkout } from 'isomorphic-git';
 import http from 'isomorphic-git/http/node';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
-// LangChain imports for AI provider integration
-import { ChatOpenAI } from '@langchain/openai';
-import { ChatAnthropic } from '@langchain/anthropic';
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { ReactAgent } from './agents/react-agent.js';
-import { AgentContext } from './agents/context-schema.js';
+import type { AgentContext } from './agents/context-schema.js';
 import { logger } from './utils/logger.js';
-import os from 'os';
+import os from 'node:os';
 
 export interface LibrarianConfig {
   technologies: {
@@ -38,14 +34,26 @@ export interface LibrarianConfig {
 }
 
 export class Librarian {
-  private config: LibrarianConfig;
-  private aiModel?: ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
+  private readonly config: LibrarianConfig;
 
   constructor(config: LibrarianConfig) {
-    this.config = config;
-    if (config.aiProvider.type !== 'claude-code' && config.aiProvider.type !== 'gemini-cli') {
-      this.aiModel = this.createAIModel();
+    // Validate AI provider type
+    const validProviderTypes = [
+      'openai',
+      'anthropic',
+      'google',
+      'openai-compatible',
+      'anthropic-compatible',
+      'claude-code',
+      'gemini-cli',
+    ] as const;
+    type ValidProviderType = typeof validProviderTypes[number];
+
+    if (!validProviderTypes.includes(config.aiProvider.type as ValidProviderType)) {
+      throw new Error(`Unsupported AI provider type: ${config.aiProvider.type}`);
     }
+
+    this.config = config;
 
     logger.info('LIBRARIAN', 'Initializing librarian', {
       aiProviderType: config.aiProvider.type,
@@ -55,62 +63,14 @@ export class Librarian {
     });
   }
 
-  private createAIModel(): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
-    logger.debug('LIBRARIAN', 'Creating AI model instance');
-
-    const { type, apiKey, model, baseURL } = this.config.aiProvider;
-
-    logger.debug('LIBRARIAN', 'AI provider configuration', { type, model, hasBaseURL: !!baseURL });
-    
-    switch (type) {
-      case 'openai':
-        return new ChatOpenAI({ 
-          apiKey,
-          modelName: model || 'gpt-4o',
-        });
-      case 'openai-compatible':
-        return new ChatOpenAI({ 
-          apiKey,
-          modelName: model || 'gpt-4o',
-          configuration: {
-            baseURL: baseURL || 'https://api.openai.com/v1',
-          }
-        });
-      case 'anthropic':
-        return new ChatAnthropic({ 
-          apiKey,
-          modelName: model || 'claude-3-sonnet-20240229',
-        });
-      case 'anthropic-compatible':
-        if (!baseURL) {
-          throw new Error('baseURL is required for anthropic-compatible provider');
-        }
-        if (!model) {
-          throw new Error('model is required for anthropic-compatible provider');
-        }
-        return new ChatAnthropic({ 
-          apiKey,
-          modelName: model,
-          anthropicApiUrl: baseURL,
-        });
-      case 'google':
-        return new ChatGoogleGenerativeAI({ 
-          apiKey,
-          model: model || 'gemini-pro',
-        });
-      default:
-        throw new Error(`Unsupported AI provider type: ${type}`);
-    }
-  }
-
   async initialize(): Promise<void> {
     // Check if Claude CLI is available if using claude-code provider
     if (this.config.aiProvider.type === 'claude-code') {
       try {
-        const { execSync } = await import('child_process');
+        const { execSync } = await import('node:child_process');
         execSync('claude --version', { stdio: 'ignore' });
         logger.info('LIBRARIAN', 'Claude CLI verified');
-      } catch (error) {
+      } catch {
         logger.error('LIBRARIAN', 'Claude CLI not found in PATH', undefined, { type: 'claude-code' });
         console.error('Error: "claude" CLI not found. Please install it to use the "claude-code" provider.');
         process.exit(1);
@@ -120,10 +80,10 @@ export class Librarian {
     // Check if Gemini CLI is available if using gemini-cli provider
     if (this.config.aiProvider.type === 'gemini-cli') {
       try {
-        const { execSync } = await import('child_process');
+        const { execSync } = await import('node:child_process');
         execSync('gemini --version', { stdio: 'ignore' });
         logger.info('LIBRARIAN', 'Gemini CLI verified');
-      } catch (error) {
+      } catch {
         logger.error('LIBRARIAN', 'Gemini CLI not found in PATH', undefined, { type: 'gemini-cli' });
         console.error('Error: "gemini" CLI not found. Please install it to use the "gemini-cli" provider.');
         process.exit(1);
@@ -132,17 +92,17 @@ export class Librarian {
 
     // Create working directory if it doesn't exist
     const workDir = this.config.repos_path || this.config.workingDir;
-    if (!fs.existsSync(workDir)) {
+    if (fs.existsSync(workDir)) {
+      logger.debug('LIBRARIAN', 'Working directory already exists', { path: workDir.replace(os.homedir(), '~') });
+    } else {
       logger.info('LIBRARIAN', 'Creating working directory', { path: workDir.replace(os.homedir(), '~') });
       fs.mkdirSync(workDir, { recursive: true });
-    } else {
-      logger.debug('LIBRARIAN', 'Working directory already exists', { path: workDir.replace(os.homedir(), '~') });
     }
 
     logger.info('LIBRARIAN', 'Initialization complete');
   }
 
-  public resolveTechnology(qualifiedName: string): { name: string, group: string, repo: string, branch: string } | undefined {
+  resolveTechnology(qualifiedName: string): { name: string, group: string, repo: string, branch: string } | undefined {
     logger.debug('LIBRARIAN', 'Resolving technology', { qualifiedName });
 
     let group: string | undefined;
@@ -202,7 +162,7 @@ export class Librarian {
     return groupPath;
   }
 
-  private getSecureRepoPath(repoName: string, groupName: string = 'default'): string {
+  private getSecureRepoPath(repoName: string, groupName = 'default'): string {
     logger.debug('PATH', 'Validating repo path', { repoName, groupName });
 
     // Check for path traversal attempts in the repoName before sanitizing
@@ -229,7 +189,7 @@ export class Librarian {
     return repoPath;
   }
 
-  async updateRepository(repoName: string, groupName: string = 'default'): Promise<void> {
+  async updateRepository(repoName: string, groupName = 'default'): Promise<void> {
     logger.info('GIT', 'Updating repository', { repoName, groupName });
 
     const timingId = logger.timingStart('updateRepository');
@@ -256,7 +216,7 @@ export class Librarian {
       singleBranch: true,
     });
 
-    const tech = this.resolveTechnology(groupName + ':' + repoName) || this.resolveTechnology(repoName);
+    const tech = this.resolveTechnology(`${groupName}:${repoName}`) || this.resolveTechnology(repoName);
     const branch = tech?.branch || 'main';
 
     // Checkout the latest version
@@ -268,16 +228,6 @@ export class Librarian {
     });
 
     logger.timingEnd(timingId, 'GIT', `Repository updated: ${repoName}`);
-  }
-
-  private getRepoBranch(repoName: string): string {
-    const tech = this.resolveTechnology(repoName);
-    return tech?.branch || 'main';
-  }
-
-  private getRepoUrl(repoName: string): string | undefined {
-    const tech = this.resolveTechnology(repoName);
-    return tech?.repo;
   }
 
   async syncRepository(repoName: string): Promise<string> {
@@ -293,7 +243,7 @@ export class Librarian {
     const repoPath = this.getSecureRepoPath(tech.name, tech.group);
 
     // Check if this is a local path (not a remote URL)
-    const isLocalRepo = !tech.repo.startsWith('http://') && !tech.repo.startsWith('https://');
+    const isLocalRepo = !(tech.repo.startsWith('http://') || tech.repo.startsWith('https://'));
 
     if (fs.existsSync(repoPath)) {
       // Repository exists
@@ -322,7 +272,7 @@ export class Librarian {
     return repoPath;
   }
 
-  async cloneRepository(repoName: string, repoUrl: string, groupName: string = 'default', branch: string = 'main'): Promise<string> {
+  async cloneRepository(repoName: string, repoUrl: string, groupName = 'default', branch = 'main'): Promise<string> {
     logger.info('GIT', 'Cloning repository', { repoName, repoHost: repoUrl.split('/')[2] || 'unknown', branch, groupName });
 
     const timingId = logger.timingStart('cloneRepository');
@@ -364,7 +314,9 @@ export class Librarian {
       try {
         const files = fs.readdirSync(dir, { withFileTypes: true });
         for (const file of files) {
-          if (file.name === '.git') continue;
+          if (file.name === '.git') {
+            continue;
+          }
           if (file.isDirectory()) {
             countFiles(path.join(dir, file.name));
           } else {
@@ -585,28 +537,23 @@ export class Librarian {
 
     const timingId = logger.timingStart('streamGroup');
 
-    // Validate group exists
     if (!this.config.technologies[groupName]) {
       logger.error('LIBRARIAN', 'Group not found in configuration', undefined, { groupName });
       throw new Error(`Group ${groupName} not found in configuration`);
     }
 
-    // Get the group directory path
     const groupPath = this.getSecureGroupPath(groupName);
 
-    // Set up interruption handling
     let isInterrupted = false;
     const cleanup = () => {
       isInterrupted = true;
     };
 
-    // Listen for interruption signals (Ctrl+C)
     logger.debug('LIBRARIAN', 'Setting up interruption handlers for group');
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 
     try {
-      // Sync all technologies in the group first
       const technologies = this.config.technologies[groupName];
       if (technologies) {
         const techNames = Object.keys(technologies);
@@ -616,18 +563,16 @@ export class Librarian {
         }
       }
 
-      // Check for interruption after sync
       if (isInterrupted) {
         logger.warn('LIBRARIAN', 'Group sync interrupted by user', { groupName });
         yield '[Repository sync interrupted by user]';
         return;
       }
 
-      // Construct context object for group-level query
       const context: AgentContext = {
         workingDir: groupPath,
         group: groupName,
-        technology: '', // No specific technology for group-level queries
+        technology: '',
       };
 
       logger.debug('LIBRARIAN', 'Initializing agent for group streaming with context', {
@@ -635,47 +580,49 @@ export class Librarian {
         group: context.group
       });
 
-      // Initialize the agent with the group directory as working directory
       const agent = new ReactAgent({
         aiProvider: this.config.aiProvider,
         workingDir: groupPath
       });
       await agent.initialize();
 
-      // Check for interruption after initialization
       if (isInterrupted) {
         logger.warn('LIBRARIAN', 'Agent initialization interrupted by user for group', { groupName });
         yield '[Agent initialization interrupted by user]';
         return;
       }
 
-      // Execute streaming query using agent with context
       logger.debug('LIBRARIAN', 'Starting stream from agent for group');
       yield* agent.streamRepository(groupPath, query, context);
     } catch (error) {
-      // Handle group-level errors
-      let errorMessage = 'Unknown error';
-
-      if (error instanceof Error) {
-        if (error.message.includes('not found in configuration')) {
-          errorMessage = error.message;
-        } else if (error.message.includes('git') || error.message.includes('clone')) {
-          errorMessage = `Repository operation failed: ${error.message}`;
-        } else if (error.message.includes('timeout')) {
-          errorMessage = 'Repository operation timed out';
-        } else {
-          errorMessage = `Group error: ${error.message}`;
-        }
-      }
-
+      const errorMessage = this.getGroupStreamErrorMessage(error);
       logger.error('LIBRARIAN', 'Group stream error', error instanceof Error ? error : new Error(errorMessage), { groupName });
       yield `\n[Error: ${errorMessage}]`;
       throw error;
     } finally {
-      // Clean up event listeners
       process.removeListener('SIGINT', cleanup);
       process.removeListener('SIGTERM', cleanup);
       logger.timingEnd(timingId, 'LIBRARIAN', `Group stream completed: ${groupName}`);
     }
+  }
+
+  private getGroupStreamErrorMessage(error: unknown): string {
+    if (!(error instanceof Error)) {
+      return 'Unknown error';
+    }
+
+    if (error.message.includes('not found in configuration')) {
+      return error.message;
+    }
+
+    if (error.message.includes('git') || error.message.includes('clone')) {
+      return `Repository operation failed: ${error.message}`;
+    }
+
+    if (error.message.includes('timeout')) {
+      return 'Repository operation timed out';
+    }
+
+    return `Group error: ${error.message}`;
   }
 }

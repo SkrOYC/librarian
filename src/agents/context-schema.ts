@@ -27,7 +27,7 @@ export type Context = z.infer<typeof contextSchema>;
  * Agent Context type passed during invocation.
  * This matches the structure that LangChain tools expect (config.context.workingDir).
  */
-export type AgentContext = {
+export interface AgentContext {
   workingDir: string;
   environment?: string;
   group: string;

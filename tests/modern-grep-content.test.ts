@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { grepContentTool } from '../src/tools/grep-content.tool.js';
 
 describe('Modern Grep Content Tool', () => {

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { ToolRuntime, ToolConfig } from '../src/agents/tool-runtime.js';
+import type { ToolRuntime, ToolConfig } from '../src/agents/tool-runtime.js';
 
 describe('ToolRuntime Types', () => {
   describe('Type Definitions', () => {
