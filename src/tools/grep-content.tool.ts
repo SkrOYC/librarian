@@ -33,6 +33,10 @@ function searchFileContent(
 			continue;
 		}
 
+		// Use a local copy of regex to ensure it is global if we want all matches, 
+		// but for line-based tools, usually one match per line is enough.
+		// The code review mentioned capturing the column correctly.
+		regex.lastIndex = 0;
 		const match = regex.exec(line);
 
 		if (match) {
@@ -50,7 +54,6 @@ function searchFileContent(
 			}
 
 			matches.push(searchMatch);
-			regex.lastIndex = 0;
 		}
 	}
 
@@ -94,20 +97,7 @@ async function validateAndResolvePath(
 	const resolvedWorkingDir = path.resolve(workingDir);
 	const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
-	logger.debug("TOOL", "Path validation", {
-		resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-		resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
-		relativePath,
-		validated: !relativePath.startsWith(".."),
-	});
-
 	if (relativePath.startsWith("..")) {
-		logger.error(
-			"PATH",
-			"Search path escapes working directory sandbox",
-			undefined,
-			{ searchPath, relativePath },
-		);
 		throw new Error(
 			`Search path "${searchPath}" attempts to escape the working directory sandbox`,
 		);
@@ -115,9 +105,6 @@ async function validateAndResolvePath(
 
 	const stats = await stat(resolvedPath);
 	if (!stats.isDirectory()) {
-		logger.error("TOOL", "Search path is not a directory", undefined, {
-			searchPath,
-		});
 		throw new Error(`Search path "${searchPath}" is not a directory`);
 	}
 
@@ -134,12 +121,6 @@ async function findFilesToSearch(
 		const foundFiles = await findFiles(resolvedPath, pattern, recursive);
 		filesToSearch = [...filesToSearch, ...foundFiles];
 	}
-
-	logger.debug("TOOL", "Files to search", {
-		count: filesToSearch.length,
-		patterns,
-	});
-
 	return filesToSearch;
 }
 
@@ -148,32 +129,18 @@ function compileSearchRegex(
 	regex: boolean,
 	caseSensitive: boolean,
 ): RegExp {
-	const flags = caseSensitive ? "gm" : "gim";
+	const flags = caseSensitive ? "g" : "gi";
 
 	if (regex) {
 		try {
-			const searchRegex = new RegExp(query, flags);
-			logger.debug("TOOL", "Regex pattern compiled", { query, flags });
-			return searchRegex;
+			return new RegExp(query, flags);
 		} catch (e) {
-			logger.error(
-				"TOOL",
-				"Invalid regex pattern",
-				e instanceof Error ? e : new Error(String(e)),
-				{ query },
-			);
 			throw new Error(`Invalid regex pattern: ${(e as Error).message}`);
 		}
 	}
 
 	const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const searchRegex = new RegExp(escapedQuery, flags);
-	logger.debug("TOOL", "Escaped query compiled to regex", {
-		originalQuery: query,
-		flags,
-	});
-
-	return searchRegex;
+	return new RegExp(escapedQuery, flags);
 }
 
 async function performGrepSearch(
@@ -200,10 +167,8 @@ async function performGrepSearch(
 					contextAfter,
 				);
 				if (fileMatches.length > 0) {
-					const limitedMatches = fileMatches.slice(
-						0,
-						maxResults - totalMatches,
-					);
+					const remainingSlot = maxResults - totalMatches;
+					const limitedMatches = fileMatches.slice(0, remainingSlot);
 					results.push({ path: file, matches: limitedMatches });
 					totalMatches += limitedMatches.length;
 				}
@@ -236,7 +201,7 @@ export const grepContentTool = tool(
 
 		logger.info("TOOL", "grep_content called", {
 			searchPath,
-			queryLength: query.length,
+			query,
 			patterns,
 			caseSensitive,
 			regex,
@@ -253,12 +218,8 @@ export const grepContentTool = tool(
 					"Context with workingDir is required for file operations",
 				);
 			}
-			logger.debug("TOOL", "Working directory", {
-				workingDir: workingDir.replace(Bun.env.HOME || "", "~"),
-			});
 
 			if (!query) {
-				logger.error("TOOL", "Query parameter missing", undefined, {});
 				throw new Error('The "query" parameter is required');
 			}
 
@@ -279,11 +240,6 @@ export const grepContentTool = tool(
 			);
 
 			logger.timingEnd(timingId, "TOOL", "grep_content completed");
-			logger.debug("TOOL", "Search completed", {
-				filesSearched: filesToSearch.length,
-				filesWithMatches: results.length,
-				totalMatches: results.reduce((sum, r) => sum + r.matches.length, 0),
-			});
 
 			if (results.length === 0) {
 				return `No matches found for query "${query}" in the searched files`;

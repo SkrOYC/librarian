@@ -3,7 +3,7 @@ import { z } from "zod";
 import path from "node:path";
 import { logger } from "../utils/logger.js";
 import { isTextFile } from "../utils/file-utils.js";
-import { formatContentWithRange } from "../utils/format-utils.js";
+import { withLineNumbers } from "../utils/format-utils.js";
 
 // Check if file is an image file
 function isImageFile(filePath: string): boolean {
@@ -40,15 +40,53 @@ function isAudioFile(filePath: string): boolean {
 	return audioExtensions.has(ext);
 }
 
-// Safe file read with encoding detection
-async function readFileContent(filePath: string): Promise<string> {
-	try {
-		return await Bun.file(filePath).text();
-	} catch (error: unknown) {
-		const errorMessage =
-			error instanceof Error ? error.message : "Unknown error";
-		throw new Error(`Failed to read file: ${errorMessage}`);
+/**
+ * Reads lines from a file within a specific range using a streaming approach.
+ * This is memory-efficient for large files as it avoids loading the entire file.
+ */
+async function readLinesInRange(
+	filePath: string,
+	viewRange?: [number, number],
+): Promise<{ lines: string[]; totalLines: number }> {
+	const file = Bun.file(filePath);
+	const stream = file.stream();
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	
+	let lines: string[] = [];
+	let currentLine = 1;
+	let startLine = viewRange ? viewRange[0] : 1;
+	let endLine = viewRange ? viewRange[1] : -1;
+	let totalLines = 0;
+	
+	let partialLine = "";
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) {
+			if (partialLine || currentLine === 1) {
+				totalLines++;
+				if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
+					lines.push(partialLine);
+				}
+			}
+			break;
+		}
+
+		const chunk = decoder.decode(value, { stream: true });
+		const chunkLines = (partialLine + chunk).split("\n");
+		partialLine = chunkLines.pop() || "";
+
+		for (const line of chunkLines) {
+			totalLines++;
+			if (currentLine >= startLine && (endLine === -1 || currentLine <= endLine)) {
+				lines.push(line);
+			}
+			currentLine++;
+		}
 	}
+
+	return { lines, totalLines };
 }
 
 // Create the modernized tool using the tool() function
@@ -66,29 +104,13 @@ export const fileReadTool = tool(
 					"Context with workingDir is required for file operations",
 				);
 			}
-			logger.debug("TOOL", "Working directory", {
-				workingDir: workingDir.replace(Bun.env.HOME || "", "~"),
-			});
 
 			// Validate the path to prevent directory traversal
 			const resolvedPath = path.resolve(workingDir, filePath);
 			const resolvedWorkingDir = path.resolve(workingDir);
 			const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
-			logger.debug("TOOL", "Path validation", {
-				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
-				relativePath,
-				validated: !relativePath.startsWith(".."),
-			});
-
 			if (relativePath.startsWith("..")) {
-				logger.error(
-					"PATH",
-					"File path escapes working directory sandbox",
-					undefined,
-					{ filePath, relativePath },
-				);
 				throw new Error(
 					`File path "${filePath}" attempts to escape the working directory sandbox`,
 				);
@@ -96,52 +118,33 @@ export const fileReadTool = tool(
 
 			// Check if it's a media file
 			if (isImageFile(resolvedPath) || isAudioFile(resolvedPath)) {
-				logger.debug("TOOL", "File is media file", {
-					filePath,
-					fileType: isImageFile(resolvedPath) ? "image" : "audio",
-				});
 				return `This is a media file (${isImageFile(resolvedPath) ? "image" : "audio"}). Media files cannot be read as text. Path: ${filePath}`;
 			}
 
 			// Check if it's a text file
 			const isText = await isTextFile(resolvedPath);
 			if (!isText) {
-				logger.debug("TOOL", "File is not a text file", { filePath });
 				return `This file is not a text file and cannot be read as text. Path: ${filePath}`;
 			}
 
-			logger.debug("TOOL", "File type validated as text", { filePath });
+			// Read file content within range using streaming
+			const { lines, totalLines } = await readLinesInRange(resolvedPath, viewRange);
 
-			// Read file content
-			const content = await readFileContent(resolvedPath);
-
-			// Format content with line range and line numbers
-			const formattedContent = formatContentWithRange(content, viewRange);
-
-			// Limit content size to avoid overwhelming the AI
-			const maxContentLength = 50_000; // 50KB limit
-			let result = `Content of file: ${filePath}\n\n`;
-			
-			if (formattedContent.length > maxContentLength) {
-				logger.debug("TOOL", "File content truncated", {
-					filePath,
-					originalSize: formattedContent.length,
-					maxSize: maxContentLength,
-				});
-				logger.timingEnd(timingId, "TOOL", "file_read completed (truncated)");
-				result += `[File content is too large (${formattedContent.length} characters). Showing first ${maxContentLength} characters]\n\n`;
-				result += `${formattedContent.substring(0, maxContentLength)}\n\n[Content truncated due to length]`;
-				return result;
+			if (lines.length === 0 && totalLines === 0) {
+				return `Content of file: ${filePath}\n\n[File is empty]`;
 			}
 
-			logger.timingEnd(timingId, "TOOL", "file_read completed");
-			logger.debug("TOOL", "File read successful", {
-				filePath,
-				contentLength: formattedContent.length,
-			});
+			// Format content with correct line numbers
+			const startLine = viewRange ? Math.max(1, viewRange[0]) : 1;
+			const formattedContent = withLineNumbers(lines, startLine);
 
-			result += formattedContent;
-			return result;
+			logger.timingEnd(timingId, "TOOL", "file_read completed");
+			
+			const rangeInfo = viewRange 
+				? ` (lines ${startLine} to ${viewRange[1] === -1 ? totalLines : Math.min(totalLines, viewRange[1])})` 
+				: "";
+
+			return `Content of file: ${filePath}${rangeInfo}\n\n${formattedContent}`;
 		} catch (error) {
 			logger.error(
 				"TOOL",

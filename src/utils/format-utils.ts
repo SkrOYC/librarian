@@ -8,6 +8,7 @@ export interface FileSystemEntry {
 	isDirectory: boolean;
 	size?: number;
 	lineCount?: number;
+	depth?: number;
 }
 
 export interface SearchMatch {
@@ -24,11 +25,11 @@ const MIN_LINE_NUM_WIDTH = 3;
 const FILE_SEPARATOR = "--";
 
 /**
- * Add line numbers to content for display
+ * Add line numbers to an array of lines for display
  */
-export function withLineNumbers(content: string, startLine = 1): string {
-	if (!content) return "";
-	const lines = content.split("\n");
+export function withLineNumbers(lines: string[], startLine = 1): string {
+	if (!lines || lines.length === 0) return "";
+	
 	const maxLineNumWidth = Math.max(
 		MIN_LINE_NUM_WIDTH,
 		String(startLine + lines.length - 1).length,
@@ -44,7 +45,31 @@ export function withLineNumbers(content: string, startLine = 1): string {
 }
 
 /**
- * Format content with optional line range
+ * Format content with optional line range using line arrays for efficiency
+ */
+export function formatLinesWithRange(
+	lines: string[],
+	viewRange?: [number, number],
+): string {
+	if (!lines || lines.length === 0) {
+		return "[File is empty]";
+	}
+
+	if (!viewRange) {
+		return withLineNumbers(lines);
+	}
+
+	const [start, end] = viewRange;
+	const startIndex = Math.max(0, start - 1);
+	const endIndex = end === -1 ? lines.length : Math.min(lines.length, end);
+
+	const selectedLines = lines.slice(startIndex, endIndex);
+	return withLineNumbers(selectedLines, start);
+}
+
+/**
+ * Legacy wrapper for formatLinesWithRange that accepts a string
+ * @deprecated Use formatLinesWithRange with pre-split lines for better performance
  */
 export function formatContentWithRange(
 	content: string,
@@ -53,28 +78,18 @@ export function formatContentWithRange(
 	if (!content || content.trim() === "") {
 		return "[File is empty]";
 	}
-
-	if (!viewRange) {
-		return withLineNumbers(content);
-	}
-
-	const lines = content.split("\n");
-	const [start, end] = viewRange;
-	const startIndex = Math.max(0, start - 1);
-	const endIndex = end === -1 ? lines.length : Math.min(lines.length, end);
-
-	const selectedLines = lines.slice(startIndex, endIndex);
-	return withLineNumbers(selectedLines.join("\n"), start);
+	return formatLinesWithRange(content.split("\n"), viewRange);
 }
 
 /**
- * Format directory listing in tree-like format
+ * Format directory listing in tree-like format with indentation
  */
 export function formatDirectoryTree(entries: FileSystemEntry[]): string {
 	let output = "";
 
 	for (const entry of entries) {
-		let line = entry.isDirectory ? `${entry.name}/` : entry.name;
+		const indent = "  ".repeat(entry.depth || 0);
+		let line = `${indent}${entry.isDirectory ? `${entry.name}/` : entry.name}`;
 
 		// For files, show line count if available
 		if (!entry.isDirectory && entry.lineCount !== undefined) {
@@ -110,7 +125,8 @@ export function formatSearchResults(
 		// Calculate max line num width for this file
 		let maxLineNum = 0;
 		for (const match of sortedMatches) {
-			maxLineNum = Math.max(maxLineNum, match.line + (match.context?.after.length || 0));
+			const lastContextLine = match.line + (match.context?.after.length || 0);
+			maxLineNum = Math.max(maxLineNum, lastContextLine);
 		}
 		const maxLineNumWidth = Math.max(MIN_LINE_NUM_WIDTH, String(maxLineNum).length);
 
