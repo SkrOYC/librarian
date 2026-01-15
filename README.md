@@ -9,12 +9,14 @@ Librarian CLI allows AI coding agents to:
 - Query specific technology repositories with detailed technical questions
 - Receive autonomous exploration through a ReAct agent that reads and analyzes the codebase
 - Get streaming markdown responses with technical insights and explanations
+- Works out-of-the-box with OpenCode Zen (no LLM configuration required by default)
+- Supports multiple LLM providers through LangChain's unified interface
 
 ## Features
 
 - **Repository Management**: Auto-clone and sync from Git before each query
 - **LangChain-Powered Agent**: Advanced AI agent using LangChain's createAgent for intelligent exploration
-- **Unified Model Abstraction**: Support for OpenAI, Anthropic, Google, and OpenAI-compatible APIs through LangChain
+- **Unified Model Abstraction**: Support for OpenAI, Anthropic, Google, OpenAI-compatible, Anthropic-compatible, Claude CLI, and Gemini CLI APIs through LangChain (OpenCode Zen integration - no LLM required by default)
 - **Dynamic Prompt Construction**: Context-aware system prompts based on technology/group selection
 - **Sandboxed Tool Execution**: Secure file operations within isolated working directories
 - **Integrated Toolset**: Built-in tools for file listing, reading, grep, and glob search
@@ -227,9 +229,12 @@ technologies:
 		langgraph-javascript:
 			repo: "https://github.com/langchain-ai/langgraphjs"
 			description: "LangGraph is low-level orchestration framework..."
-llm_provider: openai
-llm_model: gpt-5.2
-base_url: # Optional and only for openai-compatible
+# Optional: Uncomment and configure LLM provider if you want to override OpenCode Zen
+# aiProvider:
+#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli
+#   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
+#   model: gpt-5.2
+#   baseURL: # Optional for openai-compatible providers
 ```
 
 ### 2. Explore a Technology
@@ -345,12 +350,15 @@ technologies:
     langgraph-javascript:
       repo: "https://github.com/langchain-ai/langgraphjs"
       description: "LangGraph is low-level orchestration framework..."
-llm_provider: openai # Options: openai, anthropic, google, openai-compatible (all handled via LangChain)
-llm_model: gpt-5.2
-base_url: # Optional for openai-compatible providers
+# Optional: Uncomment and configure LLM provider if you want to override OpenCode Zen
+# aiProvider:
+#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli
+#   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
+#   model: gpt-5.2
+#   baseURL: # Optional for openai-compatible providers
 ```
 
-**Note**: No additional configuration parameters are required for the LangChain integration - the existing configuration structure is fully compatible with the new agent system.
+**Note**: The system works out-of-the-box with OpenCode Zen integration (no LLM configuration required by default). When configured, the system supports multiple providers through LangChain's unified interface.
 
 ### Repository Path Structure
 
@@ -428,38 +436,85 @@ All tools operate within the agent's isolated working directory, ensuring secure
 
 ## LLM Provider Configuration
 
-Librarian uses LangChain's unified model abstraction, allowing seamless switching between providers through configuration. No code changes required when changing models.
+Librarian uses LangChain's unified model abstraction and works out-of-the-box with OpenCode Zen (no LLM configuration required by default). Seamless switching between providers is possible through configuration. No code changes required when changing models.
+
+By default, the system uses OpenCode Zen:
+
+```yaml
+aiProvider:
+  type: openai-compatible
+  model: grok-code
+  baseURL: "https://opencode.ai/zen/v1"
+```
 
 ### OpenAI
 
 ```yaml
-llm_provider: openai
-llm_model: gpt-5.2
+aiProvider:
+  type: openai
+  apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
+  model: gpt-5.2
 ```
 
 ### Anthropic
 
 ```yaml
-llm_provider: anthropic
-llm_model: claude-opus-4-5-20251101
+aiProvider:
+  type: anthropic
+  apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
+  model: claude-opus-4-5-20251101
 ```
 
 ### Google
 
 ```yaml
-llm_provider: google
-llm_model: gemini-3-pro-preview
+aiProvider:
+  type: google
+  apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
+  model: gemini-3-pro-preview
 ```
 
 ### OpenAI-Compatible
 
 ```yaml
-llm_provider: openai-compatible
-llm_model: your-model-name
-base_url: "https://your-provider.com/v1"
+aiProvider:
+  type: openai-compatible
+  model: your-model-name
+  baseURL: "https://your-provider.com/v1"
+  apiKey: # Optional API key (loaded from .env as LIBRARIAN_API_KEY if required by provider)
 ```
 
-**Note**: The same configuration interface works across all providers thanks to LangChain's `initChatModel` abstraction.
+### Anthropic-Compatible
+
+```yaml
+aiProvider:
+  type: anthropic-compatible
+  model: your-model-name
+  baseURL: "https://your-anthropic-compatible-provider.com/v1"
+  apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
+```
+
+### Claude Code (CLI-based)
+
+```yaml
+aiProvider:
+  type: claude-code
+  model: claude-sonnet-4-5 # Model name passed to Claude CLI
+```
+
+**Note**: For Claude Code provider, ensure the `claude` CLI is installed and available in your PATH.
+
+### Gemini CLI (CLI-based)
+
+```yaml
+aiProvider:
+  type: gemini-cli
+  model: gemini-3-pro-preview # Model name passed to Gemini CLI
+```
+
+**Note**: For Gemini CLI provider, ensure the `gemini` CLI is installed and available in your PATH.
+
+**Note**: The same configuration interface works across all providers thanks to LangChain's `initChatModel` abstraction and OpenCode Zen integration.
 
 ## Error Handling
 
@@ -474,8 +529,8 @@ base_url: "https://your-provider.com/v1"
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd librarian-cli
+git clone https://github.com/SkrOYC/librarian.git
+cd librarian
 
 # Install dependencies
 bun install
