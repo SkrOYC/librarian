@@ -58,7 +58,7 @@ describe('New Tooling Features', () => {
   });
 
   describe('file_list recursive', () => {
-    it('should list files recursively up to maxDepth', async () => {
+    it('should list files recursively up to maxDepth with indentation', async () => {
       const result = await fileListTool.invoke({
         directoryPath: '.',
         recursive: true,
@@ -67,7 +67,8 @@ describe('New Tooling Features', () => {
 
       expect(result).toContain('subdir/');
       expect(result).toContain('multiline.txt (10 lines)');
-      expect(result).toContain('subdir/nested.txt (1 lines)');
+      // Check for indentation in the new tree format
+      expect(result).toContain('  nested.txt (1 lines)');
     });
 
     it('should not recurse beyond maxDepth', async () => {
@@ -78,7 +79,7 @@ describe('New Tooling Features', () => {
       }, { context: testContext });
 
       expect(result).toContain('subdir/');
-      expect(result).not.toContain('subdir/nested.txt');
+      expect(result).not.toContain('  nested.txt');
     });
   });
 

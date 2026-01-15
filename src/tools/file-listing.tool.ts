@@ -3,38 +3,8 @@ import { z } from "zod";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../utils/logger.js";
-import { isTextFile } from "../utils/file-utils.js";
-import { formatDirectoryTree } from "../utils/format-utils.js";
-
-// Define types for file system operations
-interface FileSystemEntry {
-	name: string;
-	path: string;
-	isDirectory: boolean;
-	size?: number | undefined;
-	modified?: Date | undefined;
-	permissions?: string | undefined;
-	lineCount?: number | undefined;
-}
-
-interface DirectoryListing {
-	entries: FileSystemEntry[];
-	totalCount: number;
-	filteredCount?: number;
-}
-
-// Get line count for a file
-async function getFileLineCount(filePath: string): Promise<number> {
-	try {
-		if (await isTextFile(filePath)) {
-			const content = await Bun.file(filePath).text();
-			return content.split("\n").length;
-		}
-		return 0;
-	} catch {
-		return 0;
-	}
-}
+import { getFileLineCount } from "../utils/file-utils.js";
+import { formatDirectoryTree, type FileSystemEntry } from "../utils/format-utils.js";
 
 // Simplified function to check if a file should be ignored (basic .gitignore handling)
 async function shouldIgnoreFile(filePath: string): Promise<boolean> {
@@ -72,9 +42,9 @@ async function shouldIgnoreFile(filePath: string): Promise<boolean> {
 }
 
 /**
- * List directory contents with metadata
+ * Improved listDirectory that sorts siblings before recursing to maintain DFS tree order
  */
-async function listDirectory(
+async function listDirectoryDFS(
 	dirPath: string,
 	includeHidden = false,
 	recursive = false,
@@ -86,31 +56,36 @@ async function listDirectory(
 	}
 
 	const entries = await fs.readdir(dirPath, { withFileTypes: true });
+	
+	// Filter entries first
+	const filteredEntries = [];
+	for (const entry of entries) {
+		if (!includeHidden && entry.name.startsWith(".")) continue;
+		const fullPath = path.join(dirPath, entry.name);
+		if (!includeHidden && (await shouldIgnoreFile(fullPath))) continue;
+		filteredEntries.push(entry);
+	}
+
+	// Sort: directories first, then by name
+	filteredEntries.sort((a, b) => {
+		if (a.isDirectory() !== b.isDirectory()) {
+			return a.isDirectory() ? -1 : 1;
+		}
+		return a.name.localeCompare(b.name);
+	});
+
 	const fileEntries: FileSystemEntry[] = [];
 
-	for (const entry of entries) {
-		if (!includeHidden && entry.name.startsWith(".")) {
-			continue;
-		}
-
+	for (const entry of filteredEntries) {
 		const fullPath = path.join(dirPath, entry.name);
-
 		try {
-			// Check if file should be ignored
-			if (!includeHidden && (await shouldIgnoreFile(fullPath))) {
-				continue;
-			}
-
 			const stats = await fs.stat(fullPath);
-			const name = path.basename(fullPath);
-
 			const metadata: FileSystemEntry = {
-				name: recursive && currentDepth > 0 ? path.relative(dirPath, fullPath) : name,
+				name: entry.name,
 				path: fullPath,
 				isDirectory: stats.isDirectory(),
 				size: stats.isFile() ? stats.size : undefined,
-				modified: stats.mtime,
-				permissions: stats.mode?.toString(8),
+				depth: currentDepth,
 			};
 
 			if (!metadata.isDirectory) {
@@ -120,34 +95,18 @@ async function listDirectory(
 			fileEntries.push(metadata);
 
 			if (metadata.isDirectory && recursive && currentDepth + 1 < maxDepth) {
-				const subEntries = await listDirectory(
+				const subEntries = await listDirectoryDFS(
 					fullPath,
 					includeHidden,
 					recursive,
 					maxDepth,
 					currentDepth + 1,
 				);
-				
-				for (const subEntry of subEntries) {
-					fileEntries.push({
-						...subEntry,
-						name: `${name}/${subEntry.name}`
-					});
-				}
+				fileEntries.push(...subEntries);
 			}
 		} catch {
-			// Skip files that can't be accessed or have metadata errors
+			// Skip files that can't be accessed
 		}
-	}
-
-	// Sort: directories first, then by name
-	if (currentDepth === 0) {
-		fileEntries.sort((a, b) => {
-			if (a.isDirectory !== b.isDirectory) {
-				return a.isDirectory ? -1 : 1;
-			}
-			return a.name.localeCompare(b.name);
-		});
 	}
 
 	return fileEntries;
@@ -168,37 +127,21 @@ export const fileListTool = tool(
 					"Context with workingDir is required for file operations",
 				);
 			}
-			logger.debug("TOOL", "Working directory", {
-				workingDir: workingDir.replace(Bun.env.HOME || "", "~"),
-			});
 
 			// Validate path to prevent directory traversal
 			const resolvedPath = path.resolve(workingDir, directoryPath);
 			const resolvedWorkingDir = path.resolve(workingDir);
 			const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
-			logger.debug("TOOL", "Path validation", {
-				resolvedPath: resolvedPath.replace(Bun.env.HOME || "", "~"),
-				resolvedWorkingDir: resolvedWorkingDir.replace(Bun.env.HOME || "", "~"),
-				relativePath,
-				validated: !relativePath.startsWith(".."),
-			});
-
 			// Check if resolved path escapes working directory
 			if (relativePath.startsWith("..")) {
-				logger.error(
-					"PATH",
-					"Directory path escapes working directory sandbox",
-					undefined,
-					{ directoryPath, relativePath },
-				);
 				throw new Error(
 					`Directory path "${directoryPath}" attempts to escape working directory sandbox`,
 				);
 			}
 
-			// List the directory
-			const entries = await listDirectory(resolvedPath, includeHidden, recursive, maxDepth);
+			// List the directory using DFS to maintain tree order
+			const entries = await listDirectoryDFS(resolvedPath, includeHidden, recursive, maxDepth);
 
 			// Format the result for the AI
 			const treeOutput = formatDirectoryTree(entries);
@@ -208,11 +151,6 @@ export const fileListTool = tool(
 			result += treeOutput;
 
 			logger.timingEnd(timingId, "TOOL", "file_list completed");
-			logger.debug("TOOL", "Directory listing successful", {
-				directoryPath,
-				entryCount: entries.length,
-			});
-
 			return result;
 		} catch (error) {
 			logger.error(
