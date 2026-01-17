@@ -667,7 +667,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       {
         messages,
       },
-      context ? { context, recursionLimit: 100 } : { recursionLimit: 100 }
+      { recursionLimit: 100, ...(context ? { context } : {}) }
     );
 
     // Extract the last message content from the state
@@ -749,7 +749,8 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
         { messages },
         { 
           version: "v2",
-          ...(context ? { context, recursionLimit: 100 } : { recursionLimit: 100 })
+          recursionLimit: 100,
+          ...(context ? { context } : {})
         }
       );
 
@@ -783,42 +784,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       logger.timingEnd(timingId, "AGENT", "Streaming completed");
     }
   }
-}
-
-/**
- * Extract content from the last message in the result
- */
-function extractMessageContent(result: {
-  messages?: Array<{ content: unknown }>;
-}): string | null {
-  if (!result.messages || result.messages.length === 0) {
-    return null;
-  }
-
-  const lastMessage = result.messages.at(-1);
-  if (!lastMessage?.content) {
-    return null;
-  }
-
-  const content = lastMessage.content;
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const block of content) {
-      if (block && typeof block === "object") {
-        const blockObj = block as { type?: string; text?: unknown };
-        if (blockObj.type === "text" && typeof blockObj.text === "string") {
-          parts.push(blockObj.text);
-        }
-      }
-    }
-    return parts.length > 0 ? parts.join("") : null;
-  }
-
-  return null;
 }
 
 /**
