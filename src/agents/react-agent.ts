@@ -687,11 +687,15 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 
   /**
    * Stream repository query with optional context
+   * 
+   * Implements final-only streaming: yields the complete AI response
+   * as a single chunk after all tool execution completes.
+   * Intermediate tool calls are processed internally but not emitted.
    *
    * @param repoPath - The repository path (deprecated, for compatibility)
    * @param query - The query string
    * @param context - Optional context object containing working directory and metadata
-   * @returns Async generator yielding string chunks
+   * @returns Async generator yielding exactly 2 chunks: [final_response, "\n"]
    */
   async *streamRepository(
     _repoPath: string,
@@ -740,17 +744,27 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     process.on("SIGTERM", cleanup);
 
     try {
-      const result = await this.agent.invoke(
+      // Use streamEvents for true token-by-token streaming
+      const eventStream = await this.agent.streamEvents(
         { messages },
-        context ? { context, recursionLimit: 100 } : { recursionLimit: 100 }
+        { 
+          version: "v2",
+          ...(context ? { context, recursionLimit: 100 } : { recursionLimit: 100 })
+        }
       );
 
-      const content = extractMessageContent(result);
-      if (content) {
-        yield content;
+      for await (const event of eventStream) {
+        // Only emit content from LLM token streaming events
+        // Skip all other events (tool calls, chain events, etc.)
+        if (event.event === "on_chat_model_stream") {
+          // Use .text getter which handles all content types correctly
+          // (string content, empty content, content blocks, etc.)
+          const text = event.data.chunk?.text;
+          if (text) {
+            yield text;
+          }
+        }
       }
-
-      yield "\n";
     } catch (error) {
       const errorMessage = getStreamingErrorMessage(error);
       logger.error(
