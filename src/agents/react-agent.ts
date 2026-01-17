@@ -688,14 +688,14 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
   /**
    * Stream repository query with optional context
    * 
-   * Implements final-only streaming: yields the complete AI response
-   * as a single chunk after all tool execution completes.
-   * Intermediate tool calls are processed internally but not emitted.
+   * Implements true token-by-token streaming: yields LLM tokens as they are generated.
+   * Only emits content from on_chat_model_stream events, filtering out tool calls
+   * and intermediate chain events.
    *
    * @param repoPath - The repository path (deprecated, for compatibility)
    * @param query - The query string
    * @param context - Optional context object containing working directory and metadata
-   * @returns Async generator yielding exactly 2 chunks: [final_response, "\n"]
+   * @returns Async generator yielding token-by-token chunks from the LLM
    */
   async *streamRepository(
     _repoPath: string,
@@ -765,6 +765,9 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
           }
         }
       }
+
+      // Yield trailing newline for terminal compatibility
+      yield "\n";
     } catch (error) {
       const errorMessage = getStreamingErrorMessage(error);
       logger.error(
