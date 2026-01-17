@@ -667,7 +667,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       {
         messages,
       },
-      context ? { context, recursionLimit: 100 } : { recursionLimit: 100 }
+      { recursionLimit: 100, ...(context ? { context } : {}) }
     );
 
     // Extract the last message content from the state
@@ -687,11 +687,15 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 
   /**
    * Stream repository query with optional context
+   * 
+   * Implements true token-by-token streaming: yields LLM tokens as they are generated.
+   * Only emits content from on_chat_model_stream events, filtering out tool calls
+   * and intermediate chain events.
    *
    * @param repoPath - The repository path (deprecated, for compatibility)
    * @param query - The query string
    * @param context - Optional context object containing working directory and metadata
-   * @returns Async generator yielding string chunks
+   * @returns Async generator yielding token-by-token chunks from the LLM
    */
   async *streamRepository(
     _repoPath: string,
@@ -740,16 +744,30 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     process.on("SIGTERM", cleanup);
 
     try {
-      const result = await this.agent.invoke(
+      // Use streamEvents for true token-by-token streaming
+      const eventStream = await this.agent.streamEvents(
         { messages },
-        context ? { context, recursionLimit: 100 } : { recursionLimit: 100 }
+        { 
+          version: "v2",
+          recursionLimit: 100,
+          ...(context ? { context } : {})
+        }
       );
 
-      const content = extractMessageContent(result);
-      if (content) {
-        yield content;
+      for await (const event of eventStream) {
+        // Only emit content from LLM token streaming events
+        // Skip all other events (tool calls, chain events, etc.)
+        if (event.event === "on_chat_model_stream") {
+          // Use .text getter which handles all content types correctly
+          // (string content, empty content, content blocks, etc.)
+          const text = event.data.chunk?.text;
+          if (text) {
+            yield text;
+          }
+        }
       }
 
+      // Yield trailing newline for terminal compatibility
       yield "\n";
     } catch (error) {
       const errorMessage = getStreamingErrorMessage(error);
@@ -766,42 +784,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       logger.timingEnd(timingId, "AGENT", "Streaming completed");
     }
   }
-}
-
-/**
- * Extract content from the last message in the result
- */
-function extractMessageContent(result: {
-  messages?: Array<{ content: unknown }>;
-}): string | null {
-  if (!result.messages || result.messages.length === 0) {
-    return null;
-  }
-
-  const lastMessage = result.messages.at(-1);
-  if (!lastMessage?.content) {
-    return null;
-  }
-
-  const content = lastMessage.content;
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const block of content) {
-      if (block && typeof block === "object") {
-        const blockObj = block as { type?: string; text?: unknown };
-        if (blockObj.type === "text" && typeof blockObj.text === "string") {
-          parts.push(blockObj.text);
-        }
-      }
-    }
-    return parts.length > 0 ? parts.join("") : null;
-  }
-
-  return null;
 }
 
 /**
