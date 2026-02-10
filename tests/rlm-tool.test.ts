@@ -9,6 +9,8 @@ import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 import { rm } from "node:fs/promises";
+import { ChatAnthropic } from "@langchain/anthropic";
+import type { ChatModel } from "../src/agents/rlm-tool.js";
 import { createResearchRepositoryTool } from "../src/agents/rlm-tool.js";
 
 describe("RLM Tool - research_repository", () => {
@@ -38,21 +40,22 @@ describe("RLM Tool - research_repository", () => {
     }
   });
 
-  // Create a mock model that the tool uses for llm_query
-  const mockModel = {
-    invoke: async () => ({
-      content: "mock analysis response",
-    }),
-  };
+  // Create a mock LLM model factory for llm_query
+  const mockLlmFactory = () =>
+    ({
+      invoke: async () => ({
+        content: "mock analysis response",
+      }),
+    }) as unknown as ChatModel;
 
   describe("Tool metadata", () => {
     it("should have correct tool name", () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       expect(tool.name).toBe("research_repository");
     });
 
     it("should have a description", () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       expect(tool.description).toContain("exploration strategy");
       expect(tool.description).toContain("repo.list");
       expect(tool.description).toContain("repo.view");
@@ -64,7 +67,7 @@ describe("RLM Tool - research_repository", () => {
 
   describe("Tool invocation", () => {
     it("should require workingDir in context", async () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       try {
         await tool.invoke({ script: 'return "test";' }, {});
         expect(true).toBe(false); // Should not reach here
@@ -74,7 +77,7 @@ describe("RLM Tool - research_repository", () => {
     });
 
     it("should execute a simple script with context", async () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       const context = { workingDir: testDir, group: "test", technology: "test" };
 
       const result = await tool.invoke(
@@ -85,7 +88,7 @@ describe("RLM Tool - research_repository", () => {
     });
 
     it("should provide repo API to scripts", async () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       const context = { workingDir: testDir, group: "test", technology: "test" };
 
       const result = await tool.invoke(
@@ -101,7 +104,7 @@ describe("RLM Tool - research_repository", () => {
     });
 
     it("should provide llm_query to scripts", async () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       const context = { workingDir: testDir, group: "test", technology: "test" };
 
       const result = await tool.invoke(
@@ -117,7 +120,7 @@ describe("RLM Tool - research_repository", () => {
     });
 
     it("should handle script errors gracefully", async () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       const context = { workingDir: testDir, group: "test", technology: "test" };
 
       const result = await tool.invoke(
@@ -129,7 +132,7 @@ describe("RLM Tool - research_repository", () => {
     });
 
     it("should scope file operations to workingDir", async () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       const context = { workingDir: testDir, group: "test", technology: "test" };
 
       const result = await tool.invoke(
@@ -147,7 +150,7 @@ describe("RLM Tool - research_repository", () => {
     });
 
     it("should execute a complete exploration pipeline", async () => {
-      const tool = createResearchRepositoryTool(mockModel as never);
+      const tool = createResearchRepositoryTool(mockLlmFactory);
       const context = { workingDir: testDir, group: "test", technology: "test" };
 
       const result = await tool.invoke(

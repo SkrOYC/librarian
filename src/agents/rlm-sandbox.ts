@@ -5,19 +5,34 @@
  * Scripts have access to:
  * - `repo` object: Wraps the 4 atomic tools (list, view, find, grep)
  * - `llm_query`: Stateless LLM bridge for semantic analysis
+ *
+ * NOTE: Uses direct provider SDKs to avoid LangChain callback interference.
  */
 
-import type { ChatAnthropic } from "@langchain/anthropic";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import type { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import type { ChatOpenAI } from "@langchain/openai";
+import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from "@google/genai";
+import OpenAI from 'openai';
+import vm from "node:vm";
 import { findTool } from "../tools/file-finding.tool.js";
 import { listTool } from "../tools/file-listing.tool.js";
 import { viewTool } from "../tools/file-reading.tool.js";
 import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 
-type ChatModel = ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI;
+/**
+ * Provider type for LLM configuration
+ */
+export type LlmProviderType = 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'anthropic-compatible';
+
+/**
+ * Configuration for creating llm_query function
+ */
+export interface LlmConfig {
+  type: LlmProviderType;
+  apiKey: string;
+  model?: string;
+  baseURL?: string;
+}
 
 const SUB_AGENT_SYSTEM_PROMPT = `You are a stateless Functional Analyzer. You are a component of a larger recursive search.
 1. **Input**: You will receive a code snippet and a specific instruction.
@@ -124,44 +139,120 @@ export function createRepoApi(workingDir: string): RepoApi {
 }
 
 /**
- * Creates an `llm_query` function that invokes the model in stateless, tool-less mode.
- * Used by RLM scripts for semantic analysis of code snippets.
+ * Creates an `llm_query` function that invokes the model using direct provider SDKs.
+ * This avoids LangChain callback interference and ensures clean output control.
+ *
+ * @param config - LLM provider configuration
+ * @returns A function that takes (instruction, data) and returns the model's analysis
  */
-export function createLlmQuery(
-  model: ChatModel
-): (instruction: string, data: string) => Promise<string> {
+export function createLlmQuery(config: LlmConfig): (instruction: string, data: string) => Promise<string> {
   return async (instruction: string, data: string): Promise<string> => {
     logger.debug("RLM", "llm_query invoked", {
+      type: config.type,
+      model: config.model,
       instructionLength: instruction.length,
       dataLength: data.length,
     });
 
-    const messages = [
-      new SystemMessage(SUB_AGENT_SYSTEM_PROMPT),
-      new HumanMessage(
-        `**Instruction:** ${instruction}\n\n**Data:**\n${data}`
-      ),
-    ];
+    const input = `**Instruction:** ${instruction}\n\n**Data:**\n${data}`;
+    let content = '';
 
-    const response = await model.invoke(messages);
+    try {
+      switch (config.type) {
+        case 'anthropic': {
+          const client = new Anthropic({ apiKey: config.apiKey });
+          const message = await client.messages.create({
+            max_tokens: 1024,
+            messages: [
+              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
+              { role: 'user', content: input },
+            ],
+            model: config.model || 'claude-sonnet-4-5-20250929',
+          });
+          content = message.content[0]?.type === 'text' ? message.content[0].text : '';
+          break;
+        }
 
-    const content =
-      typeof response.content === "string"
-        ? response.content
-        : JSON.stringify(response.content);
+        case 'anthropic-compatible': {
+          const client = new Anthropic({ 
+            apiKey: config.apiKey,
+            baseURL: config.baseURL,
+          });
+          const message = await client.messages.create({
+            max_tokens: 1024,
+            messages: [
+              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
+              { role: 'user', content: input },
+            ],
+            model: config.model || 'claude-sonnet-4-5-20250929',
+          });
+          content = message.content[0]?.type === 'text' ? message.content[0].text : '';
+          break;
+        }
 
-    logger.debug("RLM", "llm_query completed", {
-      responseLength: content.length,
-    });
+        case 'openai': {
+          const client = new OpenAI({ apiKey: config.apiKey });
+          const response = await client.responses.create({
+            model: config.model || 'gpt-4.1',
+            input: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+          });
+          content = response.output_text || '';
+          break;
+        }
 
-    return content;
+        case 'openai-compatible': {
+          const client = new OpenAI({ 
+            apiKey: config.apiKey,
+            baseURL: config.baseURL || 'https://api.openai.com/v1',
+          });
+          const response = await client.responses.create({
+            model: config.model || 'gpt-4.1',
+            input: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+          });
+          content = response.output_text || '';
+          break;
+        }
+
+        case 'google': {
+          const client = new GoogleGenAI({ apiKey: config.apiKey });
+          const response = await client.models.generateContent({
+            model: config.model || 'gemini-2.5-flash-lite',
+            contents: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+          });
+          content = response.text || '';
+          break;
+        }
+
+        default:
+          throw new Error(`Unsupported LLM provider type: ${config.type}`);
+      }
+
+      logger.debug("RLM", "llm_query completed", {
+        type: config.type,
+        responseLength: content.length,
+      });
+
+      return `<LLM_QUERY_OUTPUT>\n${content}\n</LLM_QUERY_OUTPUT>`;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error("RLM", "llm_query failed", { error: errorMessage, type: config.type });
+      throw error;
+    }
   };
 }
 
 /**
  * Executes an RLM script string inside a sandboxed async context.
- * The script receives `repo` and `llm_query` as globals and must
- * use `return` to provide its final result.
+ * Uses Node.js vm.runInNewContext() with a carefully curated set of safe globals.
+ * This provides isolation from Node.js/Bun built-ins while allowing standard JavaScript operations.
+ *
+ * Security measures:
+ * - Blocks access to process, require, Buffer, fetch, and other Node.js APIs
+ * - 30-second timeout prevents infinite loops and DoS attacks
+ * - Sandboxed globals prevent access to application state
+ *
+ * Note: The vm module is NOT a true security boundary against sophisticated attacks.
+ * For production deployments with untrusted user input, consider container-based isolation.
  */
 export async function executeRlmScript(
   script: string,
@@ -169,17 +260,94 @@ export async function executeRlmScript(
   llmQuery: (instruction: string, data: string) => Promise<string>
 ): Promise<string> {
   logger.info("RLM", "Executing script", { scriptLength: script.length });
+  logger.debug("RLM", "Script content", { script });
   const timingId = logger.timingStart("rlmScript");
 
-  try {
-    // Wrap the user script in an async IIFE that receives sandbox globals
-    const asyncFn = new Function(
-      "repo",
-      "llm_query",
-      `return (async () => {\n${script}\n})();`
-    );
+  // Safe globals to expose to the sandbox - comprehensive but minimal
+  // Dangerous globals (process, require, Buffer, fetch, eval, Function) are intentionally omitted
+  // or explicitly set to undefined to prevent access
+  const safeGlobals: Record<string, unknown> = {
+    // Explicitly block dangerous globals by setting them to undefined
+    // This overrides any inherited globals from the V8 context
+    process: undefined,
+    require: undefined,
+    Buffer: undefined,
+    fetch: undefined,
+    XMLHttpRequest: undefined,
+    child_process: undefined,
+    fs: undefined,
+    http: undefined,
+    https: undefined,
+    module: undefined,
+    __dirname: undefined,
+    __filename: undefined,
+    eval: undefined,
+    Function: undefined,
+    Atomics: undefined,
+    SharedArrayBuffer: undefined,
 
-    const result = await asyncFn(repo, llmQuery);
+    // Console for debugging (logs go through our logger)
+    console: {
+      log: (...args: unknown[]) =>
+        logger.info("RLM", "Script log", { output: args.join(" ") }),
+      error: (...args: unknown[]) =>
+        logger.error("RLM", "Script error", new Error(args.join(" "))),
+      warn: (...args: unknown[]) =>
+        logger.warn("RLM", "Script warning", { output: args.join(" ") }),
+      info: (...args: unknown[]) =>
+        logger.info("RLM", "Script info", { output: args.join(" ") }),
+    },
+
+    // Core data structures
+    JSON,
+    Math,
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
+
+    // Primitive wrappers and utilities
+    Array,
+    Object,
+    String,
+    Number,
+    Boolean,
+    RegExp,
+    Error,
+    TypeError,
+    RangeError,
+    SyntaxError,
+    ReferenceError,
+    Date,
+    Promise,
+    Symbol,
+    BigInt,
+
+    // Functions
+    parseInt,
+    parseFloat,
+    isNaN,
+    isFinite,
+    encodeURI,
+    decodeURI,
+    encodeURIComponent,
+    decodeURIComponent,
+    atob,
+    btoa,
+
+    // Sandboxed APIs - these are the only ways the script interacts with the outside world
+    repo,
+    llm_query: llmQuery,
+  };
+
+  try {
+    // Wrap the user script in an async IIFE
+    const wrappedScript = `(async () => {\n${script}\n})();`;
+
+    // Execute in isolated context with timeout
+    const result = await vm.runInNewContext(wrappedScript, safeGlobals, {
+      timeout: 30000, // 30 seconds max execution time
+    });
 
     logger.timingEnd(timingId, "RLM", "Script execution completed");
 
@@ -195,6 +363,18 @@ export async function executeRlmScript(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
+
+    // Check if this is a timeout error
+    if (errorMessage.includes("timed out") || errorMessage.includes("Timeout")) {
+      logger.error(
+        "RLM",
+        "Script timed out after 30 seconds",
+        error instanceof Error ? error : new Error(errorMessage)
+      );
+      logger.timingEnd(timingId, "RLM", "Script timed out");
+      return "Script execution error: Script timed out after 30 seconds.";
+    }
+
     logger.error(
       "RLM",
       "Script execution failed",
