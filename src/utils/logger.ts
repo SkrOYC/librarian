@@ -18,6 +18,7 @@ export type LogComponent =
   | "AGENT"
   | "TOOL"
   | "LLM"
+  | "RLM"
   | "GIT"
   | "PATH"
   | "LOGGER"

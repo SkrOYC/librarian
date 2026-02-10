@@ -20,6 +20,10 @@ import { viewTool } from "../tools/file-reading.tool.js";
 import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import type { AgentContext } from "./context-schema.js";
+import { createResearchRepositoryTool } from "./rlm-tool.js";
+
+// Re-export for consumer convenience
+export type { AgentContext } from "./context-schema.js";
 
 /**
  * Configuration interface for ReactAgent
@@ -57,6 +61,7 @@ export class ReactAgent {
     | ChatAnthropic
     | ChatGoogleGenerativeAI;
   private readonly tools: DynamicStructuredTool[];
+  private readonly rlmTool?: DynamicStructuredTool;
   private agent?: ReturnType<typeof createAgent>;
   private readonly config: ReactAgentConfig;
   private readonly contextSchema?: z.ZodType | undefined;
@@ -70,22 +75,108 @@ export class ReactAgent {
       config.aiProvider.type !== "gemini-cli"
     ) {
       this.aiModel = this.createAIModel(config.aiProvider);
+      // Create the RLM research_repository tool for LangChain providers
+      this.rlmTool = createResearchRepositoryTool(this.aiModel);
     }
 
-    // Initialize tools - modernized tool pattern
+    // Keep atomic tools available (used by CLI providers and the RLM sandbox internally)
     this.tools = [listTool, viewTool, grepTool, findTool];
 
     logger.info("AGENT", "Initializing ReactAgent", {
       aiProviderType: config.aiProvider.type,
       model: config.aiProvider.model,
       workingDir: config.workingDir.replace(os.homedir(), "~"),
-      toolCount: this.tools.length,
+      toolCount: this.rlmTool ? 1 : this.tools.length,
+      mode: this.rlmTool ? "rlm" : "cli",
       hasContextSchema: !!this.contextSchema,
     });
   }
 
   /**
-   * Creates a dynamic system prompt based on current configuration and technology context
+   * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
+   * This prompt instructs the agent to act as a "Codebase Architect" that generates
+   * exploration scripts instead of making individual tool calls.
+   * @returns A context-aware RLM system prompt string
+   */
+  createRlmSystemPrompt(): string {
+    const { workingDir, technology } = this.config;
+
+    let contextBlock: string;
+    if (technology) {
+      contextBlock = `You have been provided the **${technology.name}** repository.
+Repository: ${technology.repository}
+Your Working Directory: ${workingDir}`;
+    } else {
+      contextBlock = `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
+    }
+
+    const prompt = `You are a **Codebase Architect**. When given a query, do not perform individual file actions. Instead, use the \`research_repository\` tool to execute a complete exploration strategy as a TypeScript script.
+
+# Scripting Guidelines
+
+1. **Symbolic Memory**: Use \`repo.list\` or \`repo.find\` to identify candidate files. Store them in a local array.
+2. **Deterministic Loops**: Use standard \`for...of\` loops to iterate over files. Do not guess; ensure every file in your target set is checked.
+3. **Semantic Filtering**: Use \`await llm_query(instruction, data)\` to analyze snippets. This keeps raw file contents out of the main conversation history.
+4. **Recursive Handling**: If a file or dataset is large, your script must split it into chunks, query them individually, and aggregate the results within the script logic.
+5. **Final Aggregation**: Use \`return\` to produce a structured JSON or string containing only the essential evidence and citations.
+
+# Available Sandbox API
+
+## \`repo\` — File Operations (all return strings)
+- \`repo.list({ directoryPath?, includeHidden?, recursive?, maxDepth? })\` — List directory contents.
+- \`repo.view({ filePath, viewRange? })\` — Read file contents (with optional line range).
+- \`repo.find({ searchPath?, patterns, exclude?, recursive?, maxResults?, includeHidden? })\` — Find files by glob patterns.
+- \`repo.grep({ searchPath?, query, patterns?, caseSensitive?, regex?, recursive?, maxResults?, contextBefore?, contextAfter?, exclude?, includeHidden? })\` — Search text content in files.
+
+## \`llm_query(instruction, data)\` — Semantic Analysis
+Invoke a stateless LLM to analyze a code snippet. The sub-agent has no tools and answers based only on the provided data. Use it for classification, extraction, and summarization tasks.
+
+# Script Example
+
+\`\`\`typescript
+const files = await repo.find({ searchPath: "./src", patterns: ["*.ts"] });
+
+const results = [];
+for (const file of files.split("\\n").filter(f => f.trim() && !f.startsWith("Found"))) {
+  const content = await repo.view({ filePath: file.trim() });
+  const analysis = await llm_query(
+    "Does this file export a public API function? If yes, return the function name. If no, return NULL.",
+    content
+  );
+  if (analysis !== "NULL") {
+    results.push({ file: file.trim(), api: analysis });
+  }
+}
+return results;
+\`\`\`
+
+# Important Rules
+
+- **Always use \`research_repository\`**: Do not try to answer questions about the codebase without running a research script first.
+- **Parse tool output**: \`repo.find\` and \`repo.grep\` return formatted strings. Parse them to extract file paths before iterating.
+- **Cite evidence**: Your final answer to the user must reference specific file paths and line numbers discovered by the script.
+- **Handle errors**: Wrap individual file operations in try/catch within the script to avoid a single failure aborting the whole exploration.
+
+# Context
+
+${contextBlock}
+
+---
+
+**Final Reminder: Generate a script that gathers ALL needed evidence in one execution. Your answer must be backed by the script's output.**
+`;
+
+    logger.debug("AGENT", "RLM system prompt generated", {
+      hasTechnologyContext: !!technology,
+      promptLength: prompt.length,
+    });
+
+    return prompt;
+  }
+
+  /**
+   * Creates a dynamic system prompt based on current configuration and technology context.
+   * Used by CLI providers (claude-code, gemini-cli).
    * @returns A context-aware system prompt string
    */
   createDynamicSystemPrompt(): string {
@@ -587,11 +678,16 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       throw new Error("AI model not created for non-CLI provider");
     }
 
-    // Create the agent using LangChain's createAgent function with dynamic system prompt
+    if (!this.rlmTool) {
+      throw new Error("RLM tool not created for non-CLI provider");
+    }
+
+    // Create the agent with the single research_repository tool and RLM system prompt.
+    // The 4 atomic tools are used internally by the sandbox, not exposed to the agent.
     this.agent = createAgent({
       model: this.aiModel,
-      tools: this.tools,
-      systemPrompt: this.createDynamicSystemPrompt(),
+      tools: [this.rlmTool],
+      systemPrompt: this.createRlmSystemPrompt(),
       middleware: [
         todoListMiddleware(),
         ...(this.config.aiProvider.type === "anthropic" ||
@@ -601,8 +697,9 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       ],
     });
 
-    logger.info("AGENT", "Agent initialized successfully", {
-      toolCount: this.tools.length,
+    logger.info("AGENT", "Agent initialized with RLM mode", {
+      toolCount: 1,
+      toolName: "research_repository",
       hasContextSchema: !!this.contextSchema,
     });
 
