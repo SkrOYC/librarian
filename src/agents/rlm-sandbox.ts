@@ -493,9 +493,20 @@ export async function executeRlmScript(
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Extract line number if available (vm errors often include line info)
+    let lineInfo = "";
+    if (error instanceof Error && error.stack) {
+      const lineMatch = error.stack.match(/rlm-script\.ts:(\d+):(\d+)/);
+      if (lineMatch) {
+        lineInfo = ` (line ${lineMatch[1]}, col ${lineMatch[2]})`;
+      }
+    }
+    
+    const fullErrorMessage = `Script Error${lineInfo}: ${errorMessage}`;
 
     // Capture error in stdout for agent to see
-    stdout.push(`Script Error: ${errorMessage}`);
+    stdout.push(fullErrorMessage);
 
     // Check if this is a timeout error
     if (errorMessage.includes("timed out") || errorMessage.includes("Timeout")) {
@@ -521,7 +532,7 @@ export async function executeRlmScript(
     return {
       stdout: stdout.join("\n"),
       buffers,
-      error: errorMessage,
+      error: fullErrorMessage,
     };
   }
 }

@@ -155,9 +155,6 @@ export class RlmEngine {
       codeLength: code.length,
     });
 
-    // Clear any stale error feedback from previous iterations
-    this.errorFeedback = undefined;
-
     try {
       // Lazy load context on first execution
       if (!this.state.context) {
@@ -238,7 +235,7 @@ export class RlmEngine {
    * Per paper: only constant-size metadata, not full context
    */
   getMetadata(): RlmMetadata {
-    return {
+    const metadata: RlmMetadata = {
       iteration: this.state.iteration,
       stdoutPreview: this.state.stdout.slice(-this.config.stdoutPreviewLength),
       stdoutLength: this.state.stdout.length,
@@ -251,6 +248,11 @@ export class RlmEngine {
       hasContext: true,
       errorFeedback: this.errorFeedback,
     };
+    
+    // Clear error feedback after it's been used
+    this.errorFeedback = undefined;
+    
+    return metadata;
   }
 
   /**

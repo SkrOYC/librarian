@@ -1009,21 +1009,6 @@ Write your script now:
         this.rlmEngine.setErrorFeedback(execResult.error);
       }
     }
-
-    // Max iterations reached - return accumulated state
-    const finalState = this.rlmEngine.getState();
-    const summary = [
-      "Maximum iterations reached without FINAL call.",
-      "",
-      "=== Accumulated Buffers ===",
-      ...Object.entries(finalState.buffers).map(([k, v]) => `${k}: ${String(v).slice(0, 500)}`),
-      "",
-      "=== Last Output ===",
-      finalState.stdout.slice(-2000),
-    ].join("\n");
-
-    logger.timingEnd(timingId, "AGENT", "RLM query max iterations");
-    return summary;
   }
 
   /**
