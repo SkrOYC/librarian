@@ -135,38 +135,19 @@ export function createRepoApi(workingDir: string): RepoApi {
 }
 
 /**
- * Timeout wrapper for async operations
- * Returns a promise that rejects after the specified timeout
- */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    }),
-  ]);
-}
-
-/**
  * Creates an `llm_query` function that invokes the model using direct provider SDKs.
  * This avoids LangChain callback interference and ensures clean output control.
  *
  * @param config - LLM provider configuration
  * @returns A function that takes (instruction, data) and returns the model's analysis
  */
-export function createLlmQuery(
-  config: LlmConfig,
-  timeoutMs: number = 15000
-): (instruction: string, data: string) => Promise<string> {
+export function createLlmQuery(config: LlmConfig): (instruction: string, data: string) => Promise<string> {
   return async (instruction: string, data: string): Promise<string> => {
     logger.debug("RLM", "llm_query invoked", {
       type: config.type,
       model: config.model,
       instructionLength: instruction.length,
       dataLength: data.length,
-      timeoutMs,
     });
 
     const input = `**Instruction:** ${instruction}\n\n**Data:**\n${data}`;
@@ -176,18 +157,14 @@ export function createLlmQuery(
       switch (config.type) {
         case 'anthropic': {
           const client = new Anthropic({ apiKey: config.apiKey });
-          const message = await withTimeout(
-            client.messages.create({
-              max_tokens: 1024,
-              messages: [
-                { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
-                { role: 'user', content: input },
-              ],
-              model: config.model || 'claude-sonnet-4-5-20250929',
-            }),
-            timeoutMs,
-            'Anthropic API call'
-          );
+          const message = await client.messages.create({
+            max_tokens: 1024,
+            messages: [
+              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
+              { role: 'user', content: input },
+            ],
+            model: config.model || 'claude-sonnet-4-5-20250929',
+          });
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
           break;
         }
@@ -197,33 +174,25 @@ export function createLlmQuery(
             apiKey: config.apiKey,
             baseURL: config.baseURL,
           });
-          const message = await withTimeout(
-            client.messages.create({
-              max_tokens: 1024,
-              messages: [
-                { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
-                { role: 'user', content: input },
-              ],
-              model: config.model || 'claude-sonnet-4-5-20250929',
-            }),
-            timeoutMs,
-            'Anthropic-compatible API call'
-          );
+          const message = await client.messages.create({
+            max_tokens: 1024,
+            messages: [
+              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
+              { role: 'user', content: input },
+            ],
+            model: config.model || 'claude-sonnet-4-5-20250929',
+          });
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
           break;
         }
 
         case 'openai': {
           const client = new OpenAI({ apiKey: config.apiKey });
-          const response = await withTimeout(
-            client.responses.create({
-              model: config.model || 'gpt-4.1',
-              instructions: SUB_AGENT_SYSTEM_PROMPT,
-              input: input,
-            }),
-            timeoutMs,
-            'OpenAI API call'
-          );
+          const response = await client.responses.create({
+            model: config.model || 'gpt-4.1',
+            instructions: SUB_AGENT_SYSTEM_PROMPT,
+            input: input,
+          });
           content = response.output_text || '';
           break;
         }
@@ -233,29 +202,21 @@ export function createLlmQuery(
             apiKey: config.apiKey,
             baseURL: config.baseURL || 'https://api.openai.com/v1',
           });
-          const response = await withTimeout(
-            client.responses.create({
-              model: config.model || 'gpt-4.1',
-              instructions: SUB_AGENT_SYSTEM_PROMPT,
-              input: input,
-            }),
-            timeoutMs,
-            'OpenAI-compatible API call'
-          );
+          const response = await client.responses.create({
+            model: config.model || 'gpt-4.1',
+            instructions: SUB_AGENT_SYSTEM_PROMPT,
+            input: input,
+          });
           content = response.output_text || '';
           break;
         }
 
         case 'google': {
           const client = new GoogleGenAI({ apiKey: config.apiKey });
-          const response = await withTimeout(
-            client.models.generateContent({
-              model: config.model || 'gemini-2.5-flash-lite',
-              contents: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
-            }),
-            timeoutMs,
-            'Google Gemini API call'
-          );
+          const response = await client.models.generateContent({
+            model: config.model || 'gemini-2.5-flash-lite',
+            contents: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+          });
           content = response.text || '';
           break;
         }
@@ -548,38 +509,4 @@ export async function executeRlmScript(
       error: errorMessage,
     };
   }
-}
-
-/**
- * Legacy wrapper for backward compatibility
- * Returns string result for simple tool calls
- */
-export async function executeRlmScriptLegacy(
-  script: string,
-  repo: RepoApi,
-  llmQuery: (instruction: string, data: string) => Promise<string>
-): Promise<string> {
-  const result = await executeRlmScript(script, repo, llmQuery);
-  
-  if (result.error) {
-    return `Script execution error: ${result.error}`;
-  }
-  
-  // Return final answer if provided
-  if (result.finalAnswer) {
-    return result.finalAnswer;
-  }
-  
-  // Return stdout if there's any output
-  if (result.stdout && result.stdout.trim()) {
-    return result.stdout;
-  }
-  
-  // Check if there's a return value in the buffers (legacy scripts use return)
-  const returnValue = result.buffers.__returnValue;
-  if (returnValue !== undefined) {
-    return typeof returnValue === 'string' ? returnValue : JSON.stringify(returnValue, null, 2);
-  }
-  
-  return "Script completed with no output.";
 }

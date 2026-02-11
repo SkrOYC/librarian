@@ -11,7 +11,6 @@ import {
   anthropicPromptCachingMiddleware,
   createAgent,
   type DynamicStructuredTool,
-  todoListMiddleware,
 } from "langchain";
 import type { z } from "zod";
 import { findTool } from "../tools/file-finding.tool.js";
@@ -767,7 +766,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       tools: [this.rlmTool],
       systemPrompt: this.createRlmSystemPrompt(),
       middleware: [
-        todoListMiddleware(),
         ...(this.config.aiProvider.type === "anthropic" ||
         this.config.aiProvider.type === "anthropic-compatible"
           ? [anthropicPromptCachingMiddleware()]

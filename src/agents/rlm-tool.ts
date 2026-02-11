@@ -15,7 +15,7 @@ import { logger } from "../utils/logger.js";
 import {
   createLlmQuery,
   createRepoApi,
-  executeRlmScriptLegacy,
+  executeRlmScript,
   type LlmConfig,
 } from "./rlm-sandbox.js";
 
@@ -56,11 +56,29 @@ export function createResearchRepositoryTool(
       });
 
       const repo = createRepoApi(workingDir);
-      const result = await executeRlmScriptLegacy(script, repo, llmQuery);
+      const result = await executeRlmScript(script, repo, llmQuery);
 
       logger.timingEnd(timingId, "RLM", "research_repository completed");
 
-      return result;
+      // Return final answer, stdout, or formatted result
+      if (result.error) {
+        return `Script execution error: ${result.error}`;
+      }
+      
+      if (result.finalAnswer) {
+        return result.finalAnswer;
+      }
+      
+      if (result.stdout?.trim()) {
+        return result.stdout;
+      }
+      
+      const returnValue = result.buffers.__returnValue;
+      if (returnValue !== undefined) {
+        return typeof returnValue === 'string' ? returnValue : JSON.stringify(returnValue, null, 2);
+      }
+      
+      return "Script completed with no output.";
     },
     {
       name: "research_repository",
