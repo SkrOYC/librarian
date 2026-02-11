@@ -150,7 +150,7 @@ export function formatMetadataForPrompt(metadata: RlmMetadata): string {
 
 /**
  * System prompt for sub-LLM calls (used by llm_query)
- * Matches the SUB_AGENT_SYSTEM_PROMPT in rlm-sandbox.ts
+ * This is the authoritative definition - imported by rlm-sandbox.ts
  */
 export const SUB_AGENT_SYSTEM_PROMPT = `You are a stateless Functional Analyzer. You are a component of a larger recursive search.
 1. **Input**: You will receive a code snippet and a specific instruction.

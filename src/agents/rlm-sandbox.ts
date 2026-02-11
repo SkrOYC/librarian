@@ -18,6 +18,7 @@ import { listTool } from "../tools/file-listing.tool.js";
 import { viewTool } from "../tools/file-reading.tool.js";
 import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
+import { SUB_AGENT_SYSTEM_PROMPT } from "./rlm-prompts.js";
 
 /**
  * Provider type for LLM configuration
@@ -33,11 +34,6 @@ export interface LlmConfig {
   model?: string;
   baseURL?: string;
 }
-
-const SUB_AGENT_SYSTEM_PROMPT = `You are a stateless Functional Analyzer. You are a component of a larger recursive search.
-1. **Input**: You will receive a code snippet and a specific instruction.
-2. **Constraint**: You have NO access to tools. You must answer based ONLY on the provided text.
-3. **Output**: Be extremely concise. If the instruction asks for a boolean or a specific extraction, provide ONLY that. No conversational filler.`;
 
 /**
  * The sandbox repo API surface available to RLM scripts.
@@ -194,7 +190,8 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
           const client = new OpenAI({ apiKey: config.apiKey });
           const response = await client.responses.create({
             model: config.model || 'gpt-4.1',
-            input: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+            instructions: SUB_AGENT_SYSTEM_PROMPT,
+            input: input,
           });
           content = response.output_text || '';
           break;
@@ -207,7 +204,8 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
           });
           const response = await client.responses.create({
             model: config.model || 'gpt-4.1',
-            input: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+            instructions: SUB_AGENT_SYSTEM_PROMPT,
+            input: input,
           });
           content = response.output_text || '';
           break;
@@ -242,9 +240,43 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
 }
 
 /**
+ * Execution context for RLM scripts
+ * Used by both one-shot tool calls and multi-turn engine iterations
+ */
+export interface RlmExecutionContext {
+  /** Repository content as string variable */
+  context?: string;
+  /** Accumulated buffers for stateful iterations */
+  buffers?: Record<string, unknown>;
+  /** Callback when print() is called - captures to stdout */
+  onPrint?: (output: string) => void;
+  /** Callback when FINAL() is called - signals completion */
+  onFinal?: (answer: string) => void;
+  /** Callback when FINAL_VAR() is called - signals completion with buffer */
+  onFinalVar?: (name: string) => void;
+}
+
+/**
+ * Result of RLM script execution
+ */
+export interface RlmExecutionResult {
+  /** Captured stdout from print() calls */
+  stdout: string;
+  /** Final buffers state */
+  buffers: Record<string, unknown>;
+  /** Final answer if FINAL/FINAL_VAR was called */
+  finalAnswer?: string;
+  /** Error message if execution failed */
+  error?: string;
+}
+
+/**
  * Executes an RLM script string inside a sandboxed async context.
  * Uses Node.js vm.runInNewContext() with a carefully curated set of safe globals.
- * This provides isolation from Node.js/Bun built-ins while allowing standard JavaScript operations.
+ * 
+ * This unified function supports both:
+ * - One-shot tool calls (research_repository tool)
+ * - Multi-turn engine iterations (RlmEngine with state persistence)
  *
  * Security measures:
  * - Blocks access to process, require, Buffer, fetch, and other Node.js APIs
@@ -253,34 +285,26 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
  *
  * Note: The vm module is NOT a true security boundary against sophisticated attacks.
  * For production deployments with untrusted user input, consider container-based isolation.
- *
- * Extended globals (when options provided):
- * - context: Repository content as string variable
- * - buffers: Object for accumulating analysis results
- * - print(...args): Adds to stdout
- * - FINAL(answer): Sets final answer
- * - FINAL_VAR(name): Returns buffer value as final answer
- * - chunk(data, size): Split string into chunks
- * - batch(items, size): Batch array for parallel processing
  */
 export async function executeRlmScript(
   script: string,
   repo: RepoApi,
   llmQuery: (instruction: string, data: string) => Promise<string>,
-  options?: {
-    context?: string;
-    buffers?: Record<string, unknown>;
-    errorFeedback?: string;
-  }
-): Promise<string> {
+  executionContext?: RlmExecutionContext
+): Promise<RlmExecutionResult> {
   logger.info("RLM", "Executing script", { scriptLength: script.length });
   logger.debug("RLM", "Script content", { script });
   const timingId = logger.timingStart("rlmScript");
 
+  // Initialize execution state
+  const buffers: Record<string, unknown> = { ...(executionContext?.buffers ?? {}) };
+  const stdout: string[] = [];
+  let finalAnswer: string | undefined;
+
   // Safe globals to expose to the sandbox - comprehensive but minimal
   // Dangerous globals (process, require, Buffer, fetch, eval, Function) are intentionally omitted
   // or explicitly set to undefined to prevent access
-  const safeGlobals: Record<string, unknown> = {
+  const sandboxGlobals: Record<string, unknown> = {
     // Explicitly block dangerous globals by setting them to undefined
     // This overrides any inherited globals from the V8 context
     process: undefined,
@@ -300,16 +324,28 @@ export async function executeRlmScript(
     Atomics: undefined,
     SharedArrayBuffer: undefined,
 
-    // Console for debugging (logs go through our logger)
+    // Console for debugging (logs go through our logger at debug level)
     console: {
-      log: (...args: unknown[]) =>
-        logger.info("RLM", "Script log", { output: args.join(" ") }),
-      error: (...args: unknown[]) =>
-        logger.error("RLM", "Script error", new Error(args.join(" "))),
-      warn: (...args: unknown[]) =>
-        logger.warn("RLM", "Script warning", { output: args.join(" ") }),
-      info: (...args: unknown[]) =>
-        logger.info("RLM", "Script info", { output: args.join(" ") }),
+      log: (...args: unknown[]) => {
+        const output = args.join(" ");
+        logger.debug("RLM", "Script log", { output });
+        stdout.push(output);
+      },
+      error: (...args: unknown[]) => {
+        const output = args.join(" ");
+        logger.debug("RLM", "Script error", { output });
+        stdout.push(`ERROR: ${output}`);
+      },
+      warn: (...args: unknown[]) => {
+        const output = args.join(" ");
+        logger.debug("RLM", "Script warning", { output });
+        stdout.push(`WARN: ${output}`);
+      },
+      info: (...args: unknown[]) => {
+        const output = args.join(" ");
+        logger.debug("RLM", "Script info", { output });
+        stdout.push(`INFO: ${output}`);
+      },
     },
 
     // Core data structures
@@ -353,23 +389,35 @@ export async function executeRlmScript(
     repo,
     llm_query: llmQuery,
 
-    // RLM-specific globals (when options provided)
-    ...(options?.context !== undefined && { context: options.context }),
-    ...(options?.buffers !== undefined && { buffers: options.buffers }),
+    // RLM-specific globals (when context provided)
+    ...(executionContext?.context !== undefined && { 
+      context: executionContext.context 
+    }),
+    
+    // Always provide buffers
+    buffers,
 
     // print(...args): Adds to stdout (captured for RLM loop)
     print: (...args: unknown[]) => {
-      logger.info("RLM", "Script print", { output: args.join(" ") });
+      const output = args.map(a => String(a)).join(" ");
+      stdout.push(output);
+      executionContext?.onPrint?.(output);
     },
 
     // FINAL(answer): Sets final answer (for RLM completion)
     FINAL: (answer: unknown) => {
-      logger.info("RLM", "Script FINAL called", { answer: String(answer) });
+      finalAnswer = String(answer);
+      executionContext?.onFinal?.(finalAnswer);
     },
 
     // FINAL_VAR(name): Returns buffer value as final answer
     FINAL_VAR: (name: string) => {
-      logger.info("RLM", "Script FINAL_VAR called", { name });
+      if (buffers.hasOwnProperty(name)) {
+        finalAnswer = String(buffers[name]);
+        executionContext?.onFinalVar?.(name);
+      } else {
+        throw new Error(`Buffer '${name}' not found`);
+      }
     },
 
     // chunk(data, size): Split string into chunks
@@ -393,28 +441,31 @@ export async function executeRlmScript(
   };
 
   try {
-    // Wrap the user script in an async IIFE
+    // Wrap the user script in an async IIFE that captures the return value
     const wrappedScript = `(async () => {\n${script}\n})();`;
 
-    // Execute in isolated context with timeout
-    const result = await vm.runInNewContext(wrappedScript, safeGlobals, {
+    // Execute in isolated context with timeout and capture return value
+    const returnValue = await vm.runInNewContext(wrappedScript, sandboxGlobals, {
       timeout: 30000, // 30 seconds max execution time
     });
 
     logger.timingEnd(timingId, "RLM", "Script execution completed");
 
-    if (result === undefined || result === null) {
-      return "Script completed with no return value.";
+    // Store return value in buffers for legacy compatibility
+    if (returnValue !== undefined && returnValue !== null) {
+      buffers.__returnValue = returnValue;
     }
 
-    if (typeof result === "string") {
-      return result;
-    }
-
-    return JSON.stringify(result, null, 2);
+    return {
+      stdout: stdout.join("\n"),
+      buffers,
+      finalAnswer,
+    };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Capture error in stdout for agent to see
+    stdout.push(`Script Error: ${errorMessage}`);
 
     // Check if this is a timeout error
     if (errorMessage.includes("timed out") || errorMessage.includes("Timeout")) {
@@ -424,7 +475,11 @@ export async function executeRlmScript(
         error instanceof Error ? error : new Error(errorMessage)
       );
       logger.timingEnd(timingId, "RLM", "Script timed out");
-      return "Script execution error: Script timed out after 30 seconds.";
+      return {
+        stdout: stdout.join("\n"),
+        buffers,
+        error: "Script timed out after 30 seconds",
+      };
     }
 
     logger.error(
@@ -433,6 +488,44 @@ export async function executeRlmScript(
       error instanceof Error ? error : new Error(errorMessage)
     );
     logger.timingEnd(timingId, "RLM", "Script execution failed");
-    return `Script execution error: ${errorMessage}`;
+    return {
+      stdout: stdout.join("\n"),
+      buffers,
+      error: errorMessage,
+    };
   }
+}
+
+/**
+ * Legacy wrapper for backward compatibility
+ * Returns string result for simple tool calls
+ */
+export async function executeRlmScriptLegacy(
+  script: string,
+  repo: RepoApi,
+  llmQuery: (instruction: string, data: string) => Promise<string>
+): Promise<string> {
+  const result = await executeRlmScript(script, repo, llmQuery);
+  
+  if (result.error) {
+    return `Script execution error: ${result.error}`;
+  }
+  
+  // Return final answer if provided
+  if (result.finalAnswer) {
+    return result.finalAnswer;
+  }
+  
+  // Return stdout if there's any output
+  if (result.stdout && result.stdout.trim()) {
+    return result.stdout;
+  }
+  
+  // Check if there's a return value in the buffers (legacy scripts use return)
+  const returnValue = result.buffers.__returnValue;
+  if (returnValue !== undefined) {
+    return typeof returnValue === 'string' ? returnValue : JSON.stringify(returnValue, null, 2);
+  }
+  
+  return "Script completed with no output.";
 }

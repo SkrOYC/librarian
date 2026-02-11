@@ -802,8 +802,8 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       hasContext: !!context,
     });
 
-    // Use RLM mode if engine is available
-    if (this.rlmEngine) {
+    // Use RLM mode for supported providers (not CLI-based ones)
+    if (this.shouldUseRlm()) {
       logger.info("AGENT", "Using RLM mode");
       return await this.executeRlmQuery(query);
     }
@@ -867,6 +867,42 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
   }
 
   /**
+   * Check if RLM mode should be used based on provider type
+   * RLM mode is used for API-based providers (OpenAI, Anthropic, Google)
+   * CLI-based providers (claude-code, gemini-cli) use their own execution path
+   */
+  private shouldUseRlm(): boolean {
+    const rlmProviders = ['openai', 'anthropic', 'google', 'openai-compatible', 'anthropic-compatible'];
+    return rlmProviders.includes(this.config.aiProvider.type);
+  }
+
+  /**
+   * Initialize the RLM engine on first use
+   */
+  private async initializeRlmEngine(): Promise<void> {
+    const llmConfig: LlmConfig = {
+      type: this.config.aiProvider.type as LlmConfig['type'],
+      apiKey: this.config.aiProvider.apiKey,
+      model: this.config.aiProvider.model,
+      baseURL: this.config.aiProvider.baseURL,
+    };
+
+    const engineConfig: RlmEngineConfig = {
+      llmConfig,
+      repoContentLoader: () => this.loadRepoContentForRlm(),
+      workingDir: this.config.workingDir,
+      maxIterations: 10,
+      stdoutPreviewLength: 1000,
+    };
+
+    this.rlmEngine = new RlmEngine(engineConfig);
+    logger.info("AGENT", "RLM Engine initialized", {
+      workingDir: this.config.workingDir,
+      maxIterations: engineConfig.maxIterations,
+    });
+  }
+
+  /**
    * Load repository content for RLM context
    * Used by the RLM engine to lazily load context
    */
@@ -895,28 +931,9 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
   private async executeRlmQuery(query: string): Promise<string> {
     const timingId = logger.timingStart("rlmQuery");
 
-    // Create RLM engine if not already created
+    // Initialize RLM engine on first use
     if (!this.rlmEngine) {
-      const llmConfig: LlmConfig = {
-        type: this.config.aiProvider.type as LlmConfig['type'],
-        apiKey: this.config.aiProvider.apiKey,
-        model: this.config.aiProvider.model,
-        baseURL: this.config.aiProvider.baseURL,
-      };
-
-      const engineConfig: RlmEngineConfig = {
-        llmConfig,
-        repoContentLoader: () => this.loadRepoContentForRlm(),
-        workingDir: this.config.workingDir,
-        maxIterations: 10,
-        stdoutPreviewLength: 1000,
-      };
-
-      this.rlmEngine = new RlmEngine(engineConfig);
-      logger.info("AGENT", "RLM Engine initialized", {
-        workingDir: this.config.workingDir,
-        maxIterations: engineConfig.maxIterations,
-      });
+      await this.initializeRlmEngine();
     }
 
     // Get system prompt for RLM mode

@@ -15,7 +15,7 @@ import { logger } from "../utils/logger.js";
 import {
   createLlmQuery,
   createRepoApi,
-  executeRlmScript,
+  executeRlmScriptLegacy,
   type LlmConfig,
 } from "./rlm-sandbox.js";
 
@@ -56,7 +56,7 @@ export function createResearchRepositoryTool(
       });
 
       const repo = createRepoApi(workingDir);
-      const result = await executeRlmScript(script, repo, llmQuery);
+      const result = await executeRlmScriptLegacy(script, repo, llmQuery);
 
       logger.timingEnd(timingId, "RLM", "research_repository completed");
 

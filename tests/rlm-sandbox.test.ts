@@ -16,12 +16,60 @@ import {
   createRepoApi,
   createLlmQuery,
   executeRlmScript,
+  executeRlmScriptLegacy,
   type RepoApi,
 } from "../src/agents/rlm-sandbox.js";
 
 describe("RLM Sandbox", () => {
   let testDir: string;
   let repo: RepoApi;
+
+  // Mock llmQuery that returns deterministic responses
+  const mockLlmQuery = async (
+    instruction: string,
+    data: string
+  ): Promise<string> => {
+    if (instruction.includes("summarize")) {
+      return "Summary of code.";
+    }
+    if (instruction.includes("error class")) {
+      if (data.includes("extends Error")) {
+        return '{"isErrorClass": true, "hasCode": true, "className": "TestError"}';
+      }
+      return "NULL";
+    }
+    return `Analyzed ${data.length} characters.`;
+  };
+
+  // Helper to execute script and return string result (backward compatibility)
+  const runScript = async (
+    script: string,
+    customRepo?: RepoApi
+  ): Promise<string> => {
+    const result = await executeRlmScript(script, customRepo || repo, mockLlmQuery);
+    
+    if (result.error) {
+      return `Script execution error: ${result.error}`;
+    }
+    
+    // Return final answer if provided
+    if (result.finalAnswer) {
+      return result.finalAnswer;
+    }
+    
+    // Return stdout if there's output
+    if (result.stdout && result.stdout.trim()) {
+      return result.stdout;
+    }
+    
+    // Check for return value in buffers
+    const returnValue = result.buffers.__returnValue;
+    if (returnValue !== undefined) {
+      return typeof returnValue === 'string' ? returnValue : JSON.stringify(returnValue);
+    }
+    
+    return "Script completed with no output.";
+  };
 
   beforeAll(() => {
     testDir = path.join(process.cwd(), `test-rlm-sandbox-${Date.now()}`);
@@ -209,111 +257,60 @@ describe("RLM Sandbox", () => {
   // ─── Script Execution Tests ────────────────────────────────────
 
   describe("executeRlmScript", () => {
-    // Mock llm_query that returns deterministic results
-    const mockLlmQuery = async (
-      instruction: string,
-      data: string
-    ): Promise<string> => {
-      if (instruction.includes("error class") || instruction.includes("Error class")) {
-        if (data.includes("class") && data.includes("extends Error")) {
-          const match = data.match(/class\s+(\w+)/);
-          const className = match ? match[1] : "Unknown";
-          const hasCode = data.includes("code:");
-          return JSON.stringify({ isErrorClass: true, hasCode, className });
-        }
-        return "NULL";
-      }
-      if (instruction.includes("summarize")) {
-        return "This is a summary of the provided code.";
-      }
-      return `Analyzed ${data.length} characters of data.`;
-    };
+
 
     describe("Basic script execution", () => {
       it("should execute a simple return statement", async () => {
-        const result = await executeRlmScript(
-          'return "hello world";',
-          repo,
-          mockLlmQuery
-        );
+        const result = await runScript('return "hello world";');
         expect(result).toBe("hello world");
       });
 
       it("should return JSON-serialized objects", async () => {
-        const result = await executeRlmScript(
-          'return { name: "test", count: 42 };',
-          repo,
-          mockLlmQuery
-        );
+        const result = await runScript('return { name: "test", count: 42 };');
         const parsed = JSON.parse(result);
         expect(parsed.name).toBe("test");
         expect(parsed.count).toBe(42);
       });
 
       it("should return JSON-serialized arrays", async () => {
-        const result = await executeRlmScript(
-          'return [1, 2, 3];',
-          repo,
-          mockLlmQuery
-        );
+        const result = await runScript('return [1, 2, 3];');
         const parsed = JSON.parse(result);
         expect(parsed).toEqual([1, 2, 3]);
       });
 
       it("should handle null return", async () => {
-        const result = await executeRlmScript(
-          "return null;",
-          repo,
-          mockLlmQuery
-        );
-        expect(result).toBe("Script completed with no return value.");
+        const result = await runScript("return null;");
+        expect(result).toBe("Script completed with no output.");
       });
 
       it("should handle undefined return (no return statement)", async () => {
-        const result = await executeRlmScript(
-          'const x = 42;',
-          repo,
-          mockLlmQuery
-        );
-        expect(result).toBe("Script completed with no return value.");
+        const result = await runScript('const x = 42;');
+        expect(result).toBe("Script completed with no output.");
       });
 
       it("should handle numeric return", async () => {
-        const result = await executeRlmScript(
-          "return 42;",
-          repo,
-          mockLlmQuery
-        );
+        const result = await runScript("return 42;");
         expect(result).toBe("42");
       });
 
       it("should handle boolean return", async () => {
-        const result = await executeRlmScript(
-          "return true;",
-          repo,
-          mockLlmQuery
-        );
+        const result = await runScript("return true;");
         expect(result).toBe("true");
       });
     });
 
     describe("Repo API access from scripts", () => {
       it("should call repo.list from within a script", async () => {
-        const result = await executeRlmScript(
-          `
+        const result = await runScript(`
           const listing = await repo.list({});
           return listing;
-          `,
-          repo,
-          mockLlmQuery
-        );
+        `);
         expect(result).toContain("src");
         expect(result).toContain("package.json");
       });
 
       it("should call repo.view from within a script", async () => {
-        const result = await executeRlmScript(
-          `
+        const result = await runScript(`
           const content = await repo.view({ filePath: "src/index.ts" });
           return content;
           `,

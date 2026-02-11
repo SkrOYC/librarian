@@ -28,7 +28,6 @@
  * └─────────────────────────────────────────────────────────────────────┘
  */
 
-import vm from "node:vm";
 import { logger } from "../utils/logger.js";
 import {
   RepoApi,
@@ -36,6 +35,7 @@ import {
   LlmConfig,
   createLlmQuery,
   executeRlmScript,
+  type RlmExecutionResult,
 } from "./rlm-sandbox.js";
 
 /**
@@ -108,6 +108,8 @@ export class RlmEngine {
   private state: RlmState;
   private repoApi: RepoApi;
   private errorFeedback?: string;
+  /** Cached llm_query function to avoid recreating clients */
+  private llmQuery: ((instruction: string, data: string) => Promise<string>) | undefined;
 
   constructor(config: RlmEngineConfig) {
     this.config = {
@@ -127,6 +129,18 @@ export class RlmEngine {
   }
 
   /**
+   * Get or create the cached llm_query function
+   * Caches the LLM clients to avoid recreating them on every call
+   */
+  private getLlmQuery(): (instruction: string, data: string) => Promise<string> {
+    if (!this.llmQuery) {
+      this.llmQuery = createLlmQuery(this.config.llmConfig);
+      logger.debug("RLM", "Created cached llm_query function");
+    }
+    return this.llmQuery;
+  }
+
+  /**
    * Execute a code string in the REPL environment
    * Updates state and checks for completion
    */
@@ -142,11 +156,28 @@ export class RlmEngine {
     });
 
     try {
-      // Create llm_query bound to this engine's config
-      const llmQuery = createLlmQuery(this.config.llmConfig);
+      // Lazy load context on first execution
+      if (!this.state.context) {
+        logger.info("RLM", "Lazy loading repository content");
+        this.state.context = await this.config.repoContentLoader();
+        logger.info("RLM", "Repository content loaded", {
+          contextLength: this.state.context.length,
+        });
+      }
 
-      // Execute script in sandbox with extended context
-      const result = await this.runScript(code, llmQuery);
+      // Use cached llm_query function
+      const llmQuery = this.getLlmQuery();
+
+      // Execute script using unified sandbox
+      const result = await executeRlmScript(
+        code,
+        this.repoApi,
+        llmQuery,
+        {
+          context: this.state.context,
+          buffers: this.state.buffers,
+        }
+      );
 
       // Update state
       this.state.buffers = result.buffers;
@@ -252,169 +283,6 @@ export class RlmEngine {
     }
 
     return parts.join("\n");
-  }
-
-  /**
-   * Run script in sandbox with extended globals
-   * Adds: context, buffers, print, FINAL, FINAL_VAR, chunk, batch
-   */
-  private async runScript(
-    code: string,
-    llmQuery: (instruction: string, data: string) => Promise<string>
-  ): Promise<ScriptResult> {
-    // Lazy load context on first execution
-    if (!this.state.context) {
-      logger.info("RLM", "Lazy loading repository content");
-      this.state.context = await this.config.repoContentLoader();
-      logger.info("RLM", "Repository content loaded", {
-        contextLength: this.state.context.length,
-      });
-    }
-
-    // Storage for script execution
-    const buffers: Record<string, unknown> = { ...this.state.buffers };
-    let stdout: string[] = [];
-    let finalAnswer: string | undefined;
-
-    // Sandbox context with extended globals
-    const sandboxGlobals: Record<string, unknown> = {
-      // ... Block dangerous globals (copied from rlm-sandbox.ts)
-      process: undefined,
-      require: undefined,
-      Buffer: undefined,
-      fetch: undefined,
-      XMLHttpRequest: undefined,
-      child_process: undefined,
-      fs: undefined,
-      http: undefined,
-      https: undefined,
-      module: undefined,
-      __dirname: undefined,
-      __filename: undefined,
-      eval: undefined,
-      Function: undefined,
-      Atomics: undefined,
-      SharedArrayBuffer: undefined,
-
-      // Console for debugging
-      console: {
-        log: (...args: unknown[]) => stdout.push(args.join(" ")),
-        error: (...args: unknown[]) => stdout.push(`ERROR: ${args.join(" ")}`),
-        warn: (...args: unknown[]) => stdout.push(`WARN: ${args.join(" ")}`),
-        info: (...args: unknown[]) => stdout.push(`INFO: ${args.join(" ")}`),
-      },
-
-      // Core data structures
-      JSON,
-      Math,
-      Map,
-      Set,
-      WeakMap,
-      WeakSet,
-      Array,
-      Object,
-      String,
-      Number,
-      Boolean,
-      RegExp,
-      Error,
-      TypeError,
-      RangeError,
-      SyntaxError,
-      ReferenceError,
-      Date,
-      Promise,
-      Symbol,
-      BigInt,
-      parseInt,
-      parseFloat,
-      isNaN,
-      isFinite,
-      encodeURI,
-      decodeURI,
-      encodeURIComponent,
-      decodeURIComponent,
-      atob,
-      btoa,
-
-      // RLM-specific globals
-      /** Repository content as variable (per paper symbolic handle) */
-      context: this.state.context,
-
-      /** Accumulated analysis results (per paper) */
-      buffers,
-
-      /** Repository API for file operations */
-      repo: this.repoApi,
-
-      /** LLM query function for semantic analysis */
-      llm_query: llmQuery,
-
-      /** Print to stdout (captured for next iteration) */
-      print: (...args: unknown[]) => {
-        stdout.push(args.map(a => String(a)).join(" "));
-      },
-
-      /** Set final answer (per paper FINAL convention) */
-      FINAL: (answer: string) => {
-        finalAnswer = String(answer);
-      },
-
-      /** Return buffer value as final answer */
-      FINAL_VAR: (name: string) => {
-        if (buffers.hasOwnProperty(name)) {
-          finalAnswer = String(buffers[name]);
-        } else {
-          throw new Error(`Buffer '${name}' not found`);
-        }
-      },
-
-      /** Split string into chunks */
-      chunk: (data: string | unknown, size: number): string[] => {
-        const str = String(data);
-        const chunks: string[] = [];
-        for (let i = 0; i < str.length; i += size) {
-          chunks.push(str.slice(i, i + size));
-        }
-        return chunks;
-      },
-
-      /** Batch array for parallel processing */
-      batch: <T>(items: T[], size: number): T[][] => {
-        const batches: T[][] = [];
-        for (let i = 0; i < items.length; i += size) {
-          batches.push(items.slice(i, i + size));
-        }
-        return batches;
-      },
-    };
-
-    try {
-      // Wrap script in async IIFE
-      const wrappedScript = `(async () => {\n${code}\n})();`;
-
-      // Execute with timeout
-      await vm.runInNewContext(wrappedScript, sandboxGlobals, {
-        timeout: 30000,
-      });
-
-      return {
-        stdout: stdout.join("\n"),
-        buffers,
-        finalAnswer,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Capture error in stdout for agent to see
-      stdout.push(`Script Error: ${errorMessage}`);
-
-      return {
-        stdout: stdout.join("\n"),
-        buffers,
-        error: errorMessage,
-      };
-    }
   }
 
   /**
