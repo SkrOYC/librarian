@@ -155,6 +155,9 @@ export class RlmEngine {
       codeLength: code.length,
     });
 
+    // Clear any stale error feedback from previous iterations
+    this.errorFeedback = undefined;
+
     try {
       // Lazy load context on first execution
       if (!this.state.context) {
@@ -184,9 +187,6 @@ export class RlmEngine {
       this.state.stdout = result.stdout;
       this.state.final = result.finalAnswer;
       this.state.iteration++;
-
-      // Clear error feedback on successful execution
-      this.errorFeedback = undefined;
 
       // Check for completion
       if (result.finalAnswer) {

@@ -156,6 +156,9 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
     try {
       switch (config.type) {
         case 'anthropic': {
+          if (!config.model) {
+            throw new Error('Model name is required for Anthropic provider');
+          }
           const client = new Anthropic({ apiKey: config.apiKey });
           const message = await client.messages.create({
             max_tokens: 1024,
@@ -163,13 +166,16 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
               { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
               { role: 'user', content: input },
             ],
-            model: config.model || 'claude-sonnet-4-5-20250929',
+            model: config.model,
           });
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
           break;
         }
 
         case 'anthropic-compatible': {
+          if (!config.model) {
+            throw new Error('Model name is required for Anthropic-compatible provider');
+          }
           const client = new Anthropic({ 
             apiKey: config.apiKey,
             baseURL: config.baseURL,
@@ -180,16 +186,19 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
               { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
               { role: 'user', content: input },
             ],
-            model: config.model || 'claude-sonnet-4-5-20250929',
+            model: config.model,
           });
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
           break;
         }
 
         case 'openai': {
+          if (!config.model) {
+            throw new Error('Model name is required for OpenAI provider');
+          }
           const client = new OpenAI({ apiKey: config.apiKey });
           const response = await client.responses.create({
-            model: config.model || 'gpt-4.1',
+            model: config.model,
             instructions: SUB_AGENT_SYSTEM_PROMPT,
             input: input,
           });
@@ -198,12 +207,15 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
         }
 
         case 'openai-compatible': {
+          if (!config.model) {
+            throw new Error('Model name is required for OpenAI-compatible provider');
+          }
           const client = new OpenAI({ 
             apiKey: config.apiKey,
             baseURL: config.baseURL || 'https://api.openai.com/v1',
           });
           const response = await client.responses.create({
-            model: config.model || 'gpt-4.1',
+            model: config.model,
             instructions: SUB_AGENT_SYSTEM_PROMPT,
             input: input,
           });
@@ -212,9 +224,12 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
         }
 
         case 'google': {
+          if (!config.model) {
+            throw new Error('Model name is required for Google provider');
+          }
           const client = new GoogleGenAI({ apiKey: config.apiKey });
           const response = await client.models.generateContent({
-            model: config.model || 'gemini-2.5-flash-lite',
+            model: config.model,
             contents: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
           });
           content = response.text || '';

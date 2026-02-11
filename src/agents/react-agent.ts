@@ -937,15 +937,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     // Get system prompt for RLM mode
     const systemPrompt = this.createRlmSystemPrompt();
 
-    // RLM loop: iterate until FINAL is called or max iterations reached
-    let iterations = 0;
-    const maxIterations = 10;
-
-    while (iterations < maxIterations) {
+    // RLM loop: iterate until FINAL is called or engine signals completion
+    while (true) {
       const metadata = this.rlmEngine.getMetadata();
-      iterations++;
 
-      logger.info("AGENT", `RLM iteration ${iterations}/${maxIterations}`, {
+      logger.info("AGENT", `RLM iteration ${metadata.iteration}`, {
         stdoutLength: metadata.stdoutLength,
         bufferCount: metadata.bufferKeys.length,
       });
