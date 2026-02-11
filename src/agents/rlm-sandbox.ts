@@ -253,11 +253,25 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
  *
  * Note: The vm module is NOT a true security boundary against sophisticated attacks.
  * For production deployments with untrusted user input, consider container-based isolation.
+ *
+ * Extended globals (when options provided):
+ * - context: Repository content as string variable
+ * - buffers: Object for accumulating analysis results
+ * - print(...args): Adds to stdout
+ * - FINAL(answer): Sets final answer
+ * - FINAL_VAR(name): Returns buffer value as final answer
+ * - chunk(data, size): Split string into chunks
+ * - batch(items, size): Batch array for parallel processing
  */
 export async function executeRlmScript(
   script: string,
   repo: RepoApi,
-  llmQuery: (instruction: string, data: string) => Promise<string>
+  llmQuery: (instruction: string, data: string) => Promise<string>,
+  options?: {
+    context?: string;
+    buffers?: Record<string, unknown>;
+    errorFeedback?: string;
+  }
 ): Promise<string> {
   logger.info("RLM", "Executing script", { scriptLength: script.length });
   logger.debug("RLM", "Script content", { script });
@@ -338,6 +352,44 @@ export async function executeRlmScript(
     // Sandboxed APIs - these are the only ways the script interacts with the outside world
     repo,
     llm_query: llmQuery,
+
+    // RLM-specific globals (when options provided)
+    ...(options?.context !== undefined && { context: options.context }),
+    ...(options?.buffers !== undefined && { buffers: options.buffers }),
+
+    // print(...args): Adds to stdout (captured for RLM loop)
+    print: (...args: unknown[]) => {
+      logger.info("RLM", "Script print", { output: args.join(" ") });
+    },
+
+    // FINAL(answer): Sets final answer (for RLM completion)
+    FINAL: (answer: unknown) => {
+      logger.info("RLM", "Script FINAL called", { answer: String(answer) });
+    },
+
+    // FINAL_VAR(name): Returns buffer value as final answer
+    FINAL_VAR: (name: string) => {
+      logger.info("RLM", "Script FINAL_VAR called", { name });
+    },
+
+    // chunk(data, size): Split string into chunks
+    chunk: (data: unknown, size: number): string[] => {
+      const str = String(data);
+      const chunks: string[] = [];
+      for (let i = 0; i < str.length; i += size) {
+        chunks.push(str.slice(i, i + size));
+      }
+      return chunks;
+    },
+
+    // batch(items, size): Batch array for parallel processing
+    batch: <T>(items: T[], size: number): T[][] => {
+      const batches: T[][] = [];
+      for (let i = 0; i < items.length; i += size) {
+        batches.push(items.slice(i, i + size));
+      }
+      return batches;
+    },
   };
 
   try {

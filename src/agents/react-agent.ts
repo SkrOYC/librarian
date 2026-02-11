@@ -21,6 +21,12 @@ import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import type { AgentContext } from "./context-schema.js";
 import { createResearchRepositoryTool } from "./rlm-tool.js";
+import {
+  RlmEngine,
+  type RlmEngineConfig,
+} from "./rlm-engine.js";
+import { LlmConfig } from "./rlm-sandbox.js";
+import { createRlmSystemPrompt, formatMetadataForPrompt } from "./rlm-prompts.js";
 
 // Re-export for consumer convenience
 export type { AgentContext } from "./context-schema.js";
@@ -62,6 +68,7 @@ export class ReactAgent {
     | ChatGoogleGenerativeAI;
   private readonly tools: DynamicStructuredTool[];
   private readonly rlmTool?: DynamicStructuredTool;
+  private rlmEngine?: RlmEngine;
   private agent?: ReturnType<typeof createAgent>;
   private readonly config: ReactAgentConfig;
   private readonly contextSchema?: z.ZodType | undefined;
@@ -795,6 +802,12 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       hasContext: !!context,
     });
 
+    // Use RLM mode if engine is available
+    if (this.rlmEngine) {
+      logger.info("AGENT", "Using RLM mode");
+      return await this.executeRlmQuery(query);
+    }
+
     if (this.config.aiProvider.type === "claude-code") {
       let fullContent = "";
       for await (const chunk of this.streamClaudeCli(query, context)) {
@@ -851,6 +864,155 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     });
 
     return content;
+  }
+
+  /**
+   * Load repository content for RLM context
+   * Used by the RLM engine to lazily load context
+   */
+  private async loadRepoContentForRlm(): Promise<string> {
+    const { workingDir } = this.config;
+
+    // Simple approach: read key files and package.json
+    // For large repos, scripts should handle chunking
+    try {
+      // Get file listing
+      const listing = await listTool.invoke(
+        { directoryPath: workingDir, recursive: false, maxDepth: 2 },
+        { context: { workingDir, group: "", technology: "" } }
+      );
+
+      return `Repository content loaded from: ${workingDir}\n\nFile listing:\n${listing}`;
+    } catch {
+      return `Repository content loaded from: ${workingDir}\n\nNote: Full repository access available via repo API (repo.list, repo.view, repo.find, repo.grep)`;
+    }
+  }
+
+  /**
+   * Execute query using RLM REPL loop
+   * This implements the multi-turn RLM pattern from the paper
+   */
+  private async executeRlmQuery(query: string): Promise<string> {
+    const timingId = logger.timingStart("rlmQuery");
+
+    // Create RLM engine if not already created
+    if (!this.rlmEngine) {
+      const llmConfig: LlmConfig = {
+        type: this.config.aiProvider.type as LlmConfig['type'],
+        apiKey: this.config.aiProvider.apiKey,
+        model: this.config.aiProvider.model,
+        baseURL: this.config.aiProvider.baseURL,
+      };
+
+      const engineConfig: RlmEngineConfig = {
+        llmConfig,
+        repoContentLoader: () => this.loadRepoContentForRlm(),
+        workingDir: this.config.workingDir,
+        maxIterations: 10,
+        stdoutPreviewLength: 1000,
+      };
+
+      this.rlmEngine = new RlmEngine(engineConfig);
+      logger.info("AGENT", "RLM Engine initialized", {
+        workingDir: this.config.workingDir,
+        maxIterations: engineConfig.maxIterations,
+      });
+    }
+
+    // Get system prompt for RLM mode
+    const systemPrompt = this.createRlmSystemPrompt();
+
+    // RLM loop: iterate until FINAL is called or max iterations reached
+    let iterations = 0;
+    const maxIterations = 10;
+
+    while (iterations < maxIterations) {
+      const metadata = this.rlmEngine.getMetadata();
+      iterations++;
+
+      logger.info("AGENT", `RLM iteration ${iterations}/${maxIterations}`, {
+        stdoutLength: metadata.stdoutLength,
+        bufferCount: metadata.bufferKeys.length,
+      });
+
+      // Build prompt with metadata
+      const metadataText = formatMetadataForPrompt(metadata);
+      const fullPrompt = `
+
+## Current Task
+${query}
+
+## Previous Iteration Metadata
+${metadataText}
+
+## Your Instructions
+Write a TypeScript script to continue exploring and analyzing the repository.
+Use the available globals: context, repo, llm_query, buffers, print, FINAL, FINAL_VAR, chunk, batch.
+
+Remember to:
+1. Use llm_query for semantic analysis
+2. Accumulate findings in buffers
+3. Call FINAL() or FINAL_VAR() when done
+4. Use print() for debugging
+
+Write your script now:
+
+`;
+
+      // Invoke LLM with full prompt
+      if (!this.aiModel) {
+        throw new Error("AI model not initialized for RLM query");
+      }
+
+      const messages = [
+        new HumanMessage(systemPrompt + "\n\n" + fullPrompt),
+      ];
+
+      const result = await this.aiModel.invoke(messages);
+      const content = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
+
+      // Extract code from response (handle markdown code blocks)
+      const codeMatch = content.match(/```typescript?\n?([\s\S]*?)```/);
+      const code = codeMatch ? codeMatch[1].trim() : content.trim();
+
+      logger.debug("AGENT", "Generated RLM script", { codeLength: code.length });
+
+      // Execute script in REPL
+      const execResult = await this.rlmEngine.execute(code);
+
+      logger.info("AGENT", "RLM script executed", {
+        stdoutLength: execResult.stdout.length,
+        isComplete: execResult.isComplete,
+        hasFinalAnswer: !!execResult.finalAnswer,
+      });
+
+      // Check for completion
+      if (execResult.isComplete && execResult.finalAnswer) {
+        logger.timingEnd(timingId, "AGENT", "RLM query completed");
+        return execResult.finalAnswer;
+      }
+
+      // If there was an error, provide feedback for next iteration
+      if (execResult.error) {
+        logger.warn("AGENT", "RLM script error", { error: execResult.error });
+        this.rlmEngine.setErrorFeedback(execResult.error);
+      }
+    }
+
+    // Max iterations reached - return accumulated state
+    const finalState = this.rlmEngine.getState();
+    const summary = [
+      "Maximum iterations reached without FINAL call.",
+      "",
+      "=== Accumulated Buffers ===",
+      ...Object.entries(finalState.buffers).map(([k, v]) => `${k}: ${String(v).slice(0, 500)}`),
+      "",
+      "=== Last Output ===",
+      finalState.stdout.slice(-2000),
+    ].join("\n");
+
+    logger.timingEnd(timingId, "AGENT", "RLM query max iterations");
+    return summary;
   }
 
   /**
