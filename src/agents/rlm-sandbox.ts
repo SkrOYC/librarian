@@ -135,19 +135,38 @@ export function createRepoApi(workingDir: string): RepoApi {
 }
 
 /**
+ * Timeout wrapper for async operations
+ * Returns a promise that rejects after the specified timeout
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    }),
+  ]);
+}
+
+/**
  * Creates an `llm_query` function that invokes the model using direct provider SDKs.
  * This avoids LangChain callback interference and ensures clean output control.
  *
  * @param config - LLM provider configuration
  * @returns A function that takes (instruction, data) and returns the model's analysis
  */
-export function createLlmQuery(config: LlmConfig): (instruction: string, data: string) => Promise<string> {
+export function createLlmQuery(
+  config: LlmConfig,
+  timeoutMs: number = 15000
+): (instruction: string, data: string) => Promise<string> {
   return async (instruction: string, data: string): Promise<string> => {
     logger.debug("RLM", "llm_query invoked", {
       type: config.type,
       model: config.model,
       instructionLength: instruction.length,
       dataLength: data.length,
+      timeoutMs,
     });
 
     const input = `**Instruction:** ${instruction}\n\n**Data:**\n${data}`;
@@ -157,14 +176,18 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
       switch (config.type) {
         case 'anthropic': {
           const client = new Anthropic({ apiKey: config.apiKey });
-          const message = await client.messages.create({
-            max_tokens: 1024,
-            messages: [
-              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
-              { role: 'user', content: input },
-            ],
-            model: config.model || 'claude-sonnet-4-5-20250929',
-          });
+          const message = await withTimeout(
+            client.messages.create({
+              max_tokens: 1024,
+              messages: [
+                { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
+                { role: 'user', content: input },
+              ],
+              model: config.model || 'claude-sonnet-4-5-20250929',
+            }),
+            timeoutMs,
+            'Anthropic API call'
+          );
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
           break;
         }
@@ -174,25 +197,33 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
             apiKey: config.apiKey,
             baseURL: config.baseURL,
           });
-          const message = await client.messages.create({
-            max_tokens: 1024,
-            messages: [
-              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
-              { role: 'user', content: input },
-            ],
-            model: config.model || 'claude-sonnet-4-5-20250929',
-          });
+          const message = await withTimeout(
+            client.messages.create({
+              max_tokens: 1024,
+              messages: [
+                { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
+                { role: 'user', content: input },
+              ],
+              model: config.model || 'claude-sonnet-4-5-20250929',
+            }),
+            timeoutMs,
+            'Anthropic-compatible API call'
+          );
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
           break;
         }
 
         case 'openai': {
           const client = new OpenAI({ apiKey: config.apiKey });
-          const response = await client.responses.create({
-            model: config.model || 'gpt-4.1',
-            instructions: SUB_AGENT_SYSTEM_PROMPT,
-            input: input,
-          });
+          const response = await withTimeout(
+            client.responses.create({
+              model: config.model || 'gpt-4.1',
+              instructions: SUB_AGENT_SYSTEM_PROMPT,
+              input: input,
+            }),
+            timeoutMs,
+            'OpenAI API call'
+          );
           content = response.output_text || '';
           break;
         }
@@ -202,21 +233,29 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
             apiKey: config.apiKey,
             baseURL: config.baseURL || 'https://api.openai.com/v1',
           });
-          const response = await client.responses.create({
-            model: config.model || 'gpt-4.1',
-            instructions: SUB_AGENT_SYSTEM_PROMPT,
-            input: input,
-          });
+          const response = await withTimeout(
+            client.responses.create({
+              model: config.model || 'gpt-4.1',
+              instructions: SUB_AGENT_SYSTEM_PROMPT,
+              input: input,
+            }),
+            timeoutMs,
+            'OpenAI-compatible API call'
+          );
           content = response.output_text || '';
           break;
         }
 
         case 'google': {
           const client = new GoogleGenAI({ apiKey: config.apiKey });
-          const response = await client.models.generateContent({
-            model: config.model || 'gemini-2.5-flash-lite',
-            contents: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
-          });
+          const response = await withTimeout(
+            client.models.generateContent({
+              model: config.model || 'gemini-2.5-flash-lite',
+              contents: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+            }),
+            timeoutMs,
+            'Google Gemini API call'
+          );
           content = response.text || '';
           break;
         }
@@ -293,7 +332,9 @@ export async function executeRlmScript(
   executionContext?: RlmExecutionContext
 ): Promise<RlmExecutionResult> {
   logger.info("RLM", "Executing script", { scriptLength: script.length });
-  logger.debug("RLM", "Script content", { script });
+  // Limit logged script content to prevent log bloat (max 500 chars)
+  const truncatedScript = script.length > 500 ? script.slice(0, 500) + '... [truncated]' : script;
+  logger.debug("RLM", "Script content", { script: truncatedScript });
   const timingId = logger.timingStart("rlmScript");
 
   // Initialize execution state
@@ -316,6 +357,10 @@ export async function executeRlmScript(
     fs: undefined,
     http: undefined,
     https: undefined,
+    net: undefined,
+    tls: undefined,
+    dns: undefined,
+    dgram: undefined,
     module: undefined,
     __dirname: undefined,
     __filename: undefined,
@@ -323,6 +368,15 @@ export async function executeRlmScript(
     Function: undefined,
     Atomics: undefined,
     SharedArrayBuffer: undefined,
+    setImmediate: undefined,
+    setInterval: undefined,
+    clearImmediate: undefined,
+    clearInterval: undefined,
+    queueMicrotask: undefined,
+    constructor: undefined,
+    // Block prototype pollution vectors
+    __proto__: undefined,
+    prototype: undefined,
 
     // Console for debugging (logs go through our logger at debug level)
     console: {

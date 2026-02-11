@@ -88,8 +88,9 @@ Invoke a stateless LLM to analyze a code snippet. Use it instead of reading raw 
       schema: z.object({
         script: z
           .string()
+          .max(100000, "Script exceeds maximum size of 100KB")
           .describe(
-            "The TypeScript exploration script to execute in the sandbox"
+            "The TypeScript exploration script to execute in the sandbox (max 100KB)"
           ),
       }),
     }
