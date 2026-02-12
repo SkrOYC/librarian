@@ -223,10 +223,13 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
           if (!config.model) {
             throw new Error('Model name is required for Google provider');
           }
-          const client = new GoogleGenAI({ apiKey: config.apiKey });
-          const response = await client.models.generateContent({
+          const ai = new GoogleGenAI({ apiKey: config.apiKey });
+          const response = await ai.models.generateContent({
             model: config.model,
-            contents: `System: ${SUB_AGENT_SYSTEM_PROMPT}\n\nUser: ${input}`,
+            contents: input,
+            config: {
+              systemInstruction: SUB_AGENT_SYSTEM_PROMPT,
+            },
           });
           content = response.text || '';
           break;

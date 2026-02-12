@@ -25,7 +25,7 @@ import {
   type RlmEngineConfig,
 } from "./rlm-engine.js";
 import { LlmConfig } from "./rlm-sandbox.js";
-import { createRlmSystemPrompt, formatMetadataForPrompt } from "./rlm-prompts.js";
+import { formatMetadataForPrompt } from "./rlm-prompts.js";
 
 // Re-export for consumer convenience
 export type { AgentContext } from "./context-schema.js";
