@@ -31,8 +31,8 @@ export type LlmProviderType = 'openai' | 'anthropic' | 'google' | 'openai-compat
 export interface LlmConfig {
   type: LlmProviderType;
   apiKey: string;
-  model?: string;
-  baseURL?: string;
+  model?: string | undefined;
+  baseURL?: string | undefined;
 }
 
 /**
@@ -162,10 +162,8 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
           const client = new Anthropic({ apiKey: config.apiKey });
           const message = await client.messages.create({
             max_tokens: 1024,
-            messages: [
-              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
-              { role: 'user', content: input },
-            ],
+            system: SUB_AGENT_SYSTEM_PROMPT,
+            messages: [{ role: 'user', content: input }],
             model: config.model,
           });
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
@@ -182,10 +180,8 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
           });
           const message = await client.messages.create({
             max_tokens: 1024,
-            messages: [
-              { role: 'system', content: SUB_AGENT_SYSTEM_PROMPT },
-              { role: 'user', content: input },
-            ],
+            system: SUB_AGENT_SYSTEM_PROMPT,
+            messages: [{ role: 'user', content: input }],
             model: config.model,
           });
           content = message.content[0]?.type === 'text' ? message.content[0].text : '';
@@ -248,7 +244,7 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
       return `<LLM_QUERY_OUTPUT>\n${content}\n</LLM_QUERY_OUTPUT>`;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error("RLM", "llm_query failed", { error: errorMessage, type: config.type });
+      logger.error("RLM", "llm_query failed", undefined, { errorMessage, type: config.type });
       throw error;
     }
   };
@@ -280,9 +276,9 @@ export interface RlmExecutionResult {
   /** Final buffers state */
   buffers: Record<string, unknown>;
   /** Final answer if FINAL/FINAL_VAR was called */
-  finalAnswer?: string;
+  finalAnswer?: string | undefined;
   /** Error message if execution failed */
-  error?: string;
+  error?: string | undefined;
 }
 
 /**

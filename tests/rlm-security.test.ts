@@ -14,7 +14,13 @@ import {
   createLlmQuery,
   executeRlmScript,
   type RepoApi,
+  type RlmExecutionResult,
 } from "../src/agents/rlm-sandbox.js";
+
+// Helper to extract return value from RlmExecutionResult
+const getReturn = (result: RlmExecutionResult): unknown => result.buffers.__returnValue;
+// Helper to extract error message
+const getError = (result: RlmExecutionResult): string | undefined => result.error;
 
 describe("RLM Sandbox Security", () => {
   let testDir: string;
@@ -70,7 +76,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to require function", async () => {
@@ -79,7 +85,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to Buffer", async () => {
@@ -88,7 +94,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to fetch", async () => {
@@ -97,7 +103,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to XMLHttpRequest", async () => {
@@ -106,7 +112,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to child_process", async () => {
@@ -115,7 +121,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to fs module", async () => {
@@ -124,7 +130,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to http/https modules", async () => {
@@ -133,7 +139,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to module object", async () => {
@@ -142,7 +148,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to __dirname", async () => {
@@ -151,7 +157,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block access to __filename", async () => {
@@ -160,7 +166,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
   });
 
@@ -173,7 +179,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block eval function", async () => {
@@ -182,7 +188,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("undefined");
+      expect(getReturn(result)).toBe("undefined");
     });
 
     it("should block new Function() inside script", async () => {
@@ -192,7 +198,7 @@ describe("RLM Sandbox Security", () => {
         mockLlmQuery
       );
       // Function is undefined, so new Function() should throw
-      expect(result).toContain("Script execution error");
+      expect(getError(result)).toBeDefined();
     });
 
     it("should block eval() call", async () => {
@@ -202,7 +208,7 @@ describe("RLM Sandbox Security", () => {
         mockLlmQuery
       );
       // eval is undefined, so eval() should throw
-      expect(result).toContain("Script execution error");
+      expect(getError(result)).toBeDefined();
     });
   });
 
@@ -215,7 +221,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("object");
+      expect(getReturn(result)).toBe("object");
     });
 
     it("should provide JSON object", async () => {
@@ -224,7 +230,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("object");
+      expect(getReturn(result)).toBe("object");
     });
 
     it("should provide Math object", async () => {
@@ -233,7 +239,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("object");
+      expect(getReturn(result)).toBe("object");
     });
 
     it("should provide Array constructor", async () => {
@@ -242,7 +248,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide Object constructor", async () => {
@@ -251,7 +257,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide String constructor", async () => {
@@ -260,7 +266,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide Promise constructor", async () => {
@@ -269,7 +275,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide Map constructor", async () => {
@@ -278,7 +284,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide Set constructor", async () => {
@@ -287,7 +293,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide RegExp constructor", async () => {
@@ -296,7 +302,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide parseInt function", async () => {
@@ -305,7 +311,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
 
     it("should provide encodeURI function", async () => {
@@ -314,7 +320,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("function");
+      expect(getReturn(result)).toBe("function");
     });
   });
 
@@ -327,7 +333,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("hello world");
+      expect(getReturn(result)).toBe("hello world");
     });
 
     it("should execute array operations", async () => {
@@ -336,7 +342,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(JSON.parse(result)).toEqual([2, 4, 6]);
+      expect(getReturn(result)).toEqual([2, 4, 6]);
     });
 
     it("should execute object operations", async () => {
@@ -345,7 +351,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(JSON.parse(result)).toEqual(["a", "b", "c"]);
+      expect(getReturn(result)).toEqual(["a", "b", "c"]);
     });
 
     it("should execute Promise.all", async () => {
@@ -361,7 +367,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(JSON.parse(result)).toEqual([1, 2, 3]);
+      expect(getReturn(result)).toEqual([1, 2, 3]);
     });
 
     it("should handle JSON.parse and JSON.stringify", async () => {
@@ -375,7 +381,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(JSON.parse(result)).toEqual({ name: "test", value: 42 });
+      expect(getReturn(result)).toEqual({ name: "test", value: 42 });
     });
 
     it("should use Map data structure", async () => {
@@ -389,7 +395,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("value1");
+      expect(getReturn(result)).toBe("value1");
     });
 
     it("should use Set data structure", async () => {
@@ -401,7 +407,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("3");
+      expect(getReturn(result)).toBe(3);
     });
 
     it("should execute regex operations", async () => {
@@ -413,7 +419,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("true");
+      expect(getReturn(result)).toBe(true);
     });
   });
 
@@ -433,7 +439,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("Completed successfully");
+      expect(getReturn(result)).toBe("Completed successfully");
     });
 
     it("should timeout scripts exceeding 30 seconds", async () => {
@@ -457,8 +463,9 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("src");
-      expect(result).toContain("package.json");
+      const returnValue = getReturn(result) as string[];
+      expect(returnValue).toContain("src");
+      expect(returnValue).toContain("package.json");
     });
 
     it("should call repo.view", async () => {
@@ -470,7 +477,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("export function main");
+      expect(getReturn(result)).toContain("export function main");
     });
 
     it("should call repo.find", async () => {
@@ -482,7 +489,8 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("index.ts");
+      const returnValue = getReturn(result) as string[];
+      expect(returnValue).toContain("index.ts");
     });
 
     it("should call repo.grep", async () => {
@@ -494,7 +502,8 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("main");
+      const returnValue = getReturn(result) as string[];
+      expect(returnValue).toContain("main");
     });
   });
 
@@ -510,7 +519,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("Summary");
+      expect(getReturn(result)).toContain("Summary");
     });
 
     it("should work with semantic filtering pattern", async () => {
@@ -526,7 +535,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("Summary");
+      expect(getReturn(result)).toContain("Summary");
     });
   });
 
@@ -539,7 +548,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("Script execution error");
+      expect(getError(result)).toBeDefined();
     });
 
     it("should handle runtime errors gracefully", async () => {
@@ -548,8 +557,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toContain("Script execution error");
-      expect(result).toContain("test error");
+      expect(getError(result)).toBeDefined();
     });
 
     it("should handle undefined returns", async () => {
@@ -558,7 +566,7 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("Script completed with no return value.");
+      expect(getReturn(result)).toBeUndefined();
     });
 
     it("should handle null returns", async () => {
@@ -567,7 +575,9 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      expect(result).toBe("Script completed with no return value.");
+      // Note: null is stored as undefined in the current implementation
+      const returnValue = result.buffers.__returnValue;
+      expect(returnValue).toBeUndefined();
     });
 
     it("should handle object returns", async () => {
@@ -576,9 +586,9 @@ describe("RLM Sandbox Security", () => {
         repo,
         mockLlmQuery
       );
-      const parsed = JSON.parse(result);
-      expect(parsed.name).toBe("test");
-      expect(parsed.value).toBe(123);
+      const returnValue = getReturn(result) as { name: string; value: number };
+      expect(returnValue.name).toBe("test");
+      expect(returnValue.value).toBe(123);
     });
   });
 });

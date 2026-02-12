@@ -938,8 +938,10 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     const systemPrompt = this.createRlmSystemPrompt();
 
     // RLM loop: iterate until FINAL is called or engine signals completion
+    // Engine is guaranteed to be initialized after the if block above
+    const engine = this.rlmEngine!;
     while (true) {
-      const metadata = this.rlmEngine.getMetadata();
+      const metadata = engine.getMetadata();
 
       logger.info("AGENT", `RLM iteration ${metadata.iteration}`, {
         stdoutLength: metadata.stdoutLength,
@@ -984,12 +986,12 @@ Write your script now:
 
       // Extract code from response (handle markdown code blocks)
       const codeMatch = content.match(/```typescript?\n?([\s\S]*?)```/);
-      const code = codeMatch ? codeMatch[1].trim() : content.trim();
+      const code = codeMatch && codeMatch[1] ? codeMatch[1].trim() : content.trim();
 
       logger.debug("AGENT", "Generated RLM script", { codeLength: code.length });
 
       // Execute script in REPL
-      const execResult = await this.rlmEngine.execute(code);
+      const execResult = await engine.execute(code);
 
       logger.info("AGENT", "RLM script executed", {
         stdoutLength: execResult.stdout.length,
@@ -1006,7 +1008,7 @@ Write your script now:
       // If there was an error, provide feedback for next iteration
       if (execResult.error) {
         logger.warn("AGENT", "RLM script error", { error: execResult.error });
-        this.rlmEngine.setErrorFeedback(execResult.error);
+        engine.setErrorFeedback(execResult.error);
       }
     }
   }

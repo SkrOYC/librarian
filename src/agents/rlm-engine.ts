@@ -46,7 +46,7 @@ export interface RlmState {
   buffers: Record<string, unknown>;
   stdout: string;
   iteration: number;
-  final?: string;
+  final?: string | undefined;
 }
 
 /**
@@ -64,7 +64,7 @@ export interface RlmMetadata {
     size: number;
   }>;
   hasContext: boolean;  // Flag indicating context is available
-  errorFeedback?: string;  // Error from previous iteration
+  errorFeedback?: string | undefined;  // Error from previous iteration
 }
 
 /**
@@ -107,7 +107,7 @@ export class RlmEngine {
   private config: Required<RlmEngineConfig>;
   private state: RlmState;
   private repoApi: RepoApi;
-  private errorFeedback?: string;
+  private errorFeedback?: string | undefined;
   /** Cached llm_query function to avoid recreating clients */
   private llmQuery: ((instruction: string, data: string) => Promise<string>) | undefined;
 
@@ -148,8 +148,8 @@ export class RlmEngine {
     stdout: string;
     buffers: Record<string, unknown>;
     isComplete: boolean;
-    finalAnswer?: string;
-    error?: string;
+    finalAnswer?: string | undefined;
+    error?: string | undefined;
   }> {
     logger.info("RLM", `Iteration ${this.state.iteration + 1} executing script`, {
       codeLength: code.length,
@@ -219,7 +219,7 @@ export class RlmEngine {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error("RLM", "Script execution error", { error: errorMessage });
+      logger.error("RLM", "Script execution error", undefined, { errorMessage });
 
       return {
         stdout: this.state.stdout,
@@ -300,14 +300,14 @@ export class RlmEngine {
  * Helper for external use
  */
 export function parseFinalOutput(output: string): {
-  finalAnswer?: string;
+  finalAnswer?: string | undefined;
   cleanedStdout: string;
 } {
   const finalMatch = output.match(/FINAL\(([\s\S]*?)\)/);
   const finalVarMatch = output.match(/FINAL_VAR\(([\w]+)\)/);
 
   let finalAnswer: string | undefined;
-  if (finalMatch) {
+  if (finalMatch && finalMatch[1]) {
     finalAnswer = finalMatch[1].trim();
   }
 
