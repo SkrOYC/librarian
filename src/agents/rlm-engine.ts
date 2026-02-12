@@ -221,6 +221,9 @@ export class RlmEngine {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error("RLM", "Script execution error", undefined, { errorMessage });
 
+      // Set error feedback so the agent knows what went wrong for retry
+      this.errorFeedback = errorMessage;
+
       return {
         stdout: this.state.stdout,
         buffers: this.state.buffers,
