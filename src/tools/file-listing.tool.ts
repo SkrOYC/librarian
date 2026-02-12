@@ -7,6 +7,7 @@ import { getFileLineCount } from "../utils/file-utils.js";
 import {
   type FileSystemEntry,
   formatDirectoryTree,
+  formatListAsJson,
 } from "../utils/format-utils.js";
 import { GitIgnoreService } from "../utils/gitignore-service.js";
 import { logger } from "../utils/logger.js";
@@ -198,17 +199,16 @@ export const listTool = tool(
         gitignore
       );
 
-      // Format the result for the AI
-      const treeOutput = formatDirectoryTree(entries);
-
+      logger.timingEnd(timingId, "TOOL", "list completed");
+      
       // Use relative path for display
       const displayPath = relativePath === "" ? "." : relativePath;
-      let result = `Contents of directory: ${displayPath}\n\n`;
-      result += `Total entries: ${entries.length}\n\n`;
-      result += treeOutput;
-
-      logger.timingEnd(timingId, "TOOL", "list completed");
-      return result;
+      
+      if (entries.length === 0) {
+        return JSON.stringify({ directory: displayPath, totalEntries: 0, entries: [] });
+      }
+      
+      return formatListAsJson(entries, resolvedPath);
     } catch (error) {
       logger.error(
         "TOOL",

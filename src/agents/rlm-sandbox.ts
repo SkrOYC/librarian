@@ -166,7 +166,19 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
             messages: [{ role: 'user', content: input }],
             model: config.model,
           });
-          content = message.content[0]?.type === 'text' ? message.content[0].text : '';
+          
+          // Handle both text and thinking content types
+          let textContent = '';
+          for (const block of message.content) {
+            if (block.type === 'text') {
+              textContent += block.text;
+            } else if (block.type === 'thinking') {
+              logger.debug("RLM", "Model used thinking block", {
+                thinking: block.thinking?.substring(0, 100),
+              });
+            }
+          }
+          content = textContent;
           break;
         }
 
@@ -184,7 +196,31 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
             messages: [{ role: 'user', content: input }],
             model: config.model,
           });
-          content = message.content[0]?.type === 'text' ? message.content[0].text : '';
+          
+          // Handle both text and thinking content types
+          // Some models (like MiniMax) return thinking blocks followed by text blocks
+          // We need to find ALL text blocks and concatenate them
+          let textContent = '';
+          for (const block of message.content) {
+            if (block.type === 'text') {
+              textContent += block.text;
+            } else if (block.type === 'thinking') {
+              // Log thinking for debugging but don't include in output
+              logger.debug("RLM", "Model used thinking block", {
+                thinking: block.thinking?.substring(0, 100),
+              });
+            }
+          }
+          
+          // Log full response for debugging
+          logger.debug("RLM", "Anthropic response", {
+            stopReason: message.stop_reason,
+            usage: message.usage,
+            contentBlocks: message.content.length,
+            contentTypes: message.content.map(b => b.type).join(', '),
+            finalTextLength: textContent.length,
+          });
+          content = textContent;
           break;
         }
 
@@ -197,6 +233,11 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
             model: config.model,
             instructions: SUB_AGENT_SYSTEM_PROMPT,
             input: input,
+          });
+          // Log full response for debugging
+          logger.debug("RLM", "OpenAI response", {
+            outputIndex: response.output?.length,
+            outputText: response.output_text?.substring(0, 200),
           });
           content = response.output_text || '';
           break;
@@ -230,6 +271,11 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
             config: {
               systemInstruction: SUB_AGENT_SYSTEM_PROMPT,
             },
+          });
+          // Log full response for debugging
+          logger.debug("RLM", "Google response", {
+            finishReason: response.finishReason,
+            text: response.text?.substring(0, 200),
           });
           content = response.text || '';
           break;

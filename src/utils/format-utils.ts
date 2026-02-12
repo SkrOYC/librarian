@@ -2,6 +2,8 @@
  * Formatting utility functions for tool outputs
  */
 
+import path from "node:path";
+
 export interface FileSystemEntry {
   name: string;
   path: string;
@@ -187,4 +189,84 @@ export function formatSearchResults(
   }
 
   return output;
+}
+
+/**
+ * Format grep results as JSON for programmatic use in RLM scripts
+ */
+export function formatGrepResultsAsJson(
+  results: { path: string; matches: SearchMatch[] }[]
+): string {
+  const totalMatches = results.reduce((sum, r) => sum + r.matches.length, 0);
+  
+  const formattedResults = results.map((result) => ({
+    path: result.path,
+    matches: result.matches.map((match) => ({
+      line: match.line,
+      column: match.column,
+      text: match.text,
+      ...(match.context?.before && { contextBefore: match.context.before }),
+      ...(match.context?.after && { contextAfter: match.context.after }),
+    })),
+  }));
+
+  return JSON.stringify({
+    totalMatches,
+    totalFiles: results.length,
+    results: formattedResults,
+  }, null, 0);
+}
+
+/**
+ * Format find results as JSON for programmatic use in RLM scripts
+ */
+export function formatFindAsJson(files: string[], patterns: string[]): string {
+  return JSON.stringify({
+    totalFiles: files.length,
+    patterns,
+    files,
+  }, null, 0);
+}
+
+/**
+ * Format list results as JSON for programmatic use in RLM scripts
+ */
+export function formatListAsJson(
+  entries: FileSystemEntry[],
+  directory: string
+): string {
+  return JSON.stringify({
+    directory,
+    totalEntries: entries.length,
+    entries: entries.map((entry) => ({
+      name: entry.name,
+      path: path.relative(directory, entry.path),
+      isDirectory: entry.isDirectory,
+      ...(entry.size !== undefined && { size: entry.size }),
+      ...(entry.lineCount !== undefined && { lineCount: entry.lineCount }),
+      depth: entry.depth,
+    })),
+  }, null, 0);
+}
+
+/**
+ * Format view results as JSON for programmatic use in RLM scripts
+ */
+export function formatViewAsJson(
+  lines: string[],
+  filePath: string,
+  viewRange?: [number, number],
+  totalLines?: number
+): string {
+  const formattedLines = lines.map((content, index) => ({
+    lineNumber: viewRange ? viewRange[0] + index : index + 1,
+    content,
+  }));
+
+  return JSON.stringify({
+    filePath,
+    totalLines: totalLines ?? lines.length,
+    viewRange: viewRange ?? null,
+    lines: formattedLines,
+  }, null, 0);
 }

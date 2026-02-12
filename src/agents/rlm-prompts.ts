@@ -91,14 +91,25 @@ const finalAnswer = await llm_query(
 FINAL(finalAnswer);
 \`\`\`
 
+## THE GOLDEN RULE: Filter → Analyze → Aggregate
+
+**This is the ONLY correct pattern for understanding codebases:**
+
+1. **FILTER** (with repo.grep/repo.find): Narrow down the search space using model priors
+2. **ANALYZE** (with llm_query): For EACH narrowed item, use llm_query for semantic understanding  
+3. **AGGREGATE** (with return): Combine results into final answer
+
+**Why this matters**: The RLM paper shows that direct code reading causes "context rot" - quality degrades as more content is loaded. llm_query avoids this by analyzing content in isolated, focused calls.
+
 ## Important Rules
 
-1. **Use llm_query for semantic analysis** - Don't try to reason through large code manually
-2. **Use buffers to accumulate results** - Store intermediate findings for aggregation
-3. **Use batch() for parallel processing** - Process multiple files/items concurrently
-4. **Call FINAL() or FINAL_VAR() when done** - Otherwise your script will continue iterating
-5. **Handle errors gracefully** - If something fails, print the error and try a different approach
-6. **Leverage the context variable** - It contains the repository content
+1. **Filter FIRST**: Use repo.grep/repo.find to narrow scope before reading files
+2. **llm_query REQUIRED**: Every repo.view MUST be followed by llm_query analysis
+3. **Use buffers to accumulate results** - Store intermediate findings for aggregation
+4. **Use batch() for parallel processing** - Process multiple files/items concurrently
+5. **Call FINAL() or FINAL_VAR() when done** - Otherwise your script will continue iterating
+6. **Handle errors gracefully** - If something fails, print the error and try a different approach
+7. **Leverage the context variable** - It contains the repository content
 
 ## Output Format
 
@@ -196,26 +207,32 @@ FINAL(summary);
 
   grepAndAnalyze: `
 // Search for specific patterns
-const matches = await repo.grep({
+const grepResult = await repo.grep({
   query: "export.*function|export.*class",
   regex: true,
   maxResults: 50,
 });
 
-// Analyze each match
-const lines = matches.split("\\n").filter(l => l.trim());
+// Parse JSON to get results
+const { results } = JSON.parse(grepResult);
+
+// Analyze each file (limit to first 10)
 const analyses = await Promise.all(
-  lines.slice(0, 10).map(async (line) => {
+  results.slice(0, 10).map(async (r: any) => {
+    const fileContent = await repo.view({ filePath: r.path });
+    const { lines } = JSON.parse(fileContent);
+    const content = lines.map((l: any) => l.content).join("\\n");
+    
     const analysis = await llm_query(
       "Explain this export statement and its role",
-      line
+      content
     );
-    return analysis;
+    return { path: r.path, analysis };
   })
 );
 
 buffers.exportAnalysis = analyses;
-FINAL(analyses.join("\\n\\n---\\n\\n"));
+FINAL(analyses.map((a: any) => a.analysis).join("\\n\\n---\\n\\n"));
 `.trim(),
 
   chunkedAnalysis: `
