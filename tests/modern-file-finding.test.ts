@@ -41,10 +41,12 @@ describe('Modern File Finding Tool', () => {
       patterns: ['test.txt']
     }, { context: testContext });
 
-    expect(result).toContain('Found 1 files matching patterns');
-    expect(result).toContain('test.txt');
-    expect(result).not.toContain('example.js');
-    expect(result).not.toContain('readme.md');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalFiles).toBe(1);
+    expect(parsed.files).toContain('test.txt');
+    expect(parsed.files).not.toContain('example.js');
+    expect(parsed.files).not.toContain('readme.md');
 
     // Clean up
     fs.unlinkSync(testFile1);
@@ -65,10 +67,12 @@ describe('Modern File Finding Tool', () => {
       patterns: ['*.txt', '*.js']
     }, { context: testContext });
 
-    expect(result).toContain('Found 2 files matching patterns');
-    expect(result).toContain('test.txt');
-    expect(result).toContain('example.js');
-    expect(result).not.toContain('readme.md');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalFiles).toBe(2);
+    expect(parsed.files).toContain('test.txt');
+    expect(parsed.files).toContain('example.js');
+    expect(parsed.files).not.toContain('readme.md');
 
     // Clean up
     fs.unlinkSync(testFile1);
@@ -139,9 +143,11 @@ describe('Modern File Finding Tool', () => {
       recursive: true
     }, { context: testContext });
 
-    expect(result).toContain('test.txt');
-    expect(result).toContain('nested.js');
-    expect(result).toContain('Found 2 files matching patterns');  // Now correctly excludes subdirectories
+    // Check JSON format - Files include directory prefix now
+    const parsed = JSON.parse(result);
+    expect(parsed.files.some((f: string) => f.endsWith('test.txt'))).toBe(true);
+    expect(parsed.files.some((f: string) => f.endsWith('nested.js'))).toBe(true);
+    expect(parsed.totalFiles).toBe(2);
 
     // Clean up
     fs.unlinkSync(testFile1);
@@ -164,9 +170,11 @@ describe('Modern File Finding Tool', () => {
       recursive: false
     }, { context: testContext });
 
-    expect(result).toContain('test.txt');
-    expect(result).not.toContain('nested.js');
-    expect(result).toContain('Found 1 files matching patterns');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.files).toContain('test.txt');
+    expect(parsed.files).not.toContain('nested.js');
+    expect(parsed.totalFiles).toBe(1);
 
     // Clean up
     fs.unlinkSync(testFile1);
@@ -187,9 +195,11 @@ describe('Modern File Finding Tool', () => {
       maxResults: 5
     }, { context: testContext });
 
-    expect(result).toContain('Found 5 files matching patterns');
-    expect(result).toContain('test1.txt');
-    expect(result).toContain('test5.txt');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalFiles).toBe(5);
+    expect(parsed.files.some((f: string) => f.includes('test1.txt'))).toBe(true);
+    expect(parsed.files.some((f: string) => f.includes('test5.txt'))).toBe(true);
 
     // Clean up
     for (let i = 1; i <= 15; i++) {
@@ -251,7 +261,10 @@ describe('Modern File Finding Tool', () => {
       patterns: ['*.nonexistent']
     }, { context: testContext });
 
-    expect(result).toContain('No files found');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalFiles).toBe(0);
+    expect(parsed.files).toEqual([]);
   });
 
   it('should handle special characters in patterns', async () => {
@@ -265,8 +278,10 @@ describe('Modern File Finding Tool', () => {
       patterns: ['test-special_*.*']
     }, { context: testContext });
 
-    expect(result).toContain('test-special_file.txt');
-    expect(result).toContain('Found 1 files matching patterns');  // Pattern doesn't match test_special-file.js
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.files).toContain('test-special_file.txt');
+    expect(parsed.totalFiles).toBe(1);  // Pattern doesn't match test_special-file.js
 
     // Clean up
     fs.unlinkSync(testFile1);

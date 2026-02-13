@@ -6,7 +6,7 @@ import { z } from "zod";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { isTextFile } from "../utils/file-utils.js";
 import {
-  formatSearchResults,
+  formatGrepResultsAsJson,
   type SearchMatch,
 } from "../utils/format-utils.js";
 import { GitIgnoreService } from "../utils/gitignore-service.js";
@@ -215,7 +215,9 @@ export const grepTool = tool(
         );
       }
 
-      if (!query) {
+      // Coerce query to string to handle cases where model passes numbers
+      const queryString = String(query ?? '');
+      if (!queryString || queryString.trim() === '') {
         throw new Error('The "query" parameter is required');
       }
 
@@ -248,14 +250,19 @@ export const grepTool = tool(
       const gitignore = new GitIgnoreService(workingDir);
       await gitignore.initialize();
 
+      // Normalize patterns to array of strings
+      const normalizedPatterns = Array.isArray(patterns)
+        ? patterns.map(p => String(p)).filter(p => p && p.trim().length > 0)
+        : [String(patterns)].filter(p => p && p.trim().length > 0);
+
       const filesToSearch = await findFilesToSearch(
         resolvedPath,
-        patterns,
+        normalizedPatterns.length > 0 ? normalizedPatterns : ["*"],
         recursive,
         includeHidden
       );
 
-      const searchRegex = compileSearchRegex(query, regex, caseSensitive);
+      const searchRegex = compileSearchRegex(queryString, regex, caseSensitive);
       const excludeGlobs = exclude.map((pattern) => new Glob(pattern));
       const results: Array<{ path: string; matches: SearchMatch[] }> = [];
       let totalMatches = 0;
@@ -304,10 +311,10 @@ export const grepTool = tool(
       logger.timingEnd(timingId, "TOOL", "grep completed");
 
       if (results.length === 0) {
-        return `No matches found for query "${query}" in the searched files`;
+        return JSON.stringify({ totalMatches: 0, totalFiles: 0, results: [], query });
       }
 
-      return formatSearchResults(results);
+      return formatGrepResultsAsJson(results);
     } catch (error) {
       logger.error(
         "TOOL",

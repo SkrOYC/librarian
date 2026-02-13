@@ -39,9 +39,11 @@ describe('Modern File Listing Tool', () => {
       includeHidden: false
     }, { context: testContext });
 
-    expect(result).toContain('test1.txt');
-    expect(result).toContain('test2.txt');
-    expect(result).toContain('Contents of directory');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalEntries).toBe(2);
+    expect(parsed.entries.some((e: any) => e.name === 'test1.txt')).toBe(true);
+    expect(parsed.entries.some((e: any) => e.name === 'test2.txt')).toBe(true);
 
     // Clean up
     fs.unlinkSync(testFile1);
@@ -88,8 +90,10 @@ describe('Modern File Listing Tool', () => {
       includeHidden: false
     }, { context: testContext });
 
-    expect(result).toContain('Contents of directory');
-    expect(result).toContain('Total entries: 0');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalEntries).toBe(0);
+    expect(parsed.entries).toEqual([]);
   });
 
   it('should handle subdirectories', async () => {
@@ -157,8 +161,10 @@ describe('Modern File Listing Tool', () => {
       includeHidden: false
     }, { context: testContext });
 
-    expect(result).toContain('test.txt');
-    expect(result).toContain('Contents of directory');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    const entryNames = parsed.entries.map((e: any) => e.name);
+    expect(entryNames).toContain('test.txt');
 
     // Clean up
     fs.unlinkSync(testFile);
@@ -209,10 +215,11 @@ describe('Modern File Listing Tool', () => {
       maxDepth: 1
     }, { context: testContext });
 
-    expect(result1).toContain('root.txt');
-    expect(result1).toContain('level1/'); // Directory header shown, but contents not recursed
-    expect(result1).not.toContain('level1.txt'); // Not recursed, so not shown
-    expect(result1).not.toContain('level2/');
+    const parsed1 = JSON.parse(result1);
+    const entryNames1 = parsed1.entries.map((e: any) => e.name);
+    expect(entryNames1).toContain('root.txt');
+    expect(entryNames1).toContain('level1');
+    expect(entryNames1).not.toContain('level1.txt'); // Not recursed, so not shown
 
     // Test with maxDepth=2 (list starting directory + 1 level deep)
     const result2 = await listTool.invoke({
@@ -221,11 +228,13 @@ describe('Modern File Listing Tool', () => {
       maxDepth: 2
     }, { context: testContext });
 
-    expect(result2).toContain('root.txt');
-    expect(result2).toContain('level1/');
-    expect(result2).toContain('level1.txt'); // Recursed into level1
-    expect(result2).not.toContain('level2/'); // Not recursed into level2
-    expect(result2).not.toContain('level2.txt');
+    const parsed2 = JSON.parse(result2);
+    const entryNames2 = parsed2.entries.map((e: any) => e.name);
+    expect(entryNames2).toContain('root.txt');
+    expect(entryNames2).toContain('level1');
+    expect(entryNames2).toContain('level1.txt'); // Recursed into level1
+    expect(entryNames2).not.toContain('level2'); // Not recursed into level2
+    expect(entryNames2).not.toContain('level2.txt');
 
     // Clean up
     fs.unlinkSync(path.join(testDir, 'root.txt'));

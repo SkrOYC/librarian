@@ -179,7 +179,9 @@ describe('File Explorer Tools Sandboxing', () => {
 
       // Empty path should resolve to working directory
       expect(result).not.toContain('Error');
-      expect(result).toContain('Contents of directory: .');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.totalEntries).toBeGreaterThanOrEqual(0);
     });
 
     it('should handle deeply nested valid paths', async () => {

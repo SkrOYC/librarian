@@ -432,6 +432,36 @@ The Librarian agent includes four core tools for repository exploration:
 
 All tools operate within the agent's isolated working directory, ensuring secure and context-aware file operations.
 
+### RLM Script Sandbox
+
+For LangChain-powered agents, Librarian uses the **Recursive Language Model (RLM)** paradigm where the agent generates TypeScript exploration scripts executed in a sandboxed environment.
+
+**Sandbox Implementation:**
+
+- Uses Node.js `vm.runInNewContext()` for script isolation
+- Comprehensive safe globals allow standard JavaScript operations (Array, Object, Map, Set, Promise, JSON, Math, RegExp, etc.)
+- 30-second timeout prevents infinite loops and DoS attacks
+
+**Blocked Dangerous Globals:**
+
+The following Node.js/Bun built-ins are not accessible from sandbox scripts:
+- `process`, `require`, `Buffer`, `fetch`, `XMLHttpRequest`
+- `child_process`, `fs`, `http`, `https` modules
+- `eval`, `Function` constructors
+- `__dirname`, `__filename`, `module` objects
+
+**Security Limitations:**
+
+The `vm.runInNewContext()` module is NOT a true security boundary against sophisticated attacks. For production deployments with untrusted user input, consider:
+- Container-based isolation (Docker, Riza)
+- Network segmentation
+- Input validation and rate limiting
+
+This sandbox is suitable for:
+- Internal tooling with trusted users
+- Prototype development
+- LLM-generated code (unlikely to contain sophisticated exploits)
+
 ## Technology Management
 
 ### Adding New Technologies

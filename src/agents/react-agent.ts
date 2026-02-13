@@ -11,7 +11,6 @@ import {
   anthropicPromptCachingMiddleware,
   createAgent,
   type DynamicStructuredTool,
-  todoListMiddleware,
 } from "langchain";
 import type { z } from "zod";
 import { findTool } from "../tools/file-finding.tool.js";
@@ -20,6 +19,19 @@ import { viewTool } from "../tools/file-reading.tool.js";
 import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import type { AgentContext } from "./context-schema.js";
+import { createResearchRepositoryTool } from "./rlm-tool.js";
+import {
+  RlmEngine,
+  type RlmEngineConfig,
+} from "./rlm-engine.js";
+import { LlmConfig } from "./rlm-sandbox.js";
+import {
+  createRlmSystemPrompt,
+  formatMetadataForPrompt,
+} from "./rlm-prompts.js";
+
+// Re-export for consumer convenience
+export type { AgentContext } from "./context-schema.js";
 
 /**
  * Configuration interface for ReactAgent
@@ -57,6 +69,8 @@ export class ReactAgent {
     | ChatAnthropic
     | ChatGoogleGenerativeAI;
   private readonly tools: DynamicStructuredTool[];
+  private readonly rlmTool?: DynamicStructuredTool;
+  private rlmEngine?: RlmEngine;
   private agent?: ReturnType<typeof createAgent>;
   private readonly config: ReactAgentConfig;
   private readonly contextSchema?: z.ZodType | undefined;
@@ -70,22 +84,101 @@ export class ReactAgent {
       config.aiProvider.type !== "gemini-cli"
     ) {
       this.aiModel = this.createAIModel(config.aiProvider);
+      // Create the RLM research_repository tool with direct SDK config.
+      // Uses direct provider SDKs to avoid LangChain callback interference.
+      this.rlmTool = createResearchRepositoryTool({
+        type: config.aiProvider.type,
+        apiKey: config.aiProvider.apiKey || "",
+        model: config.aiProvider.model,
+        baseURL: config.aiProvider.baseURL,
+      });
     }
 
-    // Initialize tools - modernized tool pattern
+    // Keep atomic tools available (used by CLI providers and the RLM sandbox internally)
     this.tools = [listTool, viewTool, grepTool, findTool];
 
     logger.info("AGENT", "Initializing ReactAgent", {
       aiProviderType: config.aiProvider.type,
       model: config.aiProvider.model,
       workingDir: config.workingDir.replace(os.homedir(), "~"),
-      toolCount: this.tools.length,
+      toolCount: this.rlmTool ? 1 : this.tools.length,
+      mode: this.rlmTool ? "rlm" : "cli",
       hasContextSchema: !!this.contextSchema,
     });
   }
 
   /**
-   * Creates a dynamic system prompt based on current configuration and technology context
+   * Generates a pre-computed directory listing for the repository at depth 2.
+   * This is used to provide the agent with structural context about the codebase.
+   * 
+   * @param workingDir - The directory to list
+   * @returns The directory listing as a string, or undefined if it fails
+   */
+  private async getRepoOutline(workingDir: string): Promise<string | undefined> {
+    try {
+      const toolContext = { workingDir, group: "", technology: "" };
+      const result = await listTool.invoke(
+        {
+          directoryPath: ".",
+          recursive: true,
+          maxDepth: 2,
+          includeHidden: false,
+        },
+        { context: toolContext }
+      );
+      
+      // Parse to get a cleaner format for the prompt
+      const parsed = JSON.parse(result);
+      
+      // Format as a simple tree structure for readability
+      const lines: string[] = [];
+      for (const entry of parsed.entries || []) {
+        const indent = entry.depth === 0 ? "" : "  ".repeat(entry.depth);
+        const marker = entry.isDirectory ? "[DIR]" : "[FILE]";
+        const size = entry.size ? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})` : "";
+        lines.push(`${indent}${marker} ${entry.name}${size}`);
+      }
+      
+      return lines.join("\n");
+    } catch (error) {
+      logger.warn("AGENT", "Failed to generate repo outline", {
+        workingDir: workingDir.replace(os.homedir(), "~"),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  }
+
+  /**
+   * Builds the context block describing the repository
+   */
+  private buildContextBlock(): string {
+    const { workingDir, technology } = this.config;
+
+    if (technology) {
+      return `You have been provided the **${technology.name}** repository.
+Repository: ${technology.repository}
+Your Working Directory: ${workingDir}`;
+    } else {
+      return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
+    }
+  }
+
+  /**
+   * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
+   * Delegates to rlm-prompts.ts for the actual prompt template.
+   * 
+   * @param repoOutline - Optional pre-computed directory listing
+   * @returns A context-aware RLM system prompt string
+   */
+  createRlmSystemPrompt(repoOutline?: string): string {
+    const contextBlock = this.buildContextBlock();
+    return createRlmSystemPrompt(contextBlock, repoOutline);
+  }
+
+  /**
+   * Creates a dynamic system prompt based on current configuration and technology context.
+   * Used by CLI providers (claude-code, gemini-cli).
    * @returns A context-aware system prompt string
    */
   createDynamicSystemPrompt(): string {
@@ -571,7 +664,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     }
   }
 
-  initialize(): Promise<void> {
+  async initialize(): Promise<void> {
     if (
       this.config.aiProvider.type === "claude-code" ||
       this.config.aiProvider.type === "gemini-cli"
@@ -580,20 +673,27 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
         "AGENT",
         `${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`
       );
-      return Promise.resolve();
+      return;
     }
 
     if (!this.aiModel) {
       throw new Error("AI model not created for non-CLI provider");
     }
 
-    // Create the agent using LangChain's createAgent function with dynamic system prompt
+    if (!this.rlmTool) {
+      throw new Error("RLM tool not created for non-CLI provider");
+    }
+
+    // Get repo outline for system prompt
+    const repoOutline = await this.getRepoOutline(this.config.workingDir);
+
+    // Create the agent with the single research_repository tool and RLM system prompt.
+    // The 4 atomic tools are used internally by the sandbox, not exposed to the agent.
     this.agent = createAgent({
       model: this.aiModel,
-      tools: this.tools,
-      systemPrompt: this.createDynamicSystemPrompt(),
+      tools: [this.rlmTool],
+      systemPrompt: this.createRlmSystemPrompt(repoOutline),
       middleware: [
-        todoListMiddleware(),
         ...(this.config.aiProvider.type === "anthropic" ||
         this.config.aiProvider.type === "anthropic-compatible"
           ? [anthropicPromptCachingMiddleware()]
@@ -601,12 +701,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       ],
     });
 
-    logger.info("AGENT", "Agent initialized successfully", {
-      toolCount: this.tools.length,
+    logger.info("AGENT", "Agent initialized with RLM mode", {
+      toolCount: 1,
+      toolName: "research_repository",
       hasContextSchema: !!this.contextSchema,
     });
-
-    return Promise.resolve();
   }
 
   /**
@@ -626,6 +725,12 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       queryLength: query.length,
       hasContext: !!context,
     });
+
+    // Use RLM mode for supported providers (not CLI-based ones)
+    if (this.shouldUseRlm()) {
+      logger.info("AGENT", "Using RLM mode");
+      return await this.executeRlmQuery(query);
+    }
 
     if (this.config.aiProvider.type === "claude-code") {
       let fullContent = "";
@@ -683,6 +788,158 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     });
 
     return content;
+  }
+
+  /**
+   * Check if RLM mode should be used based on provider type
+   * RLM mode is used for API-based providers (OpenAI, Anthropic, Google)
+   * CLI-based providers (claude-code, gemini-cli) use their own execution path
+   */
+  private shouldUseRlm(): boolean {
+    const rlmProviders = ['openai', 'anthropic', 'google', 'openai-compatible', 'anthropic-compatible'];
+    return rlmProviders.includes(this.config.aiProvider.type);
+  }
+
+  /**
+   * Initialize the RLM engine on first use
+   */
+  private async initializeRlmEngine(): Promise<void> {
+    const llmConfig: LlmConfig = {
+      type: this.config.aiProvider.type as LlmConfig['type'],
+      apiKey: this.config.aiProvider.apiKey,
+      model: this.config.aiProvider.model,
+      baseURL: this.config.aiProvider.baseURL,
+    };
+
+    const engineConfig: RlmEngineConfig = {
+      llmConfig,
+      repoContentLoader: () => this.loadRepoContentForRlm(),
+      workingDir: this.config.workingDir,
+      maxIterations: 10,
+      stdoutPreviewLength: 1000,
+    };
+
+    this.rlmEngine = new RlmEngine(engineConfig);
+    logger.info("AGENT", "RLM Engine initialized", {
+      workingDir: this.config.workingDir,
+      maxIterations: engineConfig.maxIterations,
+    });
+  }
+
+  /**
+   * Load repository content for RLM context
+   * Used by the RLM engine to lazily load context
+   */
+  private async loadRepoContentForRlm(): Promise<string> {
+    const { workingDir } = this.config;
+
+    // Simple approach: read key files and package.json
+    // For large repos, scripts should handle chunking
+    try {
+      // Get file listing
+      const listing = await listTool.invoke(
+        { directoryPath: workingDir, recursive: false, maxDepth: 2 },
+        { context: { workingDir, group: "", technology: "" } }
+      );
+
+      return `Repository content loaded from: ${workingDir}\n\nFile listing:\n${listing}`;
+    } catch {
+      return `Repository content loaded from: ${workingDir}\n\nNote: Full repository access available via repo API (repo.list, repo.view, repo.find, repo.grep)`;
+    }
+  }
+
+  /**
+   * Execute query using RLM REPL loop
+   * This implements the multi-turn RLM pattern from the paper
+   */
+  private async executeRlmQuery(query: string): Promise<string> {
+    const timingId = logger.timingStart("rlmQuery");
+
+    // Initialize RLM engine on first use
+    if (!this.rlmEngine) {
+      await this.initializeRlmEngine();
+    }
+
+    // Get repo outline for system prompt
+    const repoOutline = await this.getRepoOutline(this.config.workingDir);
+
+    // Get system prompt for RLM mode
+    const systemPrompt = this.createRlmSystemPrompt(repoOutline);
+
+    // RLM loop: iterate until FINAL is called or engine signals completion
+    // Engine is guaranteed to be initialized after the if block above
+    const engine = this.rlmEngine!;
+    while (true) {
+      const metadata = engine.getMetadata();
+
+      logger.info("AGENT", `RLM iteration ${metadata.iteration}`, {
+        stdoutLength: metadata.stdoutLength,
+        bufferCount: metadata.bufferKeys.length,
+      });
+
+      // Build prompt with metadata
+      const metadataText = formatMetadataForPrompt(metadata);
+      const fullPrompt = `
+
+## Current Task
+${query}
+
+## Previous Iteration Metadata
+${metadataText}
+
+## Your Instructions
+Write a TypeScript script to continue exploring and analyzing the repository.
+Use the available globals: context, repo, llm_query, buffers, print, FINAL, FINAL_VAR, chunk, batch.
+
+Remember to:
+1. Use llm_query for semantic analysis
+2. Accumulate findings in buffers
+3. Call FINAL() or FINAL_VAR() when done
+4. Use print() for debugging
+
+Write your script now:
+
+`;
+
+      // Invoke LLM with full prompt
+      if (!this.aiModel) {
+        throw new Error("AI model not initialized for RLM query");
+      }
+
+      const messages = [
+        new HumanMessage(systemPrompt + "\n\n" + fullPrompt),
+      ];
+
+      const result = await this.aiModel.invoke(messages);
+      const content = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
+
+      // Extract code from response (handle markdown code blocks)
+      const codeMatch = content.match(/```typescript?\n?([\s\S]*?)```/);
+      const code = codeMatch && codeMatch[1] ? codeMatch[1].trim() : content.trim();
+
+      logger.debug("AGENT", "Generated RLM script", { codeLength: code.length });
+
+      // Execute script in REPL
+      const execResult = await engine.execute(code);
+
+      logger.info("AGENT", "RLM script executed", {
+        stdoutLength: execResult.stdout.length,
+        isComplete: execResult.isComplete,
+        hasFinalAnswer: !!execResult.finalAnswer,
+      });
+
+      // Check for completion
+      if (execResult.isComplete && execResult.finalAnswer) {
+        logger.timingEnd(timingId, "AGENT", "RLM query completed");
+        return execResult.finalAnswer;
+      }
+
+      // If there was an error, provide feedback for next iteration
+      if (execResult.error) {
+        logger.warn("AGENT", "RLM script error", { error: execResult.error });
+        engine.setErrorFeedback(execResult.error);
+      }
+    }
   }
 
   /**

@@ -3,7 +3,7 @@ import { tool } from "langchain";
 import { z } from "zod";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { isTextFile } from "../utils/file-utils.js";
-import { withLineNumbers } from "../utils/format-utils.js";
+import { withLineNumbers, formatViewAsJson } from "../utils/format-utils.js";
 import { logger } from "../utils/logger.js";
 
 // Check if file is an image file
@@ -167,47 +167,49 @@ export const viewTool = tool(
         );
       }
 
+      // Coerce filePath to string to handle cases where model passes incorrect types
+      const filePathString = String(filePath ?? '');
+      if (!filePathString || filePathString.trim() === '') {
+        throw new Error('The "filePath" parameter is required');
+      }
+
       // Validate the path to prevent directory traversal
-      const resolvedPath = path.resolve(workingDir, filePath);
+      const resolvedPath = path.resolve(workingDir, filePathString);
       const resolvedWorkingDir = path.resolve(workingDir);
       const relativePath = path.relative(resolvedWorkingDir, resolvedPath);
 
       if (relativePath.startsWith("..")) {
         throw new Error(
-          `File path "${filePath}" attempts to escape the working directory sandbox`
+          `File path "${filePathString}" attempts to escape the working directory sandbox`
         );
       }
 
       // Check if it's a media file
       if (isImageFile(resolvedPath) || isAudioFile(resolvedPath)) {
-        return `This is a media file (${isImageFile(resolvedPath) ? "image" : "audio"}). Media files cannot be read as text. Path: ${filePath}`;
+        return JSON.stringify({ error: "media_file", fileType: isImageFile(resolvedPath) ? "image" : "audio", filePath: filePathString, message: "Media files cannot be read as text" });
       }
 
       // Check if it's a binary file
       if (isBinaryFile(resolvedPath)) {
-        return `This is a binary file (${path.extname(filePath)}). Binary files cannot be read as text. Path: ${filePath}`;
+        return JSON.stringify({ error: "binary_file", fileType: path.extname(filePathString), filePath: filePathString, message: "Binary files cannot be read as text" });
       }
 
       // Check if it's a text file
       const isText = await isTextFile(resolvedPath);
       if (!isText) {
-        return `This file is not a text file and cannot be read as text. Path: ${filePath}`;
+        return JSON.stringify({ error: "not_text_file", filePath: filePathString, message: "File is not a text file and cannot be read" });
       }
 
       // Read file content within range using streaming
-      const { lines } = await readLinesInRange(resolvedPath, viewRange);
-
-      if (lines.length === 0) {
-        return "[File is empty]";
-      }
-
-      // Format content with correct line numbers
-      const startLine = viewRange ? Math.max(1, viewRange[0]) : 1;
-      const formattedContent = withLineNumbers(lines, startLine);
+      const { lines, totalLines } = await readLinesInRange(resolvedPath, viewRange);
 
       logger.timingEnd(timingId, "TOOL", "view completed");
 
-      return formattedContent;
+      if (lines.length === 0) {
+        return JSON.stringify({ filePath: filePathString, totalLines: 0, viewRange: viewRange ?? null, lines: [], isEmpty: true });
+      }
+
+      return formatViewAsJson(lines, filePathString, viewRange, totalLines);
     } catch (error) {
       logger.error(
         "TOOL",

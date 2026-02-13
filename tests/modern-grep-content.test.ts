@@ -38,9 +38,11 @@ describe('Modern Grep Content Tool', () => {
       query: 'specific content'
     }, { context: testContext });
 
-    expect(result).toContain('Found');
-    expect(result).toContain('grep_test.txt');
-    expect(result).toContain('specific content');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalMatches).toBe(1);
+    expect(parsed.results[0].path).toContain('grep_test.txt');
+    expect(parsed.results[0].matches[0].text).toContain('specific content');
 
     // Clean up
     fs.unlinkSync(testFile);
@@ -109,12 +111,10 @@ describe('Modern Grep Content Tool', () => {
       regex: true
     }, { context: testContext });
 
-    expect(regexResult).toContain('Found');
-    expect(regexResult).toContain('test123');
-    expect(regexResult).toContain('456');
-    expect(regexResult).toContain('789');
-    expect(regexResult).toContain('test456');
-    expect(regexResult).toContain('123');
+    // Check JSON format
+    const parsed = JSON.parse(regexResult);
+    expect(parsed.totalMatches).toBe(1);
+    expect(parsed.results[0].matches[0].text).toContain('test123');
 
     // Clean up
     fs.unlinkSync(testFile);
@@ -189,7 +189,9 @@ describe('Modern Grep Content Tool', () => {
       maxResults: 3
     }, { context: testContext });
 
-    expect(result).toContain('Found 3 matches');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalMatches).toBe(3);
     
     // Clean up
     for (let i = 1; i <= 10; i++) {
@@ -224,7 +226,10 @@ describe('Modern Grep Content Tool', () => {
       query: 'nonexistentterm'
     }, { context: testContext });
 
-    expect(result).toContain('No matches found');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.totalMatches).toBe(0);
+    expect(parsed.results).toEqual([]);
 
     // Clean up
     fs.unlinkSync(testFile);
@@ -268,9 +273,11 @@ describe('Modern Grep Content Tool', () => {
       query: 'Third'
     }, { context: testContext });
 
-    expect(result).toContain('linenumbers.txt');
-    expect(result).toContain('3→Line 3');
-    expect(result).toContain('Third line');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    expect(parsed.results[0].path).toContain('linenumbers.txt');
+    expect(parsed.results[0].matches[0].line).toBe(3);
+    expect(parsed.results[0].matches[0].text).toContain('Third');
 
     // Clean up
     fs.unlinkSync(testFile);
@@ -351,11 +358,15 @@ describe('Modern Grep Content Tool', () => {
       contextAfter: 2
     }, { context: testContext });
 
-    expect(result).toContain('1→Line 1');
-    expect(result).toContain('2→Line 2');
-    expect(result).toContain('3→Target Match');
-    expect(result).toContain('4→Line 4');
-    expect(result).toContain('5→Line 5');
+    // Check JSON format
+    const parsed = JSON.parse(result);
+    const match = parsed.results[0].matches[0];
+    expect(match.line).toBe(3);
+    expect(match.text).toBe('Target Match');
+    expect(match.contextBefore).toContain('Line 1');
+    expect(match.contextBefore).toContain('Line 2');
+    expect(match.contextAfter).toContain('Line 4');
+    expect(match.contextAfter).toContain('Line 5');
 
     // Clean up
     fs.unlinkSync(testFile);

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { GitIgnoreService } from "../utils/gitignore-service.js";
 import { logger } from "../utils/logger.js";
+import { formatFindAsJson } from "../utils/format-utils.js";
 
 // Create the modernized tool using the tool() function
 export const findTool = tool(
@@ -67,7 +68,12 @@ export const findTool = tool(
       }
 
       // Validate that patterns array is not empty
-      if (!patterns || patterns.length === 0) {
+      // Coerce patterns to array of strings to handle cases where model passes incorrect types
+      const normalizedPatterns = Array.isArray(patterns) 
+        ? patterns.map(p => String(p)).filter(p => p.trim().length > 0)
+        : [String(patterns)];
+      
+      if (!normalizedPatterns || normalizedPatterns.length === 0) {
         throw new Error(
           'The "patterns" parameter must contain at least one glob pattern'
         );
@@ -81,7 +87,7 @@ export const findTool = tool(
       const excludeGlobs = exclude.map((pattern) => new Glob(pattern));
 
       // Process each pattern using Bun's native Glob for accuracy and performance
-      for (const pattern of patterns) {
+      for (const pattern of normalizedPatterns) {
         if (foundFiles.length >= maxResults) {
           break;
         }
@@ -133,16 +139,12 @@ export const findTool = tool(
       logger.timingEnd(timingId, "TOOL", "find completed");
 
       if (foundFiles.length === 0) {
-        return `No files found matching patterns: ${patterns.join(", ")}`;
+        return JSON.stringify({ totalFiles: 0, patterns, files: [] });
       }
 
       foundFiles.sort();
 
-      // Format results relative to working directory
-      let output = `Found ${foundFiles.length} files matching patterns [${patterns.join(", ")}]:\n\n`;
-      output += foundFiles.join("\n");
-
-      return output;
+      return formatFindAsJson(foundFiles, normalizedPatterns);
     } catch (error) {
       logger.error(
         "TOOL",
