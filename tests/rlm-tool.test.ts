@@ -55,12 +55,13 @@ describe("RLM Tool - research_repository", () => {
 
     it("should have a description", () => {
       const tool = createResearchRepositoryTool(mockLlmConfig);
-      expect(tool.description).toContain("exploration strategy");
-      expect(tool.description).toContain("repo.list");
-      expect(tool.description).toContain("repo.view");
+      expect(tool.description).toContain("TypeScript script");
       expect(tool.description).toContain("repo.find");
       expect(tool.description).toContain("repo.grep");
+      expect(tool.description).toContain("repo.list");
+      expect(tool.description).toContain("repo.view");
       expect(tool.description).toContain("llm_query");
+      expect(tool.description).toContain("FINAL");
     });
   });
 

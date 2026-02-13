@@ -77,7 +77,8 @@ export interface RepoApi {
  * binding them to the given workingDir for security sandboxing.
  */
 export function createRepoApi(workingDir: string): RepoApi {
-  const toolContext = { workingDir, group: "", technology: "" };
+  // Note: group and technology are not used by tools - only workingDir is needed for sandboxing
+  const toolContext = { workingDir };
 
   return {
     list: async (args) => {
@@ -394,10 +395,12 @@ export async function executeRlmScript(
     clearImmediate: undefined,
     clearInterval: undefined,
     queueMicrotask: undefined,
-    constructor: undefined,
-    // Block prototype pollution vectors
-    __proto__: undefined,
-    prototype: undefined,
+    // Note: We intentionally do NOT block constructor, __proto__, or prototype globally.
+    // The sandboxed Object/Array/etc. are isolated from the real prototypes.
+    // Blocking these globally breaks legitimate code like:
+    // - arr.constructor === Array
+    // - Object.getPrototypeOf({})
+    // - arr instanceof Array
 
     // Console for debugging (logs go through our logger at debug level)
     console: {
