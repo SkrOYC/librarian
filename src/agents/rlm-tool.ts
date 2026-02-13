@@ -82,72 +82,26 @@ export function createResearchRepositoryTool(
     },
     {
       name: "research_repository",
-      description: `Execute a complete exploration strategy as a TypeScript script against the repository.
+      description: `Execute a TypeScript script to explore the repository. The script has access to a 'repo' object for file operations and 'llm_query' for semantic analysis.
 
-**REQUIRED PATTERN: Filter → Analyze → Aggregate**
-1. FILTER: Use repo.grep/repo.find to narrow search space first
-2. ANALYZE: Use llm_query for semantic analysis of each filtered item (REQUIRED)
-3. AGGREGATE: Combine results with return
+**MUST USE FINAL() TO COMPLETE**: Your script MUST call FINAL(answer) when done to provide the final answer. If you don't call FINAL(), the system will keep running and may timeout.
 
-The script runs in an async context and has access to two globals:
-
-## \`repo\` — File Operations API (Use for FILTER phase)
-All repo methods return JSON - use JSON.parse() to extract data!
-
-### repo.grep({ query, regex?, maxResults?, ... })
-Returns:
-\`\`\`json
+Example:
 {
-  "totalMatches": 3,
-  "totalFiles": 1,
-  "results": [
-    { "path": "src/errors.ts", "matches": [{ "line": 12, "column": 1, "text": "class Error {" }] }
-  ]
+  "script": "const files = await repo.find({patterns: ['*.py']}); FINAL('Found ' + files.length + ' Python files');"
 }
-\`\`\`
 
-### repo.find({ patterns, searchPath?, maxResults?, ... })
-Returns:
-\`\`\`json
-{ "totalFiles": 5, "patterns": ["*.ts"], "files": ["src/index.ts", "src/utils.ts"] }
-\`\`\`
+Inside the script, use:
+- repo.find({patterns: [...]}) - find files by glob patterns
+- repo.grep({query: '...'}) - search file contents  
+- repo.list({directoryPath: '...'}) - list directory contents
+- repo.view({filePath: '...'}) - read file contents
+- llm_query(instruction, data) - analyze content with LLM
+- buffers - object to store intermediate results
+- print(...args) - debug output
+- FINAL(answer) - REQUIRED to complete and return your answer
 
-### repo.list({ directoryPath?, recursive?, maxDepth?, ... })
-Returns:
-\`\`\`json
-{
-  "directory": "src",
-  "totalEntries": 10,
-  "entries": [{ "name": "index.ts", "path": "src/index.ts", "isDirectory": false, "size": 1234, "depth": 0 }]
-}
-\`\`\`
-
-### repo.view({ filePath, viewRange? })
-Returns:
-\`\`\`json
-{
-  "filePath": "src/errors.ts",
-  "totalLines": 100,
-  "viewRange": [1, 20],
-  "lines": [{ "lineNumber": 1, "content": "export class Error {" }]
-}
-\`\`\`
-
-## \`llm_query(instruction, data)\` — **REQUIRED for ANALYZE phase**
-This is your PRIMARY semantic analysis tool. Use it for EVERY file you read.
-- \`instruction\`: What to analyze (e.g., "Does this define an error class?")
-- \`data\`: The code or text to analyze.
-- Returns: A concise string response (NULL if not found).
-- **Why required**: Avoids context rot, provides accurate semantic understanding
-
-## Script Rules
-- Use \`return\` to provide the final result (string or JSON-serializable object).
-- Use \`for...of\` loops and \`async/await\` for iteration.
-- **llm_query is REQUIRED**: Every \`repo.view\` MUST be followed by \`llm_query\` analysis.
-- **Filter FIRST**: Don't read files blindly - use grep/find to narrow scope first.
-- **PARSE JSON**: Always use JSON.parse() on repo.* results to extract data.
-- For large files, split content into chunks and query each separately.
-- Use Promise.all for parallel llm_query calls (much faster!).`,
+Always use JSON.parse() on repo.* results.`,
       schema: z.object({
         script: z
           .string()
