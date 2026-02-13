@@ -46,9 +46,11 @@ describe('React Agent and Tools Integration', () => {
 
       const result = await fileListTool.invoke({ directoryPath: testDir }, { context: testContext });
 
-      expect(result).toContain('test1.txt');
-      expect(result).toContain('test2.txt');
-      expect(result).toContain('Contents of directory');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.totalEntries).toBe(2);
+      expect(parsed.entries.some((e: any) => e.name === 'test1.txt')).toBe(true);
+      expect(parsed.entries.some((e: any) => e.name === 'test2.txt')).toBe(true);
 
       // Clean up
       fs.unlinkSync(testFile1);
@@ -65,7 +67,10 @@ describe('React Agent and Tools Integration', () => {
       fs.mkdirSync(emptyDir, { recursive: true });
 
       const result = await fileListTool.invoke({ directoryPath: emptyDir }, { context: testContext });
-      expect(result).toContain('Contents of directory');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.totalEntries).toBe(0);
+      expect(parsed.entries).toEqual([]);
 
       fs.rmdirSync(emptyDir);
     });
@@ -114,9 +119,13 @@ describe('React Agent and Tools Integration', () => {
       const jsonResult = await fileReadTool.invoke({ filePath: jsonFile }, { context: testContext });
       const txtResult = await fileReadTool.invoke({ filePath: txtFile }, { context: testContext });
 
-      expect(jsResult).toContain('console.log');
-      expect(jsonResult).toContain('{"test": true}');
-      expect(txtResult).toContain('Plain text content');
+      // Check JSON format
+      const jsParsed = JSON.parse(jsResult);
+      expect(jsParsed.lines[0].content).toContain('console.log');
+      const jsonParsed = JSON.parse(jsonResult);
+      expect(jsonParsed.lines[0].content).toContain('test');
+      const txtParsed = JSON.parse(txtResult);
+      expect(txtParsed.lines[0].content).toContain('Plain text');
 
       // Clean up
       fs.unlinkSync(jsFile);
@@ -250,7 +259,9 @@ describe('React Agent and Tools Integration', () => {
         maxResults: 5
       }, { context: testContext });
 
-      expect(result).toContain('Found 5');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.totalMatches).toBe(5);
 
       // Clean up
       for (let i = 1; i <= 15; i++) {
@@ -282,10 +293,13 @@ describe('React Agent and Tools Integration', () => {
         includeHidden: false
       }, { context: testContext });
 
-      expect(result).toContain('test1.ts');
-      expect(result).toContain('test2.ts');
-      expect(result).not.toContain('test3.js');
-      expect(result).toContain('Found 2 files');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      // Files include directory prefix now
+      expect(parsed.files.some((f: string) => f.endsWith('test1.ts'))).toBe(true);
+      expect(parsed.files.some((f: string) => f.endsWith('test2.ts'))).toBe(true);
+      expect(parsed.files.some((f: string) => f.endsWith('test3.js'))).toBe(false);
+      expect(parsed.totalFiles).toBe(2);
 
       // Clean up
       fs.unlinkSync(testFile1);
@@ -401,11 +415,13 @@ describe('React Agent and Tools Integration', () => {
         includeHidden: false
       }, { context: testContext });
 
-      expect(result).toContain('app.ts');
-      expect(result).toContain('app.js');
-      expect(result).toContain('app.jsx');
-      expect(result).not.toContain('package.json');
-      expect(result).toContain('Found 3 files');
+      // Check JSON format - Files include directory prefix now
+      const parsed = JSON.parse(result);
+      expect(parsed.files.some((f: string) => f.endsWith('app.ts'))).toBe(true);
+      expect(parsed.files.some((f: string) => f.endsWith('app.js'))).toBe(true);
+      expect(parsed.files.some((f: string) => f.endsWith('app.jsx'))).toBe(true);
+      expect(parsed.files.some((f: string) => f.endsWith('package.json'))).toBe(false);
+      expect(parsed.totalFiles).toBe(3);
 
       // Clean up
       fs.unlinkSync(tsFile);

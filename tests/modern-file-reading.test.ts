@@ -141,7 +141,9 @@ describe('Modern File Reading Tool', () => {
         filePath
       }, { context: testContext });
 
-      expect(result).toContain(testFile.content);
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.lines.some((l: any) => l.content.includes(testFile.content))).toBe(true);
 
       // Clean up
       fs.unlinkSync(filePath);

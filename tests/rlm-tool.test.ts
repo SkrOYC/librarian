@@ -157,11 +157,10 @@ describe("RLM Tool - research_repository", () => {
         {
           script: `
             const findOutput = await repo.find({ patterns: ["*.ts"] });
-            const files = findOutput.split("\\n").filter(l => l.trim() && !l.startsWith("Found"));
+            // Use JSON.parse to parse the find output
+            const { files } = JSON.parse(findOutput);
             const analyzed = [];
-            for (const line of files) {
-              const file = line.trim();
-              if (!file) continue;
+            for (const file of files) {
               const content = await repo.view({ filePath: file });
               analyzed.push({ file, contentLength: content.length });
             }

@@ -25,7 +25,10 @@ import {
   type RlmEngineConfig,
 } from "./rlm-engine.js";
 import { LlmConfig } from "./rlm-sandbox.js";
-import { formatMetadataForPrompt } from "./rlm-prompts.js";
+import {
+  createRlmSystemPrompt,
+  formatMetadataForPrompt,
+} from "./rlm-prompts.js";
 
 // Re-export for consumer convenience
 export type { AgentContext } from "./context-schema.js";
@@ -105,188 +108,72 @@ export class ReactAgent {
   }
 
   /**
-   * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
-   * This prompt instructs the agent to act as a "Codebase Architect" that generates
-   * exploration scripts instead of making individual tool calls.
-   * @returns A context-aware RLM system prompt string
+   * Generates a pre-computed directory listing for the repository at depth 2.
+   * This is used to provide the agent with structural context about the codebase.
+   * 
+   * @param workingDir - The directory to list
+   * @returns The directory listing as a string, or undefined if it fails
    */
-  createRlmSystemPrompt(): string {
+  private async getRepoOutline(workingDir: string): Promise<string | undefined> {
+    try {
+      const toolContext = { workingDir, group: "", technology: "" };
+      const result = await listTool.invoke(
+        {
+          directoryPath: ".",
+          recursive: true,
+          maxDepth: 2,
+          includeHidden: false,
+        },
+        { context: toolContext }
+      );
+      
+      // Parse to get a cleaner format for the prompt
+      const parsed = JSON.parse(result);
+      
+      // Format as a simple tree structure for readability
+      const lines: string[] = [];
+      for (const entry of parsed.entries || []) {
+        const indent = entry.depth === 0 ? "" : "  ".repeat(entry.depth);
+        const marker = entry.isDirectory ? "[DIR]" : "[FILE]";
+        const size = entry.size ? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})` : "";
+        lines.push(`${indent}${marker} ${entry.name}${size}`);
+      }
+      
+      return lines.join("\n");
+    } catch (error) {
+      logger.warn("AGENT", "Failed to generate repo outline", {
+        workingDir: workingDir.replace(os.homedir(), "~"),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  }
+
+  /**
+   * Builds the context block describing the repository
+   */
+  private buildContextBlock(): string {
     const { workingDir, technology } = this.config;
 
-    let contextBlock: string;
     if (technology) {
-      contextBlock = `You have been provided the **${technology.name}** repository.
+      return `You have been provided the **${technology.name}** repository.
 Repository: ${technology.repository}
 Your Working Directory: ${workingDir}`;
     } else {
-      contextBlock = `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
+      return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
     }
+  }
 
-    const prompt = `You are a **Codebase Architect**. When given a query, do not perform individual file actions. Instead, use the \`research_repository\` tool to execute a complete exploration strategy as a TypeScript script.
-
-# THE GOLDEN RULE: Filter → Analyze → Aggregate
-
-**This is the ONLY correct pattern for understanding codebases:**
-
-1. **FILTER** (with repo.grep/repo.find): Narrow down the search space using model priors (keywords, patterns you expect to find)
-2. **ANALYZE** (with llm_query): For EACH narrowed item, use llm_query for semantic understanding
-3. **AGGREGATE** (with return): Combine results into final answer
-
-**Why this matters**: The RLM paper (2512.24601v2) shows that direct code reading causes "context rot" - quality degrades as more content is loaded. llm_query avoids this by analyzing content in isolated, focused calls.
-
-# Critical Output Rules
-
-**DO NOT include llm_query results in your response.** The llm_query() calls are internal to the script and their outputs are processed automatically. Your response should ONLY contain:
-
-1. **A brief summary** of what the script found (2-3 sentences)
-2. **Organized findings** with specific evidence (file paths, class names, etc.)
-
-**Example of CORRECT output:**
-"I found 3 error classes in the repository. DatabaseError in src/errors/database.ts defines a 'code' property. AuthError in src/errors/auth.ts does not include a code property."
-
-**Example of INCORRECT output:**
-"I analyzed the files and received these results: NULLNULLNULLDatabaseErrorAuthErrorNULLNULL"
-
-# Mandatory Script Requirements - FOLLOW THIS EXACTLY
-
-Your script MUST follow this THREE-PHASE pattern:
-
-## Phase 1: FILTER (Narrow the search space FIRST)
-- Use \`repo.grep({ query: "keyword" })\` to find files containing relevant keywords
-- Use \`repo.find({ patterns: ["**/*.ts"] })\` to locate candidate files
-- **IMPORTANT**: Don't read everything - filter first using your model priors about what patterns likely exist
-
-## Phase 2: ANALYZE (Use llm_query for EACH item)
-- For EACH file/path from Phase 1, read it with \`repo.view\`
-- **MUST** call \`llm_query(instruction, content)\` to analyze the semantic meaning
-- This is REQUIRED - skipping llm_query means you're not doing semantic analysis
-- Use Promise.all for parallel analysis (much faster)
-
-## Phase 3: AGGREGATE (Combine results)
-- Store analysis results in arrays/objects
-- Use \`return\` to output final result
-
-**VIOLATIONS OF THIS PATTERN WILL PRODUCE WRONG ANSWERS:**
-
-- ❌ "Let me grep for all TypeScript files, then manually scan their contents" → WRONG
-- ❌ "I'll read each file and check if it has error handling" → WRONG  
-- ✅ "Grep for 'Error', then llm_query each match to understand the error patterns" → CORRECT
-- ✅ "Find all test files, llm_query each to find which test covers feature X" → CORRECT
-
-# Performance: Parallel Execution
-
-For better performance, use \`Promise.all\` to run multiple \`llm_query()\` calls concurrently:
-
-\`\`\`typescript
-// SLOW (sequential): ~100s for 10 files
-for (const file of files) {
-  const analysis = await llm_query("...", content);  // Waits
-}
-
-// FAST (parallel): ~10s for 10 files
-const analyses = await Promise.all(
-  files.map(async (file) => {
-    const content = await repo.view({ filePath: file });
-    return llm_query("...", content);
-  })
-);
-\`\`\`
-
-**Use parallel execution when analyzing more than 3 files.** Sequential awaits are slow.
-
-# Available Sandbox API
-
-## \`repo\` — File Operations (Phase 1: FILTER)
-**All repo methods return JSON strings** - MUST use JSON.parse() to extract data!
-
-### repo.grep({ query: "STRING", regex?: boolean, maxResults?: number })
-**query MUST be a string**: \`repo.grep({ query: "class.*Error" })\`
-Returns JSON: \`{ totalMatches: number, totalFiles: number, results: [{ path: string, matches: [...] }] }\`
-
-### repo.find({ patterns: ["STRING"], ... })
-**patterns MUST be an array of strings**: \`repo.find({ patterns: ["*.ts", "*.js"] })\`
-Returns JSON: \`{ totalFiles: number, patterns: string[], files: string[] }\`
-
-### repo.list({ directoryPath?: "STRING", recursive?: boolean, maxDepth?: number })
-Returns JSON: \`{ directory: string, totalEntries: number, entries: [...] }\`
-
-### repo.view({ filePath: "STRING", viewRange?: [number, number] })
-**filePath MUST be a string**: \`repo.view({ filePath: "src/errors.ts" })\`
-Returns JSON: \`{ filePath: string, totalLines: number, lines: [{ lineNumber: number, content: string }] }\`
-
-## \`llm_query(instruction, data)\` — **Phase 2: ANALYZE** (REQUIRED)
-This is your PRIMARY semantic analysis tool. Use it for EVERY file you read.
-- **Why required**: Avoids context rot, provides accurate semantic understanding
-- **Classification**: "Does this file define error classes? List them."
-- **Extraction**: "Extract all function names from this code."
-- **Summarization**: "Summarize the purpose of this module."
-- Returns: Concise string response (NULL if not found).
-
-# Correct Script Pattern (The Template)
-
-\`\`\`typescript
-// === PHASE 1: FILTER ===
-// Use model priors to narrow search space first
-// NOTE: query must be a STRING in quotes!
-const grepResult = await repo.grep({ 
-  query: "class.*Error",  // STRING - what to search for
-  regex: true,            // use regex matching
-  maxResults: 50          // limit results
-});
-
-// Parse JSON response - MUST use JSON.parse()!
-const grepData = JSON.parse(grepResult);
-// grepData has: { totalMatches, totalFiles, results: [{ path, matches }] }
-const files = grepData.results.map((r: any) => r.path);
-
-// === PHASE 2: ANALYZE ===
-// Analyze each filtered file with llm_query (in parallel!)
-const analyses = await Promise.all(
-  files.slice(0, 10).map(async (file: string) => {
-    // NOTE: filePath must be a STRING!
-    const viewResult = await repo.view({ filePath: file });
-    const fileData = JSON.parse(viewResult);
-    // fileData has: { filePath, totalLines, lines: [{ lineNumber, content }] }
-    const content = fileData.lines.map((l: any) => l.content).join("\\n");
-    
-    // REQUIRED: Semantic analysis via llm_query
-    const analysis = await llm_query(
-      "Does this define an error class? If yes, list the class name.",
-      content
-    );
-    
-    return analysis !== "NULL" ? { file, analysis } : null;
-  })
-);
-
-// === PHASE 3: AGGREGATE ===
-return analyses.filter((r: any) => r !== null);
-\`\`\`
-
-# Important Rules
-
-- **ALWAYS follow Filter → Analyze → Aggregate**: This is not optional
-- **llm_query is REQUIRED for Phase 2**: Every \`repo.view\` MUST be followed by \`llm_query\` analysis
-- **Filter FIRST**: Don't read files blindly - use grep/find to narrow scope first
-- **Parallelize Phase 2**: Use Promise.all for llm_query calls
-- **Sandbox limitations**: DO NOT use \`process.env\`, \`fetch\`, \`require\`, or any Node.js APIs
-- **Cite evidence**: Reference specific file paths and class/function names in your summary
-
-# Context
-
-${contextBlock}
-
----
-
-**Your response must be a clean summary of findings, NOT raw script output or llm_query results.**
-`;
-
-    logger.debug("AGENT", "RLM system prompt generated", {
-      hasTechnologyContext: !!technology,
-      promptLength: prompt.length,
-    });
-
-    return prompt;
+  /**
+   * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
+   * Delegates to rlm-prompts.ts for the actual prompt template.
+   * 
+   * @param repoOutline - Optional pre-computed directory listing
+   * @returns A context-aware RLM system prompt string
+   */
+  createRlmSystemPrompt(repoOutline?: string): string {
+    const contextBlock = this.buildContextBlock();
+    return createRlmSystemPrompt(contextBlock, repoOutline);
   }
 
   /**
@@ -777,7 +664,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     }
   }
 
-  initialize(): Promise<void> {
+  async initialize(): Promise<void> {
     if (
       this.config.aiProvider.type === "claude-code" ||
       this.config.aiProvider.type === "gemini-cli"
@@ -786,7 +673,7 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
         "AGENT",
         `${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`
       );
-      return Promise.resolve();
+      return;
     }
 
     if (!this.aiModel) {
@@ -797,12 +684,15 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       throw new Error("RLM tool not created for non-CLI provider");
     }
 
+    // Get repo outline for system prompt
+    const repoOutline = await this.getRepoOutline(this.config.workingDir);
+
     // Create the agent with the single research_repository tool and RLM system prompt.
     // The 4 atomic tools are used internally by the sandbox, not exposed to the agent.
     this.agent = createAgent({
       model: this.aiModel,
       tools: [this.rlmTool],
-      systemPrompt: this.createRlmSystemPrompt(),
+      systemPrompt: this.createRlmSystemPrompt(repoOutline),
       middleware: [
         ...(this.config.aiProvider.type === "anthropic" ||
         this.config.aiProvider.type === "anthropic-compatible"
@@ -816,8 +706,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       toolName: "research_repository",
       hasContextSchema: !!this.contextSchema,
     });
-
-    return Promise.resolve();
   }
 
   /**
@@ -972,8 +860,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       await this.initializeRlmEngine();
     }
 
+    // Get repo outline for system prompt
+    const repoOutline = await this.getRepoOutline(this.config.workingDir);
+
     // Get system prompt for RLM mode
-    const systemPrompt = this.createRlmSystemPrompt();
+    const systemPrompt = this.createRlmSystemPrompt(repoOutline);
 
     // RLM loop: iterate until FINAL is called or engine signals completion
     // Engine is guaranteed to be initialized after the if block above

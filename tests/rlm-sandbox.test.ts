@@ -160,7 +160,9 @@ describe("RLM Sandbox", () => {
 
       it("should default to non-recursive", async () => {
         const result = await repo.list({ directoryPath: "." });
-        expect(result).toContain("Contents of directory");
+        // Check JSON format
+        const parsed = JSON.parse(result);
+        expect(parsed.totalEntries).toBeGreaterThan(0);
       });
     });
 
@@ -224,7 +226,9 @@ describe("RLM Sandbox", () => {
           patterns: ["*.ts"],
           maxResults: 2,
         });
-        expect(result).toContain("Found 2 files");
+        // Check JSON format
+        const parsed = JSON.parse(result);
+        expect(parsed.totalFiles).toBe(2);
       });
     });
 
@@ -251,10 +255,12 @@ describe("RLM Sandbox", () => {
 
       it("should return no matches gracefully", async () => {
         const result = await repo.grep({
-          query: "this_string_does_not_exist_anywhere_xyz",
+          query: "this_string_does_not_exist_anyway_xyz",
           patterns: ["*.ts"],
         });
-        expect(result).toContain("No matches");
+        // Check JSON format
+        const parsed = JSON.parse(result);
+        expect(parsed.totalMatches).toBe(0);
       });
     });
   });
@@ -386,14 +392,12 @@ describe("RLM Sandbox", () => {
         const result = await executeRlmScript(
           `
           const findResult = await repo.find({ searchPath: "src/errors", patterns: ["*.ts"] });
-          const lines = findResult.split("\\n").filter(l => l.trim() && !l.startsWith("Found"));
+          // Use JSON.parse to extract files from find result
+          const { files } = JSON.parse(findResult);
           const results = [];
-          for (const line of lines) {
-            const file = line.trim();
-            if (file) {
-              const content = await repo.view({ filePath: file });
-              results.push({ file, length: content.length });
-            }
+          for (const file of files) {
+            const content = await repo.view({ filePath: file });
+            results.push({ file, length: content.length });
           }
           return results;
           `,
@@ -411,11 +415,10 @@ describe("RLM Sandbox", () => {
         const result = await executeRlmScript(
           `
           const findResult = await repo.find({ searchPath: "src/errors", patterns: ["*.ts"] });
-          const files = findResult.split("\\n").filter(l => l.trim() && !l.startsWith("Found"));
+          // Use JSON.parse to extract files from find result
+          const { files } = JSON.parse(findResult);
           const results = [];
-          for (const line of files) {
-            const file = line.trim();
-            if (!file) continue;
+          for (const file of files) {
             const content = await repo.view({ filePath: file });
             const analysis = await llm_query(
               "Is this an error class with a code property?",
@@ -654,10 +657,8 @@ describe("RLM Sandbox", () => {
         const result = await executeRlmScript(
           `
           const findOutput = await repo.find({ searchPath: "src/errors", patterns: ["*.ts"] });
-          const files = findOutput
-            .split("\\n")
-            .filter(line => line.trim() && !line.startsWith("Found"))
-            .map(line => line.trim());
+          const parsed = JSON.parse(findOutput);
+          const files = parsed.files || [];
           return files;
           `,
           repo,
@@ -672,14 +673,14 @@ describe("RLM Sandbox", () => {
       it("should handle JSON.parse and JSON.stringify within script", async () => {
         const result = await executeRlmScript(
           `
-          const content = await repo.view({ filePath: "package.json" });
-          // Extract just the JSON part (skip line numbers from view output)
-          const lines = content.split("\\n").map(l => l.replace(/^\\s*\\d+\\s*/, "")).join("\\n");
+          const viewResult = await repo.view({ filePath: "package.json" });
+          // Parse the JSON from view output
+          const parsed = JSON.parse(viewResult);
           try {
-            const parsed = JSON.parse(lines);
-            return { name: parsed.name, hasVersion: "version" in parsed };
+            const pkg = JSON.parse(parsed.lines[0].content);
+            return { name: pkg.name, hasVersion: "version" in pkg };
           } catch {
-            return { parseError: true, raw: content.substring(0, 100) };
+            return { parseError: true, raw: viewResult.substring(0, 100) };
           }
           `,
           repo,
@@ -798,11 +799,10 @@ describe("RLM Sandbox", () => {
             searchPath: "src/errors",
             patterns: ["*.ts"],
           });
-          const lines = findResult.split("\\n").filter(l => l.trim() && !l.startsWith("Found"));
+          // Use JSON.parse to extract files from find result
+          const { files } = JSON.parse(findResult);
           const results = [];
-          for (const line of lines) {
-            const file = line.trim();
-            if (!file) continue;
+          for (const file of files) {
             const content = await repo.view({ filePath: file });
             const analysis = await llm_query(
               "Does this file define a custom error class? If so, does it have a code property? Return JSON: { isErrorClass: bool, hasCode: bool, className: string } or NULL",

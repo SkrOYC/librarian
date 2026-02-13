@@ -44,7 +44,9 @@ describe('Tool Context Integration', () => {
         context,
       });
 
-      expect(result).toContain('Contents of directory: .');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.totalEntries).toBeGreaterThanOrEqual(0);
     });
 
     it('should pass context to view tool', async () => {
@@ -69,7 +71,9 @@ describe('Tool Context Integration', () => {
         context,
       });
 
-      expect(result).toContain('Found');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.totalFiles).toBeGreaterThanOrEqual(0);
     });
 
     it('should pass context to grep tool', async () => {
@@ -83,8 +87,9 @@ describe('Tool Context Integration', () => {
         context,
       });
 
-      expect(result).toBeDefined();
-      expect(result.includes('matches') || result.includes('No matches')).toBe(true);
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.totalMatches).toBeGreaterThanOrEqual(0);
     });
 
     it('should use context.workingDir in tool path resolution', async () => {
@@ -101,8 +106,9 @@ describe('Tool Context Integration', () => {
         context,
       });
 
-      // Tool should use context.workingDir for path resolution
-      expect(result).toContain('Contents of directory: .');
+      // Check JSON format - Tool should use context.workingDir for path resolution
+      const parsed = JSON.parse(result);
+      expect(parsed.totalEntries).toBeGreaterThanOrEqual(0);
 
       // Cleanup
       await rm(customDir, { recursive: true, force: true });

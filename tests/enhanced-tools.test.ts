@@ -38,13 +38,10 @@ describe('New Tooling Features', () => {
         viewRange: [3, 5]
       }, { context: testContext });
 
-      expect(result).toContain('3→Line 3');
-      expect(result).toContain('4→Line 4');
-      expect(result).toContain('5→Line 5');
-      expect(result).not.toContain('2→Line 2');
-      expect(result).not.toContain('6→Line 6');
-      // Verify NO header
-      expect(result).not.toContain('Content of file');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.lines.map((l: any) => l.lineNumber)).toEqual([3, 4, 5]);
+      expect(parsed.lines.map((l: any) => l.content)).toEqual(['Line 3', 'Line 4', 'Line 5']);
     });
 
     it('should handle -1 as end of file', async () => {
@@ -53,9 +50,10 @@ describe('New Tooling Features', () => {
         viewRange: [8, -1]
       }, { context: testContext });
 
-      expect(result).toContain('8→Line 8');
-      expect(result).toContain('9→Line 9');
-      expect(result).toContain('10→Line 10');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      expect(parsed.lines.map((l: any) => l.lineNumber)).toEqual([8, 9, 10]);
+      expect(parsed.lines.map((l: any) => l.content)).toEqual(['Line 8', 'Line 9', 'Line 10']);
     });
   });
 
@@ -67,12 +65,12 @@ describe('New Tooling Features', () => {
         maxDepth: 2
       }, { context: testContext });
 
-      expect(result).toContain('subdir/');
-      expect(result).toContain('multiline.txt (10 lines)');
-      // Check for indentation in the new tree format
-      expect(result).toContain('  nested.txt (1 lines)');
-      // Check for relative path in header
-      expect(result).toContain('Contents of directory: .');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      const entryNames = parsed.entries.map((e: any) => e.name);
+      expect(entryNames).toContain('subdir');
+      expect(entryNames).toContain('multiline.txt');
+      expect(entryNames).toContain('nested.txt');
     });
 
     it('should not recurse beyond maxDepth', async () => {
@@ -82,8 +80,11 @@ describe('New Tooling Features', () => {
         maxDepth: 1
       }, { context: testContext });
 
-      expect(result).toContain('subdir/');
-      expect(result).not.toContain('  nested.txt');
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      const entryNames = parsed.entries.map((e: any) => e.name);
+      expect(entryNames).toContain('subdir');
+      expect(entryNames).not.toContain('nested.txt');
     });
   });
 
@@ -96,14 +97,13 @@ describe('New Tooling Features', () => {
         contextAfter: 1
       }, { context: testContext });
 
-      expect(result).toContain('4→Line 4');
-      expect(result).toContain('5→Line 5');
-      expect(result).toContain('6→Line 6');
-      expect(result).not.toContain('3→Line 3');
-      expect(result).not.toContain('7→Line 7');
-      // Verify relative path
-      expect(result).toContain('multiline.txt');
-      expect(result).not.toContain(testDir);
+      // Check JSON format
+      const parsed = JSON.parse(result);
+      const match = parsed.results[0].matches[0];
+      expect(match.line).toBe(5);
+      expect(match.contextBefore).toContain('Line 4');
+      expect(match.contextAfter).toContain('Line 6');
+      expect(parsed.results[0].path).toContain('multiline.txt');
     });
   });
 });
