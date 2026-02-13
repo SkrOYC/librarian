@@ -82,55 +82,71 @@ export function createRepoApi(workingDir: string): RepoApi {
 
   return {
     list: async (args) => {
-      return await listTool.invoke(
-        {
-          directoryPath: args.directoryPath ?? ".",
-          includeHidden: args.includeHidden ?? false,
-          recursive: args.recursive ?? false,
-          maxDepth: args.maxDepth ?? 1,
-        },
-        { context: toolContext }
-      );
+      try {
+        return await listTool.invoke(
+          {
+            directoryPath: args.directoryPath ?? ".",
+            includeHidden: args.includeHidden ?? false,
+            recursive: args.recursive ?? false,
+            maxDepth: args.maxDepth ?? 1,
+          },
+          { context: toolContext }
+        );
+      } catch (error) {
+        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+      }
     },
     view: async (args) => {
-      return await viewTool.invoke(
-        {
-          filePath: args.filePath,
-          viewRange: args.viewRange,
-        },
-        { context: toolContext }
-      );
+      try {
+        return await viewTool.invoke(
+          {
+            filePath: args.filePath,
+            viewRange: args.viewRange,
+          },
+          { context: toolContext }
+        );
+      } catch (error) {
+        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+      }
     },
     find: async (args) => {
-      return await findTool.invoke(
-        {
-          searchPath: args.searchPath ?? ".",
-          patterns: args.patterns,
-          exclude: args.exclude ?? [],
-          recursive: args.recursive ?? true,
-          maxResults: args.maxResults ?? 100,
-          includeHidden: args.includeHidden ?? false,
-        },
-        { context: toolContext }
-      );
+      try {
+        return await findTool.invoke(
+          {
+            searchPath: args.searchPath ?? ".",
+            patterns: args.patterns,
+            exclude: args.exclude ?? [],
+            recursive: args.recursive ?? true,
+            maxResults: args.maxResults ?? 100,
+            includeHidden: args.includeHidden ?? false,
+          },
+          { context: toolContext }
+        );
+      } catch (error) {
+        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+      }
     },
     grep: async (args) => {
-      return await grepTool.invoke(
-        {
-          searchPath: args.searchPath ?? ".",
-          query: args.query,
-          patterns: args.patterns ?? ["*"],
-          caseSensitive: args.caseSensitive ?? false,
-          regex: args.regex ?? false,
-          recursive: args.recursive ?? true,
-          maxResults: args.maxResults ?? 100,
-          contextBefore: args.contextBefore ?? 0,
-          contextAfter: args.contextAfter ?? 0,
-          exclude: args.exclude ?? [],
-          includeHidden: args.includeHidden ?? false,
-        },
-        { context: toolContext }
-      );
+      try {
+        return await grepTool.invoke(
+          {
+            searchPath: args.searchPath ?? ".",
+            query: args.query,
+            patterns: args.patterns ?? ["*"],
+            caseSensitive: args.caseSensitive ?? false,
+            regex: args.regex ?? false,
+            recursive: args.recursive ?? true,
+            maxResults: args.maxResults ?? 100,
+            contextBefore: args.contextBefore ?? 0,
+            contextAfter: args.contextAfter ?? 0,
+            exclude: args.exclude ?? [],
+            includeHidden: args.includeHidden ?? false,
+          },
+          { context: toolContext }
+        );
+      } catch (error) {
+        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+      }
     },
   };
 }
