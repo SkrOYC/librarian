@@ -82,26 +82,23 @@ export function createResearchRepositoryTool(
     },
     {
       name: "research_repository",
-      description: `Execute a TypeScript script to explore the repository. The script has access to a 'repo' object for file operations and 'llm_query' for semantic analysis.
+      description: `Execute a JavaScript script to explore the repository. The script runs in a sandbox with access to file operations and semantic analysis.
 
-**MUST USE FINAL() TO COMPLETE**: Your script MUST call FINAL(answer) when done to provide the final answer. If you don't call FINAL(), the system will keep running and may timeout.
-
-Example:
-{
-  "script": "const files = await repo.find({patterns: ['*.py']}); FINAL('Found ' + files.length + ' Python files');"
-}
-
-Inside the script, use:
+The script has access to:
 - repo.find({patterns: [...]}) - find files by glob patterns
 - repo.grep({query: '...'}) - search file contents  
 - repo.list({directoryPath: '...'}) - list directory contents
 - repo.view({filePath: '...'}) - read file contents
 - llm_query(instruction, data) - analyze content with LLM
+- print(...args) - output debug information
 - buffers - object to store intermediate results
-- print(...args) - debug output
-- FINAL(answer) - REQUIRED to complete and return your answer
 
-Always use JSON.parse() on repo.* results.`,
+Example:
+{
+  "script": "const result = await repo.list({directoryPath: '.'}); print(result); return result;"
+}
+
+All repo.* methods return JSON strings - use JSON.parse() to access results.`,
       schema: z.object({
         script: z
           .string()

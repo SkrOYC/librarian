@@ -855,92 +855,44 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
   private async executeRlmQuery(query: string): Promise<string> {
     const timingId = logger.timingStart("rlmQuery");
 
-    // Initialize RLM engine on first use
-    if (!this.rlmEngine) {
-      await this.initializeRlmEngine();
+    if (!this.agent) {
+      throw new Error("Agent not initialized for RLM query");
     }
 
-    // Get repo outline for system prompt
+    // Get repo outline for context
     const repoOutline = await this.getRepoOutline(this.config.workingDir);
-
-    // Get system prompt for RLM mode
     const systemPrompt = this.createRlmSystemPrompt(repoOutline);
 
-    // RLM loop: iterate until FINAL is called or engine signals completion
-    // Engine is guaranteed to be initialized after the if block above
-    const engine = this.rlmEngine!;
-    while (true) {
-      const metadata = engine.getMetadata();
-
-      logger.info("AGENT", `RLM iteration ${metadata.iteration}`, {
-        stdoutLength: metadata.stdoutLength,
-        bufferCount: metadata.bufferKeys.length,
-      });
-
-      // Build prompt with metadata
-      const metadataText = formatMetadataForPrompt(metadata);
-      const fullPrompt = `
-
-## Current Task
-${query}
-
-## Previous Iteration Metadata
-${metadataText}
-
-## Your Instructions
-Write a TypeScript script to continue exploring and analyzing the repository.
-Use the available globals: context, repo, llm_query, buffers, print, FINAL, FINAL_VAR, chunk, batch.
-
-Remember to:
-1. Use llm_query for semantic analysis
-2. Accumulate findings in buffers
-3. Call FINAL() or FINAL_VAR() when done
-4. Use print() for debugging
-
-Write your script now:
-
-`;
-
-      // Invoke LLM with full prompt
-      if (!this.aiModel) {
-        throw new Error("AI model not initialized for RLM query");
+    // Single invocation - the agent handles the tool calling loop
+    const result = await this.agent.invoke(
+      { messages: [new HumanMessage(systemPrompt + "\n\n## Task\n" + query)] },
+      { 
+        recursionLimit: 100,
+        context: { workingDir: this.config.workingDir }
       }
+    );
 
-      const messages = [
-        new HumanMessage(systemPrompt + "\n\n" + fullPrompt),
-      ];
-
-      const result = await this.aiModel.invoke(messages);
-      const content = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
-
-      // Extract code from response (handle markdown code blocks)
-      const codeMatch = content.match(/```typescript?\n?([\s\S]*?)```/);
-      const code = codeMatch && codeMatch[1] ? codeMatch[1].trim() : content.trim();
-
-      logger.debug("AGENT", "Generated RLM script", { codeLength: code.length });
-
-      // Execute script in REPL
-      const execResult = await engine.execute(code);
-
-      logger.info("AGENT", "RLM script executed", {
-        stdoutLength: execResult.stdout.length,
-        isComplete: execResult.isComplete,
-        hasFinalAnswer: !!execResult.finalAnswer,
-      });
-
-      // Check for completion
-      if (execResult.isComplete && execResult.finalAnswer) {
-        logger.timingEnd(timingId, "AGENT", "RLM query completed");
-        return execResult.finalAnswer;
-      }
-
-      // If there was an error, provide feedback for next iteration
-      if (execResult.error) {
-        logger.warn("AGENT", "RLM script error", { error: execResult.error });
-        engine.setErrorFeedback(execResult.error);
-      }
+    // Extract final answer from agent result
+    const lastMessage = result.messages[result.messages.length - 1];
+    let finalAnswer: string;
+    
+    if (typeof lastMessage.content === "string") {
+      finalAnswer = lastMessage.content;
+    } else if (Array.isArray(lastMessage.content)) {
+      // Handle array format (e.g., MiniMax with thinking blocks)
+      // Extract text from content blocks
+      const textParts = lastMessage.content
+        .filter((block: any) => block.text && typeof block.text === 'string')
+        .map((block: any) => block.text);
+      finalAnswer = textParts.join('\n');
+    } else {
+      finalAnswer = JSON.stringify(lastMessage.content);
     }
+    logger.timingEnd(timingId, "AGENT", "RLM query completed");
+    return finalAnswer;
   }
+
+  /**
 
   /**
    * Stream repository query with optional context
@@ -971,6 +923,17 @@ Write your script now:
 
     if (this.config.aiProvider.type === "gemini-cli") {
       yield* this.streamGeminiCli(query, context);
+      return;
+    }
+
+    // Use RLM mode for API-based providers to avoid "Tool repo.grep not found" errors
+    // The LangChain streaming agent only has research_repository tool, but the system prompt
+    // mentions repo.grep/repo.find which don't exist as LangChain tools
+    if (this.shouldUseRlm()) {
+      // For RLM mode, yield progress indicator then execute and return final result
+      yield "Exploring repository...\n";
+      const result = await this.queryRepository(_repoPath, query, context);
+      yield result;
       return;
     }
 

@@ -15,6 +15,8 @@ async function handleStreamingOutput(
     for await (const chunk of stream) {
       Bun.stdout.write(new TextEncoder().encode(chunk));
     }
+    // Ensure final newline for clean terminal output
+    Bun.stdout.write(new TextEncoder().encode("\n"));
   } catch (error) {
     console.error(
       "\nStreaming interrupted or failed:",

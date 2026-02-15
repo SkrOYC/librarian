@@ -307,7 +307,7 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
         responseLength: content.length,
       });
 
-      return `<LLM_QUERY_OUTPUT>\n${content}\n</LLM_QUERY_OUTPUT>`;
+      return content;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error("RLM", "llm_query failed", undefined, { errorMessage, type: config.type });
@@ -536,7 +536,12 @@ export async function executeRlmScript(
 
   try {
     // Wrap the user script in an async IIFE that captures the return value
-    const wrappedScript = `(async () => {\n${script}\n})();`;
+    // Use string concatenation instead of template literal to avoid
+    // escape sequence interpretation issues with LLM-generated code
+    const wrappedScript = '(async () => {\n' + script + '\n})();';
+
+    // Log script for debugging
+    logger.info("RLM", "Executing script", { scriptPreview: script.substring(0, 300) });
 
     // Execute in isolated context with timeout and capture return value
     const returnValue = await vm.runInNewContext(wrappedScript, sandboxGlobals, {
