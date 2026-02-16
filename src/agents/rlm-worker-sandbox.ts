@@ -40,6 +40,8 @@ export interface BunWorkerSandboxConfig {
   initialBuffers?: Record<string, unknown>;
   /** Context content from repository (for RLM engine) */
   context?: string;
+  /** Callback for sub_rlm - creates fresh worker with isolated state */
+  subRlmExecutor?: (query: string) => Promise<{ stdout: string; buffers: Record<string, unknown>; finalAnswer?: string }>;
 }
 
 /**
@@ -57,7 +59,9 @@ type IpcMessage =
   | { type: "repo_error"; requestId: string; error: string }
   | { type: "llm_query_call"; instruction: string; data: string; requestId: string }
   | { type: "llm_query_result"; requestId: string; result: string }
-  | { type: "llm_query_error"; requestId: string; error: string };
+  | { type: "llm_query_error"; requestId: string; error: string }
+  | { type: "sub_rlm_call"; query: string; requestId: string }
+  | { type: "sub_rlm_result"; requestId: string; result: string; error?: string };
 
 /**
  * Inline worker code template
@@ -149,6 +153,9 @@ let currentBuffers = {};
 let currentFinalAnswer = undefined;
 let currentStdout = [];
 
+// Expose buffers as global immediately so sub_rlm can access it
+globalThis.buffers = currentBuffers;
+
 // Override console to capture output
 const console = {
   log: (...args) => {
@@ -239,6 +246,23 @@ self.onmessage = async (event) => {
     return;
   }
 
+  // Handle sub_rlm responses from main thread
+  if (message.type === "sub_rlm_result") {
+    if (message.requestId && pendingCalls.has(message.requestId)) {
+      const { resolve, reject, timeout } = pendingCalls.get(message.requestId);
+      clearTimeout(timeout);
+      pendingCalls.delete(message.requestId);
+      
+      if (message.error) {
+        reject(new Error(message.error));
+      } else {
+        // Result is JSON stringified
+        resolve(message.result ? JSON.parse(message.result) : { stdout: "", buffers: {} });
+      }
+    }
+    return;
+  }
+
   if (message.type === "execute") {
     currentBuffers = message.buffers || {};
     // Update global buffers reference
@@ -296,6 +320,19 @@ self.onmessage = async (event) => {
       return await callMain({ type: "llm_query_call", instruction, data });
     };
 
+    // Create sub_rlm function that spawns fresh worker via IPC
+    // This allows nested RLM calls with isolated state
+    // Returns the finalAnswer if set, otherwise returns the result object
+    const sub_rlm = async (scriptCode) => {
+      const result = await callMain({ type: "sub_rlm_call", query: scriptCode });
+      // If the result has a finalAnswer, return that (like calling FINAL in sub_rlm)
+      // Otherwise return the full result object
+      if (result && result.finalAnswer) {
+        return result.finalAnswer;
+      }
+      return result;
+    };
+
     // Execute the script using async IIFE with eval
     try {
       // Wrap script in async IIFE and execute with eval
@@ -340,6 +377,7 @@ export class BunWorkerSandbox {
   private buffers: Record<string, unknown>;
   private context?: string;
   private worker: Worker | null = null;
+  private subRlmExecutor?: (query: string) => Promise<{ stdout: string; buffers: Record<string, unknown>; finalAnswer?: string }>;
 
   constructor(config: BunWorkerSandboxConfig) {
     this.repo = config.repo;
@@ -347,6 +385,7 @@ export class BunWorkerSandbox {
     this.timeout = config.timeout ?? 30000;
     this.buffers = { ...(config.initialBuffers ?? {}) };
     this.context = config.context;
+    this.subRlmExecutor = config.subRlmExecutor;
   }
 
   /**
@@ -519,6 +558,11 @@ export class BunWorkerSandbox {
         this.handleLlmQueryCall(msg);
         break;
       }
+
+      case "sub_rlm_call": {
+        this.handleSubRlmCall(msg);
+        break;
+      }
       // Note: repo_result, repo_error, llm_query_result, llm_query_error
       // are sent FROM main TO worker, not received by main.
       // These cases are handled in the worker's onmessage, not here.
@@ -561,6 +605,40 @@ export class BunWorkerSandbox {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.worker.postMessage({ type: "llm_query_error", requestId: msg.requestId, error: errorMessage });
+    }
+  }
+
+  /**
+   * Handle sub_rlm calls from worker via IPC
+   * Spawns a fresh worker with isolated state
+   */
+  private async handleSubRlmCall(msg: Extract<IpcMessage, { type: "sub_rlm_call" }>): Promise<void> {
+    const worker = this.worker;
+    if (!worker) return;
+
+    const { query, requestId } = msg;
+
+    try {
+      if (!this.subRlmExecutor) {
+        throw new Error("sub_rlm is not configured - no executor provided");
+      }
+
+      // Call the executor to spawn fresh worker and execute
+      const result = await this.subRlmExecutor(query);
+      
+      // Send result back to worker (check worker still exists)
+      if (this.worker) {
+        this.worker.postMessage({ 
+          type: "sub_rlm_result", 
+          requestId, 
+          result: JSON.stringify(result) 
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (this.worker) {
+        this.worker.postMessage({ type: "sub_rlm_result", requestId, error: errorMessage });
+      }
     }
   }
 
