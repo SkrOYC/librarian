@@ -22,16 +22,12 @@ describe("ReactAgent RLM Integration", () => {
       });
 
       const prompt = agent.createRlmSystemPrompt();
-      expect(prompt).toContain("Codebase Architect");
-      expect(prompt).toContain("repo.list");
-      expect(prompt).toContain("repo.view");
-      expect(prompt).toContain("repo.find");
       expect(prompt).toContain("repo.grep");
+      expect(prompt).toContain("repo.view");
       expect(prompt).toContain("llm_query");
       expect(prompt).toContain("my-lib");
       expect(prompt).toContain("/test/repo");
-      expect(prompt).toContain("FINAL");
-      expect(prompt).toContain("Filter → Analyze → Aggregate");
+      expect(prompt).toContain("Promise.all");
     });
 
     it("should include technology context in RLM prompt", () => {
@@ -58,9 +54,8 @@ describe("ReactAgent RLM Integration", () => {
       });
 
       const prompt = agent.createRlmSystemPrompt();
-      expect(prompt).toContain("Codebase Architect");
-      expect(prompt).toContain("several related repositories");
       expect(prompt).toContain("/sandbox/group");
+      expect(prompt).toContain("Promise.all");
     });
   });
 

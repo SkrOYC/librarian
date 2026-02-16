@@ -6,19 +6,19 @@
  * - `repo` object: Wraps the 4 atomic tools (list, view, find, grep)
  * - `llm_query`: Stateless LLM bridge for semantic analysis
  *
- * NOTE: Uses direct provider SDKs to avoid LangChain callback interference.
+ * NOTE: Uses Bun Worker-based sandbox for true process isolation.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from 'openai';
-import vm from "node:vm";
 import { findTool } from "../tools/file-finding.tool.js";
 import { listTool } from "../tools/file-listing.tool.js";
 import { viewTool } from "../tools/file-reading.tool.js";
 import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import { SUB_AGENT_SYSTEM_PROMPT } from "./rlm-prompts.js";
+import { BunWorkerSandbox, type WorkerExecutionResult } from "./rlm-worker-sandbox.js";
 
 /**
  * Provider type for LLM configuration
@@ -348,20 +348,17 @@ export interface RlmExecutionResult {
 }
 
 /**
- * Executes an RLM script string inside a sandboxed async context.
- * Uses Node.js vm.runInNewContext() with a carefully curated set of safe globals.
+ * Executes an RLM script string inside a Bun Worker sandbox.
+ * Uses true process isolation with Bun Workers (JavaScriptCore).
  * 
  * This unified function supports both:
  * - One-shot tool calls (research_repository tool)
  * - Multi-turn engine iterations (RlmEngine with state persistence)
  *
  * Security measures:
- * - Blocks access to process, require, Buffer, fetch, and other Node.js APIs
+ * - Worker runs in isolated JavaScriptCore context
  * - 30-second timeout prevents infinite loops and DoS attacks
- * - Sandboxed globals prevent access to application state
- *
- * Note: The vm module is NOT a true security boundary against sophisticated attacks.
- * For production deployments with untrusted user input, consider container-based isolation.
+ * - No access to parent process globals
  */
 export async function executeRlmScript(
   script: string,
@@ -375,222 +372,45 @@ export async function executeRlmScript(
   logger.debug("RLM", "Script content", { script: truncatedScript });
   const timingId = logger.timingStart("rlmScript");
 
-  // Initialize execution state
-  const buffers: Record<string, unknown> = { ...(executionContext?.buffers ?? {}) };
-  const stdout: string[] = [];
-  let finalAnswer: string | undefined;
-
-  // Safe globals to expose to the sandbox - comprehensive but minimal
-  // Dangerous globals (process, require, Buffer, fetch, eval, Function) are intentionally omitted
-  // or explicitly set to undefined to prevent access
-  const sandboxGlobals: Record<string, unknown> = {
-    // Explicitly block dangerous globals by setting them to undefined
-    // This overrides any inherited globals from the V8 context
-    process: undefined,
-    require: undefined,
-    Buffer: undefined,
-    fetch: undefined,
-    XMLHttpRequest: undefined,
-    child_process: undefined,
-    fs: undefined,
-    http: undefined,
-    https: undefined,
-    net: undefined,
-    tls: undefined,
-    dns: undefined,
-    dgram: undefined,
-    module: undefined,
-    __dirname: undefined,
-    __filename: undefined,
-    eval: undefined,
-    Function: undefined,
-    Atomics: undefined,
-    SharedArrayBuffer: undefined,
-    setImmediate: undefined,
-    setInterval: undefined,
-    clearImmediate: undefined,
-    clearInterval: undefined,
-    queueMicrotask: undefined,
-    // Note: We intentionally do NOT block constructor, __proto__, or prototype globally.
-    // The sandboxed Object/Array/etc. are isolated from the real prototypes.
-    // Blocking these globally breaks legitimate code like:
-    // - arr.constructor === Array
-    // - Object.getPrototypeOf({})
-    // - arr instanceof Array
-
-    // Console for debugging (logs go through our logger at debug level)
-    console: {
-      log: (...args: unknown[]) => {
-        const output = args.join(" ");
-        logger.debug("RLM", "Script log", { output });
-        stdout.push(output);
-      },
-      error: (...args: unknown[]) => {
-        const output = args.join(" ");
-        logger.debug("RLM", "Script error", { output });
-        stdout.push(`ERROR: ${output}`);
-      },
-      warn: (...args: unknown[]) => {
-        const output = args.join(" ");
-        logger.debug("RLM", "Script warning", { output });
-        stdout.push(`WARN: ${output}`);
-      },
-      info: (...args: unknown[]) => {
-        const output = args.join(" ");
-        logger.debug("RLM", "Script info", { output });
-        stdout.push(`INFO: ${output}`);
-      },
-    },
-
-    // Core data structures
-    JSON,
-    Math,
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-
-    // Primitive wrappers and utilities
-    Array,
-    Object,
-    String,
-    Number,
-    Boolean,
-    RegExp,
-    Error,
-    TypeError,
-    RangeError,
-    SyntaxError,
-    ReferenceError,
-    Date,
-    Promise,
-    Symbol,
-    BigInt,
-
-    // Functions
-    parseInt,
-    parseFloat,
-    isNaN,
-    isFinite,
-    encodeURI,
-    decodeURI,
-    encodeURIComponent,
-    decodeURIComponent,
-    atob,
-    btoa,
-
-    // Sandboxed APIs - these are the only ways the script interacts with the outside world
-    repo,
-    llm_query: llmQuery,
-
-    // RLM-specific globals (when context provided)
-    ...(executionContext?.context !== undefined && { 
-      context: executionContext.context 
-    }),
-    
-    // Always provide buffers
-    buffers,
-
-    // print(...args): Adds to stdout (captured for RLM loop)
-    print: (...args: unknown[]) => {
-      const output = args.map(a => String(a)).join(" ");
-      stdout.push(output);
-      executionContext?.onPrint?.(output);
-    },
-
-    // FINAL(answer): Sets final answer (for RLM completion)
-    FINAL: (answer: unknown) => {
-      finalAnswer = String(answer);
-      executionContext?.onFinal?.(finalAnswer);
-    },
-
-    // FINAL_VAR(name): Returns buffer value as final answer
-    FINAL_VAR: (name: string) => {
-      if (buffers.hasOwnProperty(name)) {
-        finalAnswer = String(buffers[name]);
-        executionContext?.onFinalVar?.(name);
-      } else {
-        throw new Error(`Buffer '${name}' not found`);
-      }
-    },
-
-    // chunk(data, size): Split string into chunks
-    chunk: (data: unknown, size: number): string[] => {
-      const str = String(data);
-      const chunks: string[] = [];
-      for (let i = 0; i < str.length; i += size) {
-        chunks.push(str.slice(i, i + size));
-      }
-      return chunks;
-    },
-
-    // batch(items, size): Batch array for parallel processing
-    batch: <T>(items: T[], size: number): T[][] => {
-      const batches: T[][] = [];
-      for (let i = 0; i < items.length; i += size) {
-        batches.push(items.slice(i, i + size));
-      }
-      return batches;
-    },
-  };
-
   try {
-    // Wrap the user script in an async IIFE that captures the return value
-    // Use string concatenation instead of template literal to avoid
-    // escape sequence interpretation issues with LLM-generated code
-    const wrappedScript = '(async () => {\n' + script + '\n})();';
-
-    // Log script for debugging
-    logger.info("RLM", "Executing script", { scriptPreview: script.substring(0, 300) });
-
-    // Execute in isolated context with timeout and capture return value
-    const returnValue = await vm.runInNewContext(wrappedScript, sandboxGlobals, {
+    // Create sandbox with worker
+    const sandbox = new BunWorkerSandbox({
+      repo,
+      llmQuery,
       timeout: 30000, // 30 seconds max execution time
+      initialBuffers: { ...(executionContext?.buffers ?? {}) },
+      context: executionContext?.context,
     });
+
+    // Execute the script
+    const result: WorkerExecutionResult = await sandbox.execute(script);
 
     logger.timingEnd(timingId, "RLM", "Script execution completed");
 
     // Store return value in buffers for legacy compatibility
-    if (returnValue !== undefined && returnValue !== null) {
-      buffers.__returnValue = returnValue;
+    if (result.returnValue !== undefined && result.returnValue !== null) {
+      result.buffers.__returnValue = result.returnValue;
+    }
+
+    // Call callbacks if provided
+    if (executionContext?.onPrint && result.stdout) {
+      for (const line of result.stdout.split('\n')) {
+        if (line) executionContext.onPrint(line);
+      }
+    }
+    if (result.finalAnswer && executionContext?.onFinal) {
+      executionContext.onFinal(result.finalAnswer);
     }
 
     return {
-      stdout: stdout.join("\n"),
-      buffers,
-      finalAnswer,
+      stdout: result.stdout,
+      buffers: result.buffers,
+      finalAnswer: result.finalAnswer,
+      error: result.error,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    
-    // Extract line number if available (vm errors often include line info)
-    let lineInfo = "";
-    if (error instanceof Error && error.stack) {
-      const lineMatch = error.stack.match(/rlm-script\.ts:(\d+):(\d+)/);
-      if (lineMatch) {
-        lineInfo = ` (line ${lineMatch[1]}, col ${lineMatch[2]})`;
-      }
-    }
-    
-    const fullErrorMessage = `Script Error${lineInfo}: ${errorMessage}`;
-
-    // Capture error in stdout for agent to see
-    stdout.push(fullErrorMessage);
-
-    // Check if this is a timeout error
-    if (errorMessage.includes("timed out") || errorMessage.includes("Timeout")) {
-      logger.error(
-        "RLM",
-        "Script timed out after 30 seconds",
-        error instanceof Error ? error : new Error(errorMessage)
-      );
-      logger.timingEnd(timingId, "RLM", "Script timed out");
-      return {
-        stdout: stdout.join("\n"),
-        buffers,
-        error: "Script timed out after 30 seconds",
-      };
-    }
+    const fullErrorMessage = `Script Error: ${errorMessage}`;
 
     logger.error(
       "RLM",
@@ -598,9 +418,10 @@ export async function executeRlmScript(
       error instanceof Error ? error : new Error(errorMessage)
     );
     logger.timingEnd(timingId, "RLM", "Script execution failed");
+
     return {
-      stdout: stdout.join("\n"),
-      buffers,
+      stdout: "",
+      buffers: { ...(executionContext?.buffers ?? {}) },
       error: fullErrorMessage,
     };
   }
