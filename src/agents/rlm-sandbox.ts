@@ -337,6 +337,8 @@ export interface RlmExecutionContext {
  * Result of RLM script execution
  */
 export interface RlmExecutionResult {
+  /** Return value from the script */
+  returnValue?: unknown;
   /** Captured stdout from print() calls */
   stdout: string;
   /** Final buffers state */
