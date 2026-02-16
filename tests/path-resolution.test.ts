@@ -1,25 +1,25 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { Librarian, type LibrarianConfig } from '../src/index';
-import path from 'node:path';
-import fs from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
+import { Librarian, type LibrarianConfig } from "../src/index";
 
-describe('Path Resolution and Sandboxing', () => {
-  const testReposPath = './test-repos';
+describe("Path Resolution and Sandboxing", () => {
+  const testReposPath = "./test-repos";
   const mockConfig: LibrarianConfig = {
     technologies: {
       default: {
-        react: { repo: 'https://github.com/facebook/react', branch: 'main' }
+        react: { repo: "https://github.com/facebook/react", branch: "main" },
       },
       langchain: {
-        python: { repo: 'https://github.com/langchain-ai/langchain' }
-      }
+        python: { repo: "https://github.com/langchain-ai/langchain" },
+      },
     },
     aiProvider: {
-      type: 'openai',
-      apiKey: 'test-key'
+      type: "openai",
+      apiKey: "test-key",
     },
-    workingDir: './old-work',
-    repos_path: testReposPath
+    workingDir: "./old-work",
+    repos_path: testReposPath,
   };
 
   let librarian: Librarian;
@@ -37,36 +37,39 @@ describe('Path Resolution and Sandboxing', () => {
     }
   });
 
-  it('should resolve tech path to {repos_path}/{group}/{tech}', () => {
+  it("should resolve tech path to {repos_path}/{group}/{tech}", () => {
     // We need to expose or test the internal path resolution
     // For now let's assume we'll have a getTechPath and getGroupPath
-    const techDetails = librarian.resolveTechnology('react');
+    const techDetails = librarian.resolveTechnology("react");
     expect(techDetails).toBeDefined();
 
     // @ts-expect-error - testing internal/private-ish logic if needed or public API
-    const repoPath = librarian.getSecureRepoPath(techDetails?.name, techDetails?.group);
-    const expectedPath = path.join(testReposPath, 'default', 'react');
-    expect(path.resolve(repoPath ?? '')).toBe(path.resolve(expectedPath));
+    const repoPath = librarian.getSecureRepoPath(
+      techDetails?.name,
+      techDetails?.group
+    );
+    const expectedPath = path.join(testReposPath, "default", "react");
+    expect(path.resolve(repoPath ?? "")).toBe(path.resolve(expectedPath));
   });
 
-  it('should resolve group path to {repos_path}/{group}', () => {
+  it("should resolve group path to {repos_path}/{group}", () => {
     // @ts-expect-error
-    const groupPath = librarian.getSecureGroupPath('langchain');
-    const expectedPath = path.join(testReposPath, 'langchain');
+    const groupPath = librarian.getSecureGroupPath("langchain");
+    const expectedPath = path.join(testReposPath, "langchain");
     expect(path.resolve(groupPath)).toBe(path.resolve(expectedPath));
   });
 
-  it('should prevent directory traversal in tech name', () => {
+  it("should prevent directory traversal in tech name", () => {
     expect(() => {
       // @ts-expect-error
-      librarian.getSecureRepoPath('../evil', 'default');
+      librarian.getSecureRepoPath("../evil", "default");
     }).toThrow();
   });
 
-  it('should prevent directory traversal in group name', () => {
+  it("should prevent directory traversal in group name", () => {
     expect(() => {
       // @ts-expect-error
-      librarian.getSecureGroupPath('../evil');
+      librarian.getSecureGroupPath("../evil");
     }).toThrow();
   });
 });

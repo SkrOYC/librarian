@@ -6,7 +6,6 @@ import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { getFileLineCount } from "../utils/file-utils.js";
 import {
   type FileSystemEntry,
-  formatDirectoryTree,
   formatListAsJson,
 } from "../utils/format-utils.js";
 import { GitIgnoreService } from "../utils/gitignore-service.js";
@@ -200,14 +199,18 @@ export const listTool = tool(
       );
 
       logger.timingEnd(timingId, "TOOL", "list completed");
-      
+
       // Use relative path for display
       const displayPath = relativePath === "" ? "." : relativePath;
-      
+
       if (entries.length === 0) {
-        return JSON.stringify({ directory: displayPath, totalEntries: 0, entries: [] });
+        return JSON.stringify({
+          directory: displayPath,
+          totalEntries: 0,
+          entries: [],
+        });
       }
-      
+
       return formatListAsJson(entries, resolvedPath);
     } catch (error) {
       logger.error(

@@ -9,21 +9,29 @@
  * NOTE: Uses Bun Worker-based sandbox for true process isolation.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
-import OpenAI from 'openai';
+import OpenAI from "openai";
 import { findTool } from "../tools/file-finding.tool.js";
 import { listTool } from "../tools/file-listing.tool.js";
 import { viewTool } from "../tools/file-reading.tool.js";
 import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import { SUB_AGENT_SYSTEM_PROMPT } from "./rlm-prompts.js";
-import { BunWorkerSandbox, type WorkerExecutionResult } from "./rlm-worker-sandbox.js";
+import {
+  BunWorkerSandbox,
+  type WorkerExecutionResult,
+} from "./rlm-worker-sandbox.js";
 
 /**
  * Provider type for LLM configuration
  */
-export type LlmProviderType = 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'anthropic-compatible';
+export type LlmProviderType =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "openai-compatible"
+  | "anthropic-compatible";
 
 /**
  * Configuration for creating llm_query function
@@ -93,7 +101,9 @@ export function createRepoApi(workingDir: string): RepoApi {
           { context: toolContext }
         );
       } catch (error) {
-        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+        return JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     },
     view: async (args) => {
@@ -106,7 +116,9 @@ export function createRepoApi(workingDir: string): RepoApi {
           { context: toolContext }
         );
       } catch (error) {
-        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+        return JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     },
     find: async (args) => {
@@ -123,7 +135,9 @@ export function createRepoApi(workingDir: string): RepoApi {
           { context: toolContext }
         );
       } catch (error) {
-        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+        return JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     },
     grep: async (args) => {
@@ -145,7 +159,9 @@ export function createRepoApi(workingDir: string): RepoApi {
           { context: toolContext }
         );
       } catch (error) {
-        return JSON.stringify({ error: error instanceof Error ? error.message : String(error) });
+        return JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     },
   };
@@ -158,7 +174,9 @@ export function createRepoApi(workingDir: string): RepoApi {
  * @param config - LLM provider configuration
  * @returns A function that takes (instruction, data) and returns the model's analysis
  */
-export function createLlmQuery(config: LlmConfig): (instruction: string, data: string) => Promise<string> {
+export function createLlmQuery(
+  config: LlmConfig
+): (instruction: string, data: string) => Promise<string> {
   return async (instruction: string, data: string): Promise<string> => {
     logger.debug("RLM", "llm_query invoked", {
       type: config.type,
@@ -168,28 +186,28 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
     });
 
     const input = `**Instruction:** ${instruction}\n\n**Data:**\n${data}`;
-    let content = '';
+    let content = "";
 
     try {
       switch (config.type) {
-        case 'anthropic': {
+        case "anthropic": {
           if (!config.model) {
-            throw new Error('Model name is required for Anthropic provider');
+            throw new Error("Model name is required for Anthropic provider");
           }
           const client = new Anthropic({ apiKey: config.apiKey });
           const message = await client.messages.create({
             max_tokens: 1024,
             system: SUB_AGENT_SYSTEM_PROMPT,
-            messages: [{ role: 'user', content: input }],
+            messages: [{ role: "user", content: input }],
             model: config.model,
           });
-          
+
           // Handle both text and thinking content types
-          let textContent = '';
+          let textContent = "";
           for (const block of message.content) {
-            if (block.type === 'text') {
+            if (block.type === "text") {
               textContent += block.text;
-            } else if (block.type === 'thinking') {
+            } else if (block.type === "thinking") {
               logger.debug("RLM", "Model used thinking block", {
                 thinking: block.thinking?.substring(0, 100),
               });
@@ -199,87 +217,91 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
           break;
         }
 
-        case 'anthropic-compatible': {
+        case "anthropic-compatible": {
           if (!config.model) {
-            throw new Error('Model name is required for Anthropic-compatible provider');
+            throw new Error(
+              "Model name is required for Anthropic-compatible provider"
+            );
           }
-          const client = new Anthropic({ 
+          const client = new Anthropic({
             apiKey: config.apiKey,
             baseURL: config.baseURL,
           });
           const message = await client.messages.create({
             max_tokens: 1024,
             system: SUB_AGENT_SYSTEM_PROMPT,
-            messages: [{ role: 'user', content: input }],
+            messages: [{ role: "user", content: input }],
             model: config.model,
           });
-          
+
           // Handle both text and thinking content types
           // Some models (like MiniMax) return thinking blocks followed by text blocks
           // We need to find ALL text blocks and concatenate them
-          let textContent = '';
+          let textContent = "";
           for (const block of message.content) {
-            if (block.type === 'text') {
+            if (block.type === "text") {
               textContent += block.text;
-            } else if (block.type === 'thinking') {
+            } else if (block.type === "thinking") {
               // Log thinking for debugging but don't include in output
               logger.debug("RLM", "Model used thinking block", {
                 thinking: block.thinking?.substring(0, 100),
               });
             }
           }
-          
+
           // Log full response for debugging
           logger.debug("RLM", "Anthropic response", {
             stopReason: message.stop_reason,
             usage: message.usage,
             contentBlocks: message.content.length,
-            contentTypes: message.content.map(b => b.type).join(', '),
+            contentTypes: message.content.map((b) => b.type).join(", "),
             finalTextLength: textContent.length,
           });
           content = textContent;
           break;
         }
 
-        case 'openai': {
+        case "openai": {
           if (!config.model) {
-            throw new Error('Model name is required for OpenAI provider');
+            throw new Error("Model name is required for OpenAI provider");
           }
           const client = new OpenAI({ apiKey: config.apiKey });
           const response = await client.responses.create({
             model: config.model,
             instructions: SUB_AGENT_SYSTEM_PROMPT,
-            input: input,
+            input,
           });
           // Log full response for debugging
           logger.debug("RLM", "OpenAI response", {
             outputIndex: response.output?.length,
             outputText: response.output_text?.substring(0, 200),
           });
-          content = response.output_text || '';
+          content = response.output_text || "";
           break;
         }
 
-        case 'openai-compatible': {
+        case "openai-compatible": {
           if (!config.model) {
-            throw new Error('Model name is required for OpenAI-compatible provider');
+            throw new Error(
+              "Model name is required for OpenAI-compatible provider"
+            );
           }
-          const client = new OpenAI({ 
+          const client = new OpenAI({
             apiKey: config.apiKey,
-            baseURL: config.baseURL || 'https://api.openai.com/v1',
+            baseURL: config.baseURL || "https://api.openai.com/v1",
           });
           const response = await client.responses.create({
             model: config.model,
             instructions: SUB_AGENT_SYSTEM_PROMPT,
-            input: input,
+            input,
           });
-          content = response.output_text || '';
+          content = response.output_text || "";
           break;
         }
 
-        case 'google': {
+        case "google": {
           if (!config.model) {
-            throw new Error('Model name is required for Google provider');
+            throw new Error("Model name is required for Google provider");
           }
           const ai = new GoogleGenAI({ apiKey: config.apiKey });
           const response = await ai.models.generateContent({
@@ -294,7 +316,7 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
             finishReason: response.finishReason,
             text: response.text?.substring(0, 200),
           });
-          content = response.text || '';
+          content = response.text || "";
           break;
         }
 
@@ -309,8 +331,12 @@ export function createLlmQuery(config: LlmConfig): (instruction: string, data: s
 
       return content;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error("RLM", "llm_query failed", undefined, { errorMessage, type: config.type });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("RLM", "llm_query failed", undefined, {
+        errorMessage,
+        type: config.type,
+      });
       throw error;
     }
   };
@@ -352,7 +378,7 @@ export interface RlmExecutionResult {
 /**
  * Executes an RLM script string inside a Bun Worker sandbox.
  * Uses true process isolation with Bun Workers (JavaScriptCore).
- * 
+ *
  * This unified function supports both:
  * - One-shot tool calls (research_repository tool)
  * - Multi-turn engine iterations (RlmEngine with state persistence)
@@ -370,7 +396,8 @@ export async function executeRlmScript(
 ): Promise<RlmExecutionResult> {
   logger.info("RLM", "Executing script", { scriptLength: script.length });
   // Limit logged script content to prevent log bloat (max 500 chars)
-  const truncatedScript = script.length > 500 ? script.slice(0, 500) + '... [truncated]' : script;
+  const truncatedScript =
+    script.length > 500 ? script.slice(0, 500) + "... [truncated]" : script;
   logger.debug("RLM", "Script content", { script: truncatedScript });
   const timingId = logger.timingStart("rlmScript");
 
@@ -379,7 +406,7 @@ export async function executeRlmScript(
     const sandbox = new BunWorkerSandbox({
       repo,
       llmQuery,
-      timeout: 30000, // 30 seconds max execution time
+      timeout: 30_000, // 30 seconds max execution time
       initialBuffers: { ...(executionContext?.buffers ?? {}) },
       context: executionContext?.context,
     });
@@ -396,7 +423,7 @@ export async function executeRlmScript(
 
     // Call callbacks if provided
     if (executionContext?.onPrint && result.stdout) {
-      for (const line of result.stdout.split('\n')) {
+      for (const line of result.stdout.split("\n")) {
         if (line) executionContext.onPrint(line);
       }
     }

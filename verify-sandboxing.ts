@@ -1,17 +1,18 @@
 #!/usr/bin/env bun
+
 /**
  * Quick verification script to test sandboxing end-to-end
  */
 
-import { fileListTool } from './src/tools/file-listing.tool.js';
-import { fileReadTool } from './src/tools/file-reading.tool.js';
-import { fileFindTool } from './src/tools/file-finding.tool.js';
-import { grepContentTool } from './src/tools/grep-content.tool.js';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileFindTool } from "./src/tools/file-finding.tool.js";
+import { fileListTool } from "./src/tools/file-listing.tool.js";
+import { fileReadTool } from "./src/tools/file-reading.tool.js";
+import { grepContentTool } from "./src/tools/grep-content.tool.js";
 
 async function testSandboxing() {
-  const sandboxDir = path.join(process.cwd(), 'verification-sandbox');
+  const sandboxDir = path.join(process.cwd(), "verification-sandbox");
 
   // Clean up
   if (existsSync(sandboxDir)) {
@@ -20,67 +21,100 @@ async function testSandboxing() {
 
   // Create sandbox and test content
   mkdirSync(sandboxDir, { recursive: true });
-  mkdirSync(path.join(sandboxDir, 'src'));
-  mkdirSync(path.join(sandboxDir, 'other-dir'));
-  writeFileSync(path.join(sandboxDir, 'src', 'test.js'), 'export const x = 42;');
-  writeFileSync(path.join(sandboxDir, 'other-dir', 'secret.txt'), 'This should not be accessible');
+  mkdirSync(path.join(sandboxDir, "src"));
+  mkdirSync(path.join(sandboxDir, "other-dir"));
+  writeFileSync(
+    path.join(sandboxDir, "src", "test.js"),
+    "export const x = 42;"
+  );
+  writeFileSync(
+    path.join(sandboxDir, "other-dir", "secret.txt"),
+    "This should not be accessible"
+  );
 
-  console.log('🧪 Testing sandbox boundary enforcement...\n');
+  console.log("🧪 Testing sandbox boundary enforcement...\n");
 
   // Test 1: List files in sandbox with context
-  console.log('Test 1: List files in sandbox (should succeed)');
-  const listResult = await fileListTool.invoke({
-    directoryPath: '.',
-    includeHidden: false,
-  }, {
-    context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
-  });
-  console.log(`✓ Listing succeeded: ${listResult.includes('src') ? 'Found src directory' : 'Test failed'}`);
+  console.log("Test 1: List files in sandbox (should succeed)");
+  const listResult = await fileListTool.invoke(
+    {
+      directoryPath: ".",
+      includeHidden: false,
+    },
+    {
+      context: { workingDir: sandboxDir, group: "test", technology: "test" },
+    }
+  );
+  console.log(
+    `✓ Listing succeeded: ${listResult.includes("src") ? "Found src directory" : "Test failed"}`
+  );
 
   // Test 2: Try to escape sandbox via .. (should fail)
-  console.log('\nTest 2: Try to escape sandbox via ../ (should fail)');
-  const escapeResult = await fileListTool.invoke({
-    directoryPath: '../other-dir',
-    includeHidden: false,
-  }, {
-    context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
-  });
-  const escapeStatus = escapeResult.includes('attempts to escape') ? 'Correctly rejected' : `Security FAILED: ${escapeResult}`;
+  console.log("\nTest 2: Try to escape sandbox via ../ (should fail)");
+  const escapeResult = await fileListTool.invoke(
+    {
+      directoryPath: "../other-dir",
+      includeHidden: false,
+    },
+    {
+      context: { workingDir: sandboxDir, group: "test", technology: "test" },
+    }
+  );
+  const escapeStatus = escapeResult.includes("attempts to escape")
+    ? "Correctly rejected"
+    : `Security FAILED: ${escapeResult}`;
   console.log(`✓ Security ENFORCED: ${escapeStatus}`);
 
   // Test 3: Try to escape sandbox with absolute path (should fail)
-  console.log('\nTest 3: Try to escape sandbox with absolute path (should fail)');
-  const absPathResult = await fileReadTool.invoke({
-    filePath: path.join(sandboxDir, '..', 'secret.txt'),
-  }, {
-    context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
-  });
-  const absPathStatus = absPathResult.includes('attempts to escape') ? 'Correctly rejected' : `Security FAILED: ${absPathResult}`;
+  console.log(
+    "\nTest 3: Try to escape sandbox with absolute path (should fail)"
+  );
+  const absPathResult = await fileReadTool.invoke(
+    {
+      filePath: path.join(sandboxDir, "..", "secret.txt"),
+    },
+    {
+      context: { workingDir: sandboxDir, group: "test", technology: "test" },
+    }
+  );
+  const absPathStatus = absPathResult.includes("attempts to escape")
+    ? "Correctly rejected"
+    : `Security FAILED: ${absPathResult}`;
   console.log(`✓ Security ENFORCED: ${absPathStatus}`);
 
   // Test 4: Find files within sandbox (should succeed)
-  console.log('\nTest 4: Find files within sandbox (should succeed)');
-  const findResult = await fileFindTool.invoke({
-    searchPath: '.',
-    patterns: ['*.js'],
-  }, {
-    context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
-  });
-  console.log(`✓ Finding succeeded: ${findResult.includes('test.js') ? 'Found test.js' : 'Test failed'}`);
+  console.log("\nTest 4: Find files within sandbox (should succeed)");
+  const findResult = await fileFindTool.invoke(
+    {
+      searchPath: ".",
+      patterns: ["*.js"],
+    },
+    {
+      context: { workingDir: sandboxDir, group: "test", technology: "test" },
+    }
+  );
+  console.log(
+    `✓ Finding succeeded: ${findResult.includes("test.js") ? "Found test.js" : "Test failed"}`
+  );
 
   // Test 5: Grep within sandbox (should succeed)
-  console.log('\nTest 5: Grep content within sandbox (should succeed)');
-  const grepResult = await grepContentTool.invoke({
-    searchPath: '.',
-    query: 'const',
-    patterns: ['*.js'],
-  }, {
-    context: { workingDir: sandboxDir, group: 'test', technology: 'test' }
-  });
-  console.log(`✓ Grep succeeded: ${grepResult.includes('const x') ? 'Found pattern' : 'Test failed'}`);
+  console.log("\nTest 5: Grep content within sandbox (should succeed)");
+  const grepResult = await grepContentTool.invoke(
+    {
+      searchPath: ".",
+      query: "const",
+      patterns: ["*.js"],
+    },
+    {
+      context: { workingDir: sandboxDir, group: "test", technology: "test" },
+    }
+  );
+  console.log(
+    `✓ Grep succeeded: ${grepResult.includes("const x") ? "Found pattern" : "Test failed"}`
+  );
 
-  console.log('\n🧪 Sandbox Verification Complete!');
-  console.log('Cleaning up test directory...');
+  console.log("\n🧪 Sandbox Verification Complete!");
+  console.log("Cleaning up test directory...");
 
   // Clean up
   rmSync(sandboxDir, { recursive: true, force: true });

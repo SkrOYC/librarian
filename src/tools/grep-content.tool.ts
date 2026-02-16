@@ -216,8 +216,8 @@ export const grepTool = tool(
       }
 
       // Coerce query to string to handle cases where model passes numbers
-      const queryString = String(query ?? '');
-      if (!queryString || queryString.trim() === '') {
+      const queryString = String(query ?? "");
+      if (!queryString || queryString.trim() === "") {
         throw new Error('The "query" parameter is required');
       }
 
@@ -252,8 +252,8 @@ export const grepTool = tool(
 
       // Normalize patterns to array of strings
       const normalizedPatterns = Array.isArray(patterns)
-        ? patterns.map(p => String(p)).filter(p => p && p.trim().length > 0)
-        : [String(patterns)].filter(p => p && p.trim().length > 0);
+        ? patterns.map((p) => String(p)).filter((p) => p && p.trim().length > 0)
+        : [String(patterns)].filter((p) => p && p.trim().length > 0);
 
       const filesToSearch = await findFilesToSearch(
         resolvedPath,
@@ -311,7 +311,12 @@ export const grepTool = tool(
       logger.timingEnd(timingId, "TOOL", "grep completed");
 
       if (results.length === 0) {
-        return JSON.stringify({ totalMatches: 0, totalFiles: 0, results: [], query });
+        return JSON.stringify({
+          totalMatches: 0,
+          totalFiles: 0,
+          results: [],
+          query,
+        });
       }
 
       return formatGrepResultsAsJson(results);

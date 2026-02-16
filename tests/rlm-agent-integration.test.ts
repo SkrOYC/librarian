@@ -5,7 +5,7 @@
  * while leaving CLI providers untouched.
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { ReactAgent } from "../src/agents/react-agent.js";
 
 describe("ReactAgent RLM Integration", () => {

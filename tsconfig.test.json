@@ -1,17 +1,9 @@
 {
   "extends": "./tsconfig.json",
-  "include": [
-    "src/**/*",
-    "tests/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ],
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"],
   "compilerOptions": {
-    "types": [
-      "bun-types"
-    ],
+    "types": ["bun-types"],
     "strictNullChecks": true
   }
 }

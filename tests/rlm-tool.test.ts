@@ -5,11 +5,10 @@
  * Verifies tool metadata, context requirements, and integration with the sandbox.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import fs from "node:fs";
-import path from "node:path";
 import { rm } from "node:fs/promises";
-import { ChatAnthropic } from "@langchain/anthropic";
+import path from "node:path";
 import type { LlmConfig } from "../src/agents/rlm-sandbox.js";
 import { createResearchRepositoryTool } from "../src/agents/rlm-tool.js";
 
@@ -30,7 +29,7 @@ describe("RLM Tool - research_repository", () => {
     fs.mkdirSync(path.join(testDir, "sub"), { recursive: true });
     fs.writeFileSync(
       path.join(testDir, "sub", "nested.ts"),
-      'export const value = 42;\n'
+      "export const value = 42;\n"
     );
   });
 
@@ -79,7 +78,11 @@ describe("RLM Tool - research_repository", () => {
 
     it("should execute a simple script with context", async () => {
       const tool = createResearchRepositoryTool(mockLlmConfig);
-      const context = { workingDir: testDir, group: "test", technology: "test" };
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
 
       const result = await tool.invoke(
         { script: 'return "hello from tool";' },
@@ -90,7 +93,11 @@ describe("RLM Tool - research_repository", () => {
 
     it("should provide repo API to scripts", async () => {
       const tool = createResearchRepositoryTool(mockLlmConfig);
-      const context = { workingDir: testDir, group: "test", technology: "test" };
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
 
       const result = await tool.invoke(
         {
@@ -106,7 +113,11 @@ describe("RLM Tool - research_repository", () => {
 
     it("should provide llm_query to scripts", async () => {
       const tool = createResearchRepositoryTool(mockLlmConfig);
-      const context = { workingDir: testDir, group: "test", technology: "test" };
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
 
       const result = await tool.invoke(
         {
@@ -123,7 +134,11 @@ describe("RLM Tool - research_repository", () => {
 
     it("should handle script errors gracefully", async () => {
       const tool = createResearchRepositoryTool(mockLlmConfig);
-      const context = { workingDir: testDir, group: "test", technology: "test" };
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
 
       const result = await tool.invoke(
         { script: 'throw new Error("test error");' },
@@ -135,7 +150,11 @@ describe("RLM Tool - research_repository", () => {
 
     it("should scope file operations to workingDir", async () => {
       const tool = createResearchRepositoryTool(mockLlmConfig);
-      const context = { workingDir: testDir, group: "test", technology: "test" };
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
 
       const result = await tool.invoke(
         {
@@ -153,7 +172,11 @@ describe("RLM Tool - research_repository", () => {
 
     it("should execute a complete exploration pipeline", async () => {
       const tool = createResearchRepositoryTool(mockLlmConfig);
-      const context = { workingDir: testDir, group: "test", technology: "test" };
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
 
       const result = await tool.invoke(
         {
@@ -173,7 +196,9 @@ describe("RLM Tool - research_repository", () => {
       );
       const parsed = JSON.parse(result);
       expect(parsed.fileCount).toBeGreaterThanOrEqual(2);
-      expect(parsed.files.some((f: string) => f.includes("hello.ts"))).toBe(true);
+      expect(parsed.files.some((f: string) => f.includes("hello.ts"))).toBe(
+        true
+      );
     });
   });
 });

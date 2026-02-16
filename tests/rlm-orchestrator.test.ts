@@ -11,8 +11,11 @@
  * - Worker reuse across iterations (buffers persist)
  */
 
-import { describe, it, expect, beforeEach, jest } from "bun:test";
-import { RlmOrchestrator, type RlmOrchestratorConfig } from "../src/agents/rlm-orchestrator.js";
+import { beforeEach, describe, expect, it, jest } from "bun:test";
+import {
+  RlmOrchestrator,
+  type RlmOrchestratorConfig,
+} from "../src/agents/rlm-orchestrator.js";
 
 // Mock dependencies
 const mockLlmQuery = jest.fn(async (instruction: string, data: string) => {
@@ -131,13 +134,13 @@ describe("RlmOrchestrator", () => {
       // First history should contain task (no metadata yet - that's added after first execution)
       expect(receivedHistories[0]).toContain("Task");
       expect(receivedHistories[0]).toContain("test query");
-      
+
       // Metadata should not contain the full repository content
       for (const history of receivedHistories) {
         // Metadata should not contain the full repository content
         expect(history).not.toContain("mock repository content");
       }
-      
+
       // Second history onwards should contain iteration info (after first execution)
       if (receivedHistories.length > 1) {
         expect(receivedHistories[1]).toMatch(/iteration|Iteration/i);
@@ -226,11 +229,10 @@ describe("RlmOrchestrator", () => {
           // This runs in fresh worker - should have empty initial buffers
           // Return the value of parentBuffer (should be undefined in fresh worker)
           return "FINAL(String(buffers.parentBuffer))";
-        } else {
-          // This runs in main worker - set a buffer before calling sub_rlm
-          // Then call sub_rlm with code that checks if it can see parent's buffer
-          return "buffers.parentBuffer = 'from-parent'; const r = await sub_rlm(\"FINAL(String(buffers.parentBuffer))\"); FINAL(r)";
         }
+        // This runs in main worker - set a buffer before calling sub_rlm
+        // Then call sub_rlm with code that checks if it can see parent's buffer
+        return "buffers.parentBuffer = 'from-parent'; const r = await sub_rlm(\"FINAL(String(buffers.parentBuffer))\"); FINAL(r)";
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -239,7 +241,7 @@ describe("RlmOrchestrator", () => {
       });
 
       const result = await orchestrator.run("test query");
-      
+
       // The sub_rlm should have isolated buffers - it should NOT see parent's buffer
       // So it should return 'undefined', not 'from-parent'
       expect(result).toBe("undefined");

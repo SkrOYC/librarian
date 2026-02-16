@@ -8,22 +8,23 @@
  * - Edge cases: syntax errors, infinite loops, async patterns, return semantics
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import fs from "node:fs";
-import path from "node:path";
 import { rm } from "node:fs/promises";
+import path from "node:path";
 import {
   createRepoApi,
-  createLlmQuery,
   executeRlmScript,
   type RepoApi,
   type RlmExecutionResult,
 } from "../src/agents/rlm-sandbox.js";
 
 // Helper to extract return value from RlmExecutionResult
-const getReturn = (result: RlmExecutionResult): unknown => result.buffers.__returnValue;
+const getReturn = (result: RlmExecutionResult): unknown =>
+  result.buffers.__returnValue;
 // Helper to extract error message
-const getError = (result: RlmExecutionResult): string | undefined => result.error;
+const getError = (result: RlmExecutionResult): string | undefined =>
+  result.error;
 
 describe("RLM Sandbox", () => {
   let testDir: string;
@@ -51,28 +52,34 @@ describe("RLM Sandbox", () => {
     script: string,
     customRepo?: RepoApi
   ): Promise<string> => {
-    const result = await executeRlmScript(script, customRepo || repo, mockLlmQuery);
-    
+    const result = await executeRlmScript(
+      script,
+      customRepo || repo,
+      mockLlmQuery
+    );
+
     if (result.error) {
       return `Script execution error: ${result.error}`;
     }
-    
+
     // Return final answer if provided
     if (result.finalAnswer) {
       return result.finalAnswer;
     }
-    
+
     // Return stdout if there's output
     if (result.stdout && result.stdout.trim()) {
       return result.stdout;
     }
-    
+
     // Check for return value in buffers
     const returnValue = result.buffers.__returnValue;
     if (returnValue !== undefined) {
-      return typeof returnValue === 'string' ? returnValue : JSON.stringify(returnValue);
+      return typeof returnValue === "string"
+        ? returnValue
+        : JSON.stringify(returnValue);
     }
-    
+
     return "Script completed with no output.";
   };
 
@@ -117,7 +124,7 @@ describe("RLM Sandbox", () => {
     );
     fs.writeFileSync(
       path.join(testDir, "src", "utils", "logger.ts"),
-      'export const logger = { info: console.log };\n'
+      "export const logger = { info: console.log };\n"
     );
     fs.writeFileSync(
       path.join(testDir, "lib", "config.json"),
@@ -268,8 +275,6 @@ describe("RLM Sandbox", () => {
   // ─── Script Execution Tests ────────────────────────────────────
 
   describe("executeRlmScript", () => {
-
-
     describe("Basic script execution", () => {
       it("should execute a simple return statement", async () => {
         const result = await runScript('return "hello world";');
@@ -284,7 +289,7 @@ describe("RLM Sandbox", () => {
       });
 
       it("should return JSON-serialized arrays", async () => {
-        const result = await runScript('return [1, 2, 3];');
+        const result = await runScript("return [1, 2, 3];");
         const parsed = JSON.parse(result);
         expect(parsed).toEqual([1, 2, 3]);
       });
@@ -295,7 +300,7 @@ describe("RLM Sandbox", () => {
       });
 
       it("should handle undefined return (no return statement)", async () => {
-        const result = await runScript('const x = 42;');
+        const result = await runScript("const x = 42;");
         expect(result).toBe("Script completed with no output.");
       });
 
@@ -321,7 +326,8 @@ describe("RLM Sandbox", () => {
       });
 
       it("should call repo.view from within a script", async () => {
-        const result = await runScript(`
+        const result = await runScript(
+          `
           const content = await repo.view({ filePath: "src/index.ts" });
           return content;
           `,
@@ -407,8 +413,16 @@ describe("RLM Sandbox", () => {
         const returnValue = getReturn(result) as unknown[];
         expect(Array.isArray(returnValue)).toBe(true);
         expect(returnValue.length).toBeGreaterThanOrEqual(2);
-        expect(returnValue.some((r: unknown) => (r as { file: string }).file.includes("DatabaseError"))).toBe(true);
-        expect(returnValue.some((r: unknown) => (r as { file: string }).file.includes("AuthError"))).toBe(true);
+        expect(
+          returnValue.some((r: unknown) =>
+            (r as { file: string }).file.includes("DatabaseError")
+          )
+        ).toBe(true);
+        expect(
+          returnValue.some((r: unknown) =>
+            (r as { file: string }).file.includes("AuthError")
+          )
+        ).toBe(true);
       });
 
       it("should combine repo and llm_query in a pipeline", async () => {
@@ -458,7 +472,7 @@ describe("RLM Sandbox", () => {
     describe("Error handling and edge cases", () => {
       it("should handle syntax errors gracefully", async () => {
         const result = await executeRlmScript(
-          'const x = {;',
+          "const x = {;",
           repo,
           mockLlmQuery
         );
@@ -485,7 +499,7 @@ describe("RLM Sandbox", () => {
 
       it("should handle type errors gracefully", async () => {
         const result = await executeRlmScript(
-          'const x = null; return x.toString();',
+          "const x = null; return x.toString();",
           repo,
           mockLlmQuery
         );
@@ -547,7 +561,10 @@ describe("RLM Sandbox", () => {
           repo,
           mockLlmQuery
         );
-        const returnValue = getReturn(result) as { hasList: boolean; hasContent: boolean };
+        const returnValue = getReturn(result) as {
+          hasList: boolean;
+          hasContent: boolean;
+        };
         expect(returnValue.hasList).toBe(true);
         expect(returnValue.hasContent).toBe(true);
       });
@@ -563,7 +580,11 @@ describe("RLM Sandbox", () => {
           repo,
           mockLlmQuery
         );
-        const returnValue = getReturn(result) as { hasListing: boolean; hasContent: boolean; hasGrep: boolean };
+        const returnValue = getReturn(result) as {
+          hasListing: boolean;
+          hasContent: boolean;
+          hasGrep: boolean;
+        };
         expect(returnValue.hasListing).toBe(true);
         expect(returnValue.hasContent).toBe(true);
         expect(returnValue.hasGrep).toBe(true);
@@ -631,7 +652,10 @@ describe("RLM Sandbox", () => {
           repo,
           mockLlmQuery
         );
-        const returnValue = getReturn(result) as { uniqueCount: number; aCounts: number };
+        const returnValue = getReturn(result) as {
+          uniqueCount: number;
+          aCounts: number;
+        };
         expect(returnValue.uniqueCount).toBe(3);
         expect(returnValue.aCounts).toBe(3);
       });
@@ -646,7 +670,10 @@ describe("RLM Sandbox", () => {
           repo,
           mockLlmQuery
         );
-        const returnValue = getReturn(result) as { x: number; restKeys: string[] };
+        const returnValue = getReturn(result) as {
+          x: number;
+          restKeys: string[];
+        };
         expect(returnValue.x).toBe(10);
         expect(returnValue.restKeys).toEqual(["y", "z"]);
       });
@@ -686,9 +713,14 @@ describe("RLM Sandbox", () => {
           repo,
           mockLlmQuery
         );
-        const returnValue = getReturn(result) as { name?: string; parseError?: boolean };
+        const returnValue = getReturn(result) as {
+          name?: string;
+          parseError?: boolean;
+        };
         // Either we parsed it or we got the raw preview
-        expect(returnValue.name === "test-pkg" || returnValue.parseError === true).toBe(true);
+        expect(
+          returnValue.name === "test-pkg" || returnValue.parseError === true
+        ).toBe(true);
       });
 
       it("should handle template literals", async () => {
@@ -821,7 +853,10 @@ describe("RLM Sandbox", () => {
           repo,
           mockLlmQuery
         );
-        const returnValue = getReturn(result) as Array<{ file: string; analysis: unknown }>;
+        const returnValue = getReturn(result) as Array<{
+          file: string;
+          analysis: unknown;
+        }>;
         expect(Array.isArray(returnValue)).toBe(true);
 
         // Should have found at least DatabaseError and AuthError

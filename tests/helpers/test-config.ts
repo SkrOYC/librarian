@@ -3,12 +3,12 @@
  * Centralized test configuration factory with README-aligned structures
  */
 
-import type { LibrarianConfig } from '../../src/index.js';
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
+import type { LibrarianConfig } from "../../src/index.js";
 
 // Type for bun:test expect object
-type BunTestExpect = ReturnType<typeof import('bun:test').expect>;
+type BunTestExpect = ReturnType<typeof import("bun:test").expect>;
 
 // README-aligned configuration types
 export interface ReadmeConfig {
@@ -22,7 +22,7 @@ export interface ReadmeConfig {
       };
     };
   };
-  llm_provider: 'openai' | 'anthropic' | 'google' | 'openai-compatible';
+  llm_provider: "openai" | "anthropic" | "google" | "openai-compatible";
   llm_model?: string;
   base_url?: string;
 }
@@ -41,45 +41,49 @@ export interface MockRepo {
 
 // Common test constants
 export const TEST_CONSTANTS = {
-  MOCK_API_KEY: 'test-api-key-12345',
-  DEFAULT_WORKING_DIR: './test-work',
-  DEFAULT_REPOS_PATH: './test-repos',
-  MOCK_REPO_URL: 'https://github.com/test/mock-repo.git',
-  DEFAULT_BRANCH: 'main'
+  MOCK_API_KEY: "test-api-key-12345",
+  DEFAULT_WORKING_DIR: "./test-work",
+  DEFAULT_REPOS_PATH: "./test-repos",
+  MOCK_REPO_URL: "https://github.com/test/mock-repo.git",
+  DEFAULT_BRANCH: "main",
 } as const;
 
 /**
  * Create README-aligned configuration for testing
  */
-export function createReadmeAlignedConfig(overrides: Partial<ReadmeConfig> = {}): ReadmeConfig {
+export function createReadmeAlignedConfig(
+  overrides: Partial<ReadmeConfig> = {}
+): ReadmeConfig {
   const defaultConfig: ReadmeConfig = {
-    repos_path: '~/.local/share/librarian/repos',
+    repos_path: "~/.local/share/librarian/repos",
     technologies: {
       default: {
         react: {
-          repo: 'https://github.com/facebook/react.git',
-          branch: 'main',
-          description: 'JavaScript library for building user interfaces'
+          repo: "https://github.com/facebook/react.git",
+          branch: "main",
+          description: "JavaScript library for building user interfaces",
         },
         nodejs: {
-          repo: 'https://github.com/nodejs/node.git',
-          branch: 'main',
-          description: 'JavaScript runtime environment'
-        }
+          repo: "https://github.com/nodejs/node.git",
+          branch: "main",
+          description: "JavaScript runtime environment",
+        },
       },
       langchain: {
-        'langchain-javascript': {
-          repo: 'https://github.com/langchain-ai/langchainjs',
-          description: 'LangChain is a framework for building LLM-powered applications'
+        "langchain-javascript": {
+          repo: "https://github.com/langchain-ai/langchainjs",
+          description:
+            "LangChain is a framework for building LLM-powered applications",
         },
-        'langgraph-javascript': {
-          repo: 'https://github.com/langchain-ai/langgraphjs',
-          description: 'LangGraph is low-level orchestration framework for LLM applications'
-        }
-      }
+        "langgraph-javascript": {
+          repo: "https://github.com/langchain-ai/langgraphjs",
+          description:
+            "LangGraph is low-level orchestration framework for LLM applications",
+        },
+      },
     },
-    llm_provider: 'openai',
-    llm_model: 'gpt-4'
+    llm_provider: "openai",
+    llm_model: "gpt-4",
   };
 
   // Deep merge for technologies
@@ -92,8 +96,10 @@ export function createReadmeAlignedConfig(overrides: Partial<ReadmeConfig> = {})
     repos_path: overrides.repos_path ?? defaultConfig.repos_path,
     technologies: mergedTechnologies,
     llm_provider: overrides.llm_provider ?? defaultConfig.llm_provider,
-    ...(overrides.llm_model !== undefined && { llm_model: overrides.llm_model }),
-    ...(overrides.base_url !== undefined && { base_url: overrides.base_url })
+    ...(overrides.llm_model !== undefined && {
+      llm_model: overrides.llm_model,
+    }),
+    ...(overrides.base_url !== undefined && { base_url: overrides.base_url }),
   };
 
   return result;
@@ -102,24 +108,26 @@ export function createReadmeAlignedConfig(overrides: Partial<ReadmeConfig> = {})
 /**
  * Create Librarian configuration for testing
  */
-export function createTestLibrarianConfig(overrides: Partial<LibrarianConfig> = {}): LibrarianConfig {
+export function createTestLibrarianConfig(
+  overrides: Partial<LibrarianConfig> = {}
+): LibrarianConfig {
   const defaultConfig: LibrarianConfig = {
     technologies: {
       default: {
-        'test-repo': { 
-          repo: 'https://github.com/test/repo.git',
-          branch: 'main',
-          description: 'Test repository for unit testing'
-        }
-      }
+        "test-repo": {
+          repo: "https://github.com/test/repo.git",
+          branch: "main",
+          description: "Test repository for unit testing",
+        },
+      },
     },
     aiProvider: {
-      type: 'openai',
+      type: "openai",
       apiKey: TEST_CONSTANTS.MOCK_API_KEY,
-      model: 'gpt-4'
+      model: "gpt-4",
     },
     workingDir: TEST_CONSTANTS.DEFAULT_WORKING_DIR,
-    repos_path: TEST_CONSTANTS.DEFAULT_REPOS_PATH
+    repos_path: TEST_CONSTANTS.DEFAULT_REPOS_PATH,
   };
 
   return { ...defaultConfig, ...overrides };
@@ -128,7 +136,7 @@ export function createTestLibrarianConfig(overrides: Partial<LibrarianConfig> = 
 /**
  * Create temporary test directory
  */
-export function createTestDir(baseName = 'test'): string {
+export function createTestDir(baseName = "test"): string {
   const testDir = path.join(process.cwd(), `${baseName}-${Date.now()}`);
   fs.mkdirSync(testDir, { recursive: true });
   return testDir;
@@ -153,12 +161,14 @@ export class MockConfigBuilder {
     this.config = createReadmeAlignedConfig();
   }
 
-  withTechnologies(technologies: ReadmeConfig['technologies']): MockConfigBuilder {
+  withTechnologies(
+    technologies: ReadmeConfig["technologies"]
+  ): MockConfigBuilder {
     this.config.technologies = technologies;
     return this;
   }
 
-  withLLMProvider(provider: ReadmeConfig['llm_provider']): MockConfigBuilder {
+  withLLMProvider(provider: ReadmeConfig["llm_provider"]): MockConfigBuilder {
     this.config.llm_provider = provider;
     return this;
   }
@@ -187,7 +197,11 @@ export class MockConfigBuilder {
  * Assert README configuration structure
  * Note: This function requires expect to be imported in the test file
  */
-export function assertReadmeConfig(actual: ReadmeConfig, expected: ReadmeConfig, expect: BunTestExpect): void {
+export function assertReadmeConfig(
+  actual: ReadmeConfig,
+  expected: ReadmeConfig,
+  expect: BunTestExpect
+): void {
   expect(actual).toBeDefined();
   expect(actual.repos_path).toBe(expected.repos_path);
   expect(actual.llm_provider).toBe(expected.llm_provider);

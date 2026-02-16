@@ -33,9 +33,7 @@ export type ModelConfig = LlmConfig;
  * Note: We use direct provider SDKs to ensure llm_query() operates
  * independently from the main agent's LangChain callback system.
  */
-export function createResearchRepositoryTool(
-  config: LlmConfig
-) {
+export function createResearchRepositoryTool(config: LlmConfig) {
   const llmQuery = createLlmQuery(config);
 
   return tool(
@@ -64,20 +62,22 @@ export function createResearchRepositoryTool(
       if (result.error) {
         return `Script execution error: ${result.error}`;
       }
-      
+
       if (result.finalAnswer) {
         return result.finalAnswer;
       }
-      
+
       if (result.stdout?.trim()) {
         return result.stdout;
       }
-      
+
       const returnValue = result.buffers.__returnValue;
       if (returnValue !== undefined) {
-        return typeof returnValue === 'string' ? returnValue : JSON.stringify(returnValue, null, 2);
+        return typeof returnValue === "string"
+          ? returnValue
+          : JSON.stringify(returnValue, null, 2);
       }
-      
+
       return "Script completed with no output.";
     },
     {
@@ -102,7 +102,7 @@ All repo.* methods return JSON strings - use JSON.parse() to access results.`,
       schema: z.object({
         script: z
           .string()
-          .max(100000, "Script exceeds maximum size of 100KB")
+          .max(100_000, "Script exceeds maximum size of 100KB")
           .describe(
             "The TypeScript exploration script to execute in the sandbox (max 100KB)"
           ),

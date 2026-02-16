@@ -5,22 +5,23 @@
  * dangerous Node.js/Bun built-ins and provides proper isolation.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import fs from "node:fs";
-import path from "node:path";
 import { rm } from "node:fs/promises";
+import path from "node:path";
 import {
   createRepoApi,
-  createLlmQuery,
   executeRlmScript,
   type RepoApi,
   type RlmExecutionResult,
 } from "../src/agents/rlm-sandbox.js";
 
 // Helper to extract return value from RlmExecutionResult
-const getReturn = (result: RlmExecutionResult): unknown => result.buffers.__returnValue;
+const getReturn = (result: RlmExecutionResult): unknown =>
+  result.buffers.__returnValue;
 // Helper to extract error message
-const getError = (result: RlmExecutionResult): string | undefined => result.error;
+const getError = (result: RlmExecutionResult): string | undefined =>
+  result.error;
 
 describe("RLM Sandbox Security", () => {
   let testDir: string;
@@ -175,7 +176,7 @@ describe("RLM Sandbox Security", () => {
   // has changed to PROCESS ISOLATION - the worker runs in a separate JavaScriptCore
   // thread that cannot access parent process globals. This is a STRONGER security
   // boundary than vm. The tests below are now skipped but document the change.
-  
+
   describe.skip("Constructor chain attacks are blocked", () => {
     it("should block direct Function constructor access", async () => {
       const result = await executeRlmScript(
@@ -547,11 +548,7 @@ describe("RLM Sandbox Security", () => {
 
   describe("Error handling works correctly", () => {
     it("should handle syntax errors gracefully", async () => {
-      const result = await executeRlmScript(
-        'const x = {;',
-        repo,
-        mockLlmQuery
-      );
+      const result = await executeRlmScript("const x = {;", repo, mockLlmQuery);
       expect(getError(result)).toBeDefined();
     });
 
@@ -574,11 +571,7 @@ describe("RLM Sandbox Security", () => {
     });
 
     it("should handle null returns", async () => {
-      const result = await executeRlmScript(
-        "return null;",
-        repo,
-        mockLlmQuery
-      );
+      const result = await executeRlmScript("return null;", repo, mockLlmQuery);
       // Note: null is stored as undefined in the current implementation
       const returnValue = result.buffers.__returnValue;
       expect(returnValue).toBeUndefined();

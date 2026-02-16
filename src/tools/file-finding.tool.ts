@@ -4,9 +4,9 @@ import { Glob } from "bun";
 import { tool } from "langchain";
 import { z } from "zod";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
+import { formatFindAsJson } from "../utils/format-utils.js";
 import { GitIgnoreService } from "../utils/gitignore-service.js";
 import { logger } from "../utils/logger.js";
-import { formatFindAsJson } from "../utils/format-utils.js";
 
 // Create the modernized tool using the tool() function
 export const findTool = tool(
@@ -69,10 +69,10 @@ export const findTool = tool(
 
       // Validate that patterns array is not empty
       // Coerce patterns to array of strings to handle cases where model passes incorrect types
-      const normalizedPatterns = Array.isArray(patterns) 
-        ? patterns.map(p => String(p)).filter(p => p.trim().length > 0)
+      const normalizedPatterns = Array.isArray(patterns)
+        ? patterns.map((p) => String(p)).filter((p) => p.trim().length > 0)
         : [String(patterns)];
-      
+
       if (!normalizedPatterns || normalizedPatterns.length === 0) {
         throw new Error(
           'The "patterns" parameter must contain at least one glob pattern'

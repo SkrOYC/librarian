@@ -10,15 +10,12 @@
  * - llm_query accessible from worker
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import fs from "node:fs";
-import path from "node:path";
 import { rm } from "node:fs/promises";
-import {
-  BunWorkerSandbox,
-  type WorkerExecutionResult,
-} from "../src/agents/rlm-worker-sandbox.js";
-import { type RepoApi } from "../src/agents/rlm-sandbox.js";
+import path from "node:path";
+import type { RepoApi } from "../src/agents/rlm-sandbox.js";
+import { BunWorkerSandbox } from "../src/agents/rlm-worker-sandbox.js";
 
 describe("BunWorkerSandbox", () => {
   let testDir: string;
@@ -73,7 +70,10 @@ describe("BunWorkerSandbox", () => {
 
     repo = {
       list: async (args) => {
-        return JSON.stringify({ entries: ["src", "lib", "package.json"], totalEntries: 3 });
+        return JSON.stringify({
+          entries: ["src", "lib", "package.json"],
+          totalEntries: 3,
+        });
       },
       view: async (args) => {
         return "export function main() { return 'hello'; }";
@@ -112,7 +112,9 @@ describe("BunWorkerSandbox", () => {
         timeout: 5000,
       });
 
-      const result = await sandbox.execute('return { name: "test", count: 42 };');
+      const result = await sandbox.execute(
+        'return { name: "test", count: 42 };'
+      );
       expect(result.returnValue).toEqual({ name: "test", count: 42 });
     });
 
@@ -254,7 +256,8 @@ describe("BunWorkerSandbox", () => {
   describe("repo API access", () => {
     it("should call repo.list from within a script", async () => {
       const customRepo: RepoApi = {
-        list: async (args) => JSON.stringify({ entries: ["test"], totalEntries: 1 }),
+        list: async (args) =>
+          JSON.stringify({ entries: ["test"], totalEntries: 1 }),
         view: async () => "file content",
         find: async () => JSON.stringify({ files: [], totalFiles: 0 }),
         grep: async () => JSON.stringify({ matches: [], totalMatches: 0 }),
@@ -266,7 +269,9 @@ describe("BunWorkerSandbox", () => {
         timeout: 5000,
       });
 
-      const result = await sandbox.execute("const listing = await repo.list({}); return listing;");
+      const result = await sandbox.execute(
+        "const listing = await repo.list({}); return listing;"
+      );
       expect(result.returnValue).toContain("test");
     });
 
@@ -277,7 +282,9 @@ describe("BunWorkerSandbox", () => {
         timeout: 5000,
       });
 
-      const result = await sandbox.execute("const content = await repo.view({ filePath: 'test.ts' }); return content;");
+      const result = await sandbox.execute(
+        "const content = await repo.view({ filePath: 'test.ts' }); return content;"
+      );
       expect(result.returnValue).toContain("hello");
     });
 
@@ -288,7 +295,9 @@ describe("BunWorkerSandbox", () => {
         timeout: 5000,
       });
 
-      const result = await sandbox.execute("const files = await repo.find({ patterns: ['*.ts'] }); return files;");
+      const result = await sandbox.execute(
+        "const files = await repo.find({ patterns: ['*.ts'] }); return files;"
+      );
       expect(result.returnValue).toContain("index.ts");
     });
 
@@ -299,7 +308,9 @@ describe("BunWorkerSandbox", () => {
         timeout: 5000,
       });
 
-      const result = await sandbox.execute("const matches = await repo.grep({ query: 'test', patterns: ['*.ts'] }); return matches;");
+      const result = await sandbox.execute(
+        "const matches = await repo.grep({ query: 'test', patterns: ['*.ts'] }); return matches;"
+      );
       expect(result.returnValue).toContain("totalMatches");
     });
   });
@@ -372,7 +383,7 @@ describe("BunWorkerSandbox", () => {
 
       expect(result.error).toBeDefined();
       expect(result.error).toContain("timeout");
-    }, 10000); // Test timeout
+    }, 10_000); // Test timeout
   });
 
   describe("Error handling", () => {
@@ -405,7 +416,9 @@ describe("BunWorkerSandbox", () => {
         timeout: 5000,
       });
 
-      const result = await sandbox.execute("return undefinedVariable.property;");
+      const result = await sandbox.execute(
+        "return undefinedVariable.property;"
+      );
       expect(result.error).toBeDefined();
     });
   });

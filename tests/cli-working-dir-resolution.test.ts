@@ -3,17 +3,23 @@
  * Tests for resolving working directory paths for technology and group-level queries
  */
 
-import { describe, it, expect } from 'bun:test';
-import path from 'node:path';
-import os from 'node:os';
+import { describe, expect, it } from "bun:test";
+import os from "node:os";
+import path from "node:path";
 
-describe('Working Directory Resolution', () => {
-  const mockReposPath = path.join(os.homedir(), '.local', 'share', 'librarian', 'repos');
+describe("Working Directory Resolution", () => {
+  const mockReposPath = path.join(
+    os.homedir(),
+    ".local",
+    "share",
+    "librarian",
+    "repos"
+  );
 
-  describe('Path Resolution for Tech-Level Operations', () => {
-    it('should resolve working directory for technology in default group', () => {
-      const group = 'default';
-      const technology = 'react';
+  describe("Path Resolution for Tech-Level Operations", () => {
+    it("should resolve working directory for technology in default group", () => {
+      const group = "default";
+      const technology = "react";
       const expectedPath = path.join(mockReposPath, group, technology);
 
       // This will be implemented in the CLI layer
@@ -22,9 +28,9 @@ describe('Working Directory Resolution', () => {
       expect(actualPath).toBe(expectedPath);
     });
 
-    it('should resolve working directory for technology in named group', () => {
-      const group = 'langchain';
-      const technology = 'openai';
+    it("should resolve working directory for technology in named group", () => {
+      const group = "langchain";
+      const technology = "openai";
       const expectedPath = path.join(mockReposPath, group, technology);
 
       const actualPath = path.join(mockReposPath, group, technology);
@@ -32,11 +38,11 @@ describe('Working Directory Resolution', () => {
       expect(actualPath).toBe(expectedPath);
     });
 
-    it('should resolve working directory with qualified technology name (group:tech)', () => {
-      const qualifiedName = 'langchain:anthropic';
-      const parts = qualifiedName.split(':');
+    it("should resolve working directory with qualified technology name (group:tech)", () => {
+      const qualifiedName = "langchain:anthropic";
+      const parts = qualifiedName.split(":");
       if (parts.length !== 2) {
-        throw new Error('Invalid qualified name format');
+        throw new Error("Invalid qualified name format");
       }
       const [group, technology] = parts;
       const expectedPath = path.join(mockReposPath, group, technology);
@@ -47,9 +53,9 @@ describe('Working Directory Resolution', () => {
     });
   });
 
-  describe('Path Resolution for Group-Level Operations', () => {
-    it('should resolve working directory for group operations', () => {
-      const group = 'default';
+  describe("Path Resolution for Group-Level Operations", () => {
+    it("should resolve working directory for group operations", () => {
+      const group = "default";
       const expectedPath = path.join(mockReposPath, group);
 
       const actualPath = path.join(mockReposPath, group);
@@ -57,8 +63,8 @@ describe('Working Directory Resolution', () => {
       expect(actualPath).toBe(expectedPath);
     });
 
-    it('should resolve working directory for nested group', () => {
-      const group = 'langchain';
+    it("should resolve working directory for nested group", () => {
+      const group = "langchain";
       const expectedPath = path.join(mockReposPath, group);
 
       const actualPath = path.join(mockReposPath, group);
@@ -67,13 +73,18 @@ describe('Working Directory Resolution', () => {
     });
   });
 
-  describe('Context Object Construction', () => {
-    it('should construct context object with working directory for tech-level query', () => {
-      const group = 'default';
-      const technology = 'react';
+  describe("Context Object Construction", () => {
+    it("should construct context object with working directory for tech-level query", () => {
+      const group = "default";
+      const technology = "react";
       const workingDir = path.join(mockReposPath, group, technology);
 
-      const context: { workingDir: string; group: string; technology: string; environment?: string } = {
+      const context: {
+        workingDir: string;
+        group: string;
+        technology: string;
+        environment?: string;
+      } = {
         workingDir,
         group,
         technology,
@@ -85,26 +96,26 @@ describe('Working Directory Resolution', () => {
       expect(context.environment).toBeUndefined();
     });
 
-    it('should construct context object with working directory for group-level query', () => {
-      const group = 'langchain';
+    it("should construct context object with working directory for group-level query", () => {
+      const group = "langchain";
       const workingDir = path.join(mockReposPath, group);
 
       const context = {
         workingDir,
         group,
-        technology: '', // No specific technology for group-level queries
+        technology: "", // No specific technology for group-level queries
       };
 
       expect(context.workingDir).toBe(workingDir);
       expect(context.group).toBe(group);
-      expect(context.technology).toBe('');
+      expect(context.technology).toBe("");
     });
 
-    it('should construct context object with optional environment', () => {
-      const group = 'default';
-      const technology = 'react';
+    it("should construct context object with optional environment", () => {
+      const group = "default";
+      const technology = "react";
       const workingDir = path.join(mockReposPath, group, technology);
-      const environment = 'development';
+      const environment = "development";
 
       const context = {
         workingDir,
@@ -120,29 +131,29 @@ describe('Working Directory Resolution', () => {
     });
   });
 
-  describe('Path Normalization and Security', () => {
-    it('should resolve to absolute paths', () => {
-      const relativePath = './local/repos';
+  describe("Path Normalization and Security", () => {
+    it("should resolve to absolute paths", () => {
+      const relativePath = "./local/repos";
       const absolutePath = path.resolve(relativePath);
 
       const result = path.resolve(relativePath);
 
       expect(result).toBe(absolutePath);
-      expect(result.startsWith('/')).toBe(true);
+      expect(result.startsWith("/")).toBe(true);
     });
 
-    it('should expand tilde to home directory', () => {
-      const tildePath = '~/librarian/repos';
-      const expectedPath = path.join(os.homedir(), 'librarian', 'repos');
+    it("should expand tilde to home directory", () => {
+      const tildePath = "~/librarian/repos";
+      const expectedPath = path.join(os.homedir(), "librarian", "repos");
 
-      const actualPath = tildePath.replace('~', os.homedir());
+      const actualPath = tildePath.replace("~", os.homedir());
 
       expect(actualPath).toBe(expectedPath);
     });
 
-    it('should handle trailing slashes in paths', () => {
-      const group = 'default';
-      const technology = 'react';
+    it("should handle trailing slashes in paths", () => {
+      const group = "default";
+      const technology = "react";
       const pathWithSlash = `${mockReposPath}/`;
       const expectedPath = path.join(mockReposPath, group, technology);
 
@@ -152,43 +163,43 @@ describe('Working Directory Resolution', () => {
     });
   });
 
-  describe('Error Handling for Invalid Paths', () => {
-    it('should detect path traversal attempts', () => {
-      const maliciousPath = '../../../etc/passwd';
+  describe("Error Handling for Invalid Paths", () => {
+    it("should detect path traversal attempts", () => {
+      const maliciousPath = "../../../etc/passwd";
 
       // Should detect that the relative path starts with '..'
-      const testPath = path.resolve('/safe/path', maliciousPath);
-      const relativeToSafe = path.relative('/safe/path', testPath);
+      const testPath = path.resolve("/safe/path", maliciousPath);
+      const relativeToSafe = path.relative("/safe/path", testPath);
 
-      expect(relativeToSafe.startsWith('..')).toBe(true);
+      expect(relativeToSafe.startsWith("..")).toBe(true);
     });
 
-    it('should reject absolute paths that escape sandbox', () => {
-      const sandboxPath = '/safe/path';
-      const maliciousPath = '/etc/passwd';
+    it("should reject absolute paths that escape sandbox", () => {
+      const sandboxPath = "/safe/path";
+      const maliciousPath = "/etc/passwd";
 
       const relativePath = path.relative(sandboxPath, maliciousPath);
 
-      expect(relativePath.startsWith('..')).toBe(true);
+      expect(relativePath.startsWith("..")).toBe(true);
     });
 
-    it('should handle missing group gracefully', () => {
-      const _tech = 'react';
+    it("should handle missing group gracefully", () => {
+      const _tech = "react";
       const group = undefined as any;
 
       // When group is undefined, should handle gracefully
       expect(() => {
         if (!group) {
-          throw new Error('Group is required');
+          throw new Error("Group is required");
         }
-      }).toThrow('Group is required');
+      }).toThrow("Group is required");
     });
 
-    it('should handle empty technology name gracefully', () => {
-      const technology = '';
+    it("should handle empty technology name gracefully", () => {
+      const technology = "";
 
       // Empty technology should be handled
-      expect(technology).toBe('');
+      expect(technology).toBe("");
     });
   });
 });

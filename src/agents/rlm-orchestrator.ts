@@ -1,39 +1,41 @@
-  /**
-   * RLM Orchestrator - Multi-turn REPL Orchestrator (Algorithm 1)
-   *
-   * Implements Algorithm 1 from the "Recursive Language Models" paper (arXiv:2512.24601v2).
-   *
-   * Key features:
-   * - Explicit while loop: LLM → execute → metadata → LLM
-   * - Metadata-only history (constant size, not full context)
-   * - Worker reuse across iterations (buffers persist like real REPL)
-   * - Fresh worker per sub_rlm call
-   *
-   * Algorithm 1:
-   * ```
-   * state ← InitREPL(prompt=P)
-   * state ← AddFunction(state, sub_RLM)
-   * hist ← [Metadata(state)]
-   *
-   * while True do
-   *   code ← LLM(hist)
-   *   (state, stdout) ← REPL(state, code)
-   *   hist ← hist ∥ code ∥ Metadata(stdout)
-   *   if state[Final] is set then
-   *     return state[Final]
-   * ```
-   */
+/**
+ * RLM Orchestrator - Multi-turn REPL Orchestrator (Algorithm 1)
+ *
+ * Implements Algorithm 1 from the "Recursive Language Models" paper (arXiv:2512.24601v2).
+ *
+ * Key features:
+ * - Explicit while loop: LLM → execute → metadata → LLM
+ * - Metadata-only history (constant size, not full context)
+ * - Worker reuse across iterations (buffers persist like real REPL)
+ * - Fresh worker per sub_rlm call
+ *
+ * Algorithm 1:
+ * ```
+ * state ← InitREPL(prompt=P)
+ * state ← AddFunction(state, sub_RLM)
+ * hist ← [Metadata(state)]
+ *
+ * while True do
+ *   code ← LLM(hist)
+ *   (state, stdout) ← REPL(state, code)
+ *   hist ← hist ∥ code ∥ Metadata(stdout)
+ *   if state[Final] is set then
+ *     return state[Final]
+ * ```
+ */
 
 import { logger } from "../utils/logger.js";
 import {
-  RepoApi,
-  createRepoApi,
-  LlmConfig,
   createLlmQuery,
-  executeRlmScript,
+  createRepoApi,
+  type LlmConfig,
+  type RepoApi,
   type RlmExecutionResult,
 } from "./rlm-sandbox.js";
-import { BunWorkerSandbox, type WorkerExecutionResult } from "./rlm-worker-sandbox.js";
+import {
+  BunWorkerSandbox,
+  type WorkerExecutionResult,
+} from "./rlm-worker-sandbox.js";
 
 /**
  * Configuration for RLM Orchestrator
@@ -88,14 +90,19 @@ interface RlmState {
  * relying on LangChain's internal agent machinery.
  */
 export class RlmOrchestrator {
-  private config: RlmOrchestratorConfig & { maxIterations: number; stdoutPreviewLength: number };
+  private config: RlmOrchestratorConfig & {
+    maxIterations: number;
+    stdoutPreviewLength: number;
+  };
   private state: RlmState;
   private repoApi: RepoApi;
   private metadataHistory: RlmMetadata[];
   private errorFeedback?: string;
   private lastError?: string; // Preserved for summary even after errorFeedback is cleared
   private worker: BunWorkerSandbox | null = null;
-  private llmQuery: ((instruction: string, data: string) => Promise<string>) | undefined;
+  private llmQuery:
+    | ((instruction: string, data: string) => Promise<string>)
+    | undefined;
 
   constructor(config: RlmOrchestratorConfig) {
     this.config = {
@@ -105,9 +112,9 @@ export class RlmOrchestrator {
     };
 
     this.state = {
-      context: '',
+      context: "",
       buffers: {},
-      stdout: '',
+      stdout: "",
       iteration: 0,
     };
 
@@ -118,7 +125,10 @@ export class RlmOrchestrator {
   /**
    * Get or create the cached llm_query function
    */
-  private getLlmQuery(): (instruction: string, data: string) => Promise<string> {
+  private getLlmQuery(): (
+    instruction: string,
+    data: string
+  ) => Promise<string> {
     if (!this.llmQuery) {
       // Use direct llmQuery if provided in config
       if (this.config.llmQuery) {
@@ -140,7 +150,7 @@ export class RlmOrchestrator {
   private async initializeWorker(): Promise<void> {
     if (!this.worker) {
       const llmQuery = this.getLlmQuery();
-      
+
       // Create sub_rlm executor that spawns fresh workers with isolated state
       // sub_rlm receives JavaScript code to execute in a fresh worker
       const subRlmExecutor = async (scriptCode: string) => {
@@ -156,16 +166,19 @@ export class RlmOrchestrator {
           freshWorker.terminate();
         }
       };
-      
+
       this.worker = new BunWorkerSandbox({
         repo: this.repoApi,
         llmQuery,
-        timeout: 30000,
+        timeout: 30_000,
         initialBuffers: { ...this.state.buffers },
         context: this.state.context,
         subRlmExecutor,
       });
-      logger.debug("RLM Orchestrator", "Created persistent worker with sub_rlm support");
+      logger.debug(
+        "RLM Orchestrator",
+        "Created persistent worker with sub_rlm support"
+      );
     }
   }
 
@@ -177,7 +190,7 @@ export class RlmOrchestrator {
     return new BunWorkerSandbox({
       repo: this.repoApi,
       llmQuery,
-      timeout: 30000,
+      timeout: 30_000,
       initialBuffers: {}, // Fresh empty buffers
       context: this.state.context, // Same context but fresh buffers
     });
@@ -203,7 +216,7 @@ export class RlmOrchestrator {
 
       // Reuse persistent worker
       await this.initializeWorker();
-      
+
       // Update worker with current buffers
       if (this.worker) {
         this.worker.setBuffers(this.state.buffers);
@@ -228,9 +241,12 @@ export class RlmOrchestrator {
         error: result.error,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error("RLM Orchestrator", "Script execution error", undefined, { errorMessage });
-      
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error("RLM Orchestrator", "Script execution error", undefined, {
+        errorMessage,
+      });
+
       return {
         returnValue: undefined,
         stdout: this.state.stdout,
@@ -276,15 +292,15 @@ export class RlmOrchestrator {
     const parts: string[] = [];
     parts.push(`Iteration: ${metadata.iteration}`);
     parts.push(`Output: ${metadata.stdoutPreview || "(none)"}`);
-    
+
     if (metadata.bufferKeys.length > 0) {
       parts.push(`Buffers: ${metadata.bufferKeys.join(", ")}`);
     }
-    
+
     if (metadata.errorFeedback) {
       parts.push(`Error: ${metadata.errorFeedback}`);
     }
-    
+
     return parts.join("\n");
   }
 
@@ -294,22 +310,25 @@ export class RlmOrchestrator {
    */
   private buildHistory(query: string): string {
     const historyParts: string[] = [];
-    
+
     // Start with the initial query
     historyParts.push(`## Task\n${query}`);
-    
+
     // Add all metadata from previous iterations
     for (const metadata of this.metadataHistory) {
       historyParts.push(this.formatMetadata(metadata));
     }
-    
+
     return historyParts.join("\n\n---\n\n");
   }
 
   /**
    * Parse FINAL/FINAL_VAR signals from output
    */
-  private parseFinalSignal(output: string): { finalAnswer?: string; cleanedStdout: string } {
+  private parseFinalSignal(output: string): {
+    finalAnswer?: string;
+    cleanedStdout: string;
+  } {
     // Match FINAL(content) - can span multiple lines
     const finalMatch = output.match(/FINAL\(([\s\S]*?)\)/);
     // Match FINAL_VAR(bufferName)
@@ -327,7 +346,10 @@ export class RlmOrchestrator {
       if (bufferValue !== undefined) {
         finalAnswer = String(bufferValue);
       } else {
-        logger.warn("RLM Orchestrator", `FINAL_VAR referenced unknown buffer: ${bufferName}`);
+        logger.warn(
+          "RLM Orchestrator",
+          `FINAL_VAR referenced unknown buffer: ${bufferName}`
+        );
         finalAnswer = `Error: Buffer '${bufferName}' not found`;
       }
     }
@@ -356,9 +378,9 @@ export class RlmOrchestrator {
 
       // Initialize state
       this.state = {
-        context: '',
+        context: "",
         buffers: {},
-        stdout: '',
+        stdout: "",
         iteration: 0,
         finalAnswer: undefined,
       };
@@ -367,7 +389,10 @@ export class RlmOrchestrator {
 
       // Main loop (Algorithm 1)
       while (this.state.iteration < this.config.maxIterations) {
-        logger.info("RLM Orchestrator", `Iteration ${this.state.iteration + 1}`);
+        logger.info(
+          "RLM Orchestrator",
+          `Iteration ${this.state.iteration + 1}`
+        );
 
         // Build history for LLM (metadata only, not full context)
         const history = this.buildHistory(query);
@@ -375,14 +400,20 @@ export class RlmOrchestrator {
         // Call LLM with history
         const llmQuery = this.getLlmQuery();
         let llmResponse: string;
-        
+
         try {
-          llmResponse = await llmQuery("Execute this code in the REPL", history);
+          llmResponse = await llmQuery(
+            "Execute this code in the REPL",
+            history
+          );
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          logger.error("RLM Orchestrator", "LLM query failed", undefined, { errorMessage });
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          logger.error("RLM Orchestrator", "LLM query failed", undefined, {
+            errorMessage,
+          });
           this.errorFeedback = `LLM Error: ${errorMessage}`;
-          
+
           // Continue to next iteration with error feedback
           this.metadataHistory.push(this.generateMetadata());
           this.state.iteration++;
@@ -411,16 +442,19 @@ export class RlmOrchestrator {
 
         // Check for execution errors
         if (execResult.error) {
-          logger.warn("RLM Orchestrator", "Execution error", { error: execResult.error });
+          logger.warn("RLM Orchestrator", "Execution error", {
+            error: execResult.error,
+          });
           this.errorFeedback = execResult.error;
         }
 
         // Check for FINAL/FINAL_VAR - first from execution result, then parse stdout
         let finalAnswer = execResult.finalAnswer;
-        
+
         // If not set by execution, try parsing from stdout (handles case where LLM returns FINAL in string output)
         if (!finalAnswer && execResult.stdout) {
-          const { finalAnswer: parsedFinal, cleanedStdout } = this.parseFinalSignal(execResult.stdout);
+          const { finalAnswer: parsedFinal, cleanedStdout } =
+            this.parseFinalSignal(execResult.stdout);
           finalAnswer = parsedFinal;
           // Update stdout to cleaned version (never use returnValue as stdout)
           this.state.stdout = cleanedStdout;
@@ -432,7 +466,11 @@ export class RlmOrchestrator {
             answerLength: finalAnswer.length,
             iterations: this.state.iteration + 1,
           });
-          logger.timingEnd(timingId, "RLM Orchestrator", "Orchestrator completed");
+          logger.timingEnd(
+            timingId,
+            "RLM Orchestrator",
+            "Orchestrator completed"
+          );
           return finalAnswer;
         }
 
@@ -448,7 +486,7 @@ export class RlmOrchestrator {
 
       const summary = this.generateIterationSummary();
       logger.timingEnd(timingId, "RLM Orchestrator", "Max iterations");
-      
+
       return `Max iterations (${this.config.maxIterations}) reached.\n\n${summary}`;
     } finally {
       // Cleanup persistent worker
@@ -465,12 +503,12 @@ export class RlmOrchestrator {
   private generateIterationSummary(): string {
     const parts: string[] = ["=== Iteration Summary ==="];
     parts.push(`Total iterations: ${this.state.iteration}`);
-    
+
     // Include error feedback if present (from lastError which is preserved)
     if (this.lastError) {
       parts.push(`\n=== Last Error ===\n${this.lastError}`);
     }
-    
+
     parts.push(`\n=== Buffers (${Object.keys(this.state.buffers).length}) ===`);
 
     for (const [key, value] of Object.entries(this.state.buffers)) {

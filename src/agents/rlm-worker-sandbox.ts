@@ -41,15 +41,32 @@ export interface BunWorkerSandboxConfig {
   /** Context content from repository (for RLM engine) */
   context?: string;
   /** Callback for sub_rlm - creates fresh worker with isolated state */
-  subRlmExecutor?: (query: string) => Promise<{ stdout: string; buffers: Record<string, unknown>; finalAnswer?: string }>;
+  subRlmExecutor?: (
+    query: string
+  ) => Promise<{
+    stdout: string;
+    buffers: Record<string, unknown>;
+    finalAnswer?: string;
+  }>;
 }
 
 /**
  * IPC message types for worker communication
  */
 type IpcMessage =
-  | { type: "execute"; script: string; buffers: Record<string, unknown>; context?: string }
-  | { type: "result"; returnValue?: unknown; stdout: string; buffers: Record<string, unknown>; finalAnswer?: string }
+  | {
+      type: "execute";
+      script: string;
+      buffers: Record<string, unknown>;
+      context?: string;
+    }
+  | {
+      type: "result";
+      returnValue?: unknown;
+      stdout: string;
+      buffers: Record<string, unknown>;
+      finalAnswer?: string;
+    }
   | { type: "error"; error: string }
   | { type: "ready" }
   | { type: "print"; output: string }
@@ -57,11 +74,21 @@ type IpcMessage =
   | { type: "repo_call"; method: string; args: unknown; requestId: string }
   | { type: "repo_result"; requestId: string; result: string }
   | { type: "repo_error"; requestId: string; error: string }
-  | { type: "llm_query_call"; instruction: string; data: string; requestId: string }
+  | {
+      type: "llm_query_call";
+      instruction: string;
+      data: string;
+      requestId: string;
+    }
   | { type: "llm_query_result"; requestId: string; result: string }
   | { type: "llm_query_error"; requestId: string; error: string }
   | { type: "sub_rlm_call"; query: string; requestId: string }
-  | { type: "sub_rlm_result"; requestId: string; result: string; error?: string };
+  | {
+      type: "sub_rlm_result";
+      requestId: string;
+      result: string;
+      error?: string;
+    };
 
 /**
  * Inline worker code template
@@ -377,12 +404,18 @@ export class BunWorkerSandbox {
   private buffers: Record<string, unknown>;
   private context?: string;
   private worker: Worker | null = null;
-  private subRlmExecutor?: (query: string) => Promise<{ stdout: string; buffers: Record<string, unknown>; finalAnswer?: string }>;
+  private subRlmExecutor?: (
+    query: string
+  ) => Promise<{
+    stdout: string;
+    buffers: Record<string, unknown>;
+    finalAnswer?: string;
+  }>;
 
   constructor(config: BunWorkerSandboxConfig) {
     this.repo = config.repo;
     this.llmQuery = config.llmQuery;
-    this.timeout = config.timeout ?? 30000;
+    this.timeout = config.timeout ?? 30_000;
     this.buffers = { ...(config.initialBuffers ?? {}) };
     this.context = config.context;
     this.subRlmExecutor = config.subRlmExecutor;
@@ -420,10 +453,11 @@ export class BunWorkerSandbox {
   }
 
   // Temporary storage for execute state
-  private _currentResolve: ((value: WorkerExecutionResult) => void) | null = null;
+  private _currentResolve: ((value: WorkerExecutionResult) => void) | null =
+    null;
   private _currentTimeoutId: Timer | null = null;
   private _currentWorker: Worker | null = null;
-  private _currentScript: string = "";
+  private _currentScript = "";
   private _currentBlobUrl: string | null = null;
 
   /**
@@ -485,7 +519,7 @@ export class BunWorkerSandbox {
         }
       };
       worker.addEventListener("message", readyHandler);
-      
+
       // Timeout - send execute message to ensure worker processes it
       timeoutHandle = setTimeout(() => {
         worker.removeEventListener("message", readyHandler);
@@ -572,30 +606,39 @@ export class BunWorkerSandbox {
   /**
    * Handle repo API calls from worker via IPC
    */
-  private async handleRepoCall(msg: Extract<IpcMessage, { type: "repo_call" }>): Promise<void> {
+  private async handleRepoCall(
+    msg: Extract<IpcMessage, { type: "repo_call" }>
+  ): Promise<void> {
     if (!this.worker) return;
 
     try {
       const { method, args, requestId } = msg;
-      
+
       // Validate method is one of the allowed repo API methods
       const allowedMethods = ["list", "view", "find", "grep"];
       if (!allowedMethods.includes(method)) {
         throw new Error(`Invalid repo method: ${method}`);
       }
-      
+
       const result = await this.repo[method](args);
       this.worker.postMessage({ type: "repo_result", requestId, result });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.worker.postMessage({ type: "repo_error", requestId: msg.requestId, error: errorMessage });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.worker.postMessage({
+        type: "repo_error",
+        requestId: msg.requestId,
+        error: errorMessage,
+      });
     }
   }
 
   /**
    * Handle llm_query calls from worker via IPC
    */
-  private async handleLlmQueryCall(msg: Extract<IpcMessage, { type: "llm_query_call" }>): Promise<void> {
+  private async handleLlmQueryCall(
+    msg: Extract<IpcMessage, { type: "llm_query_call" }>
+  ): Promise<void> {
     if (!this.worker) return;
 
     try {
@@ -603,8 +646,13 @@ export class BunWorkerSandbox {
       const result = await this.llmQuery(instruction, data);
       this.worker.postMessage({ type: "llm_query_result", requestId, result });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.worker.postMessage({ type: "llm_query_error", requestId: msg.requestId, error: errorMessage });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.worker.postMessage({
+        type: "llm_query_error",
+        requestId: msg.requestId,
+        error: errorMessage,
+      });
     }
   }
 
@@ -612,7 +660,9 @@ export class BunWorkerSandbox {
    * Handle sub_rlm calls from worker via IPC
    * Spawns a fresh worker with isolated state
    */
-  private async handleSubRlmCall(msg: Extract<IpcMessage, { type: "sub_rlm_call" }>): Promise<void> {
+  private async handleSubRlmCall(
+    msg: Extract<IpcMessage, { type: "sub_rlm_call" }>
+  ): Promise<void> {
     const worker = this.worker;
     if (!worker) return;
 
@@ -625,19 +675,24 @@ export class BunWorkerSandbox {
 
       // Call the executor to spawn fresh worker and execute
       const result = await this.subRlmExecutor(query);
-      
+
       // Send result back to worker (check worker still exists)
       if (this.worker) {
-        this.worker.postMessage({ 
-          type: "sub_rlm_result", 
-          requestId, 
-          result: JSON.stringify(result) 
+        this.worker.postMessage({
+          type: "sub_rlm_result",
+          requestId,
+          result: JSON.stringify(result),
         });
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       if (this.worker) {
-        this.worker.postMessage({ type: "sub_rlm_result", requestId, error: errorMessage });
+        this.worker.postMessage({
+          type: "sub_rlm_result",
+          requestId,
+          error: errorMessage,
+        });
       }
     }
   }

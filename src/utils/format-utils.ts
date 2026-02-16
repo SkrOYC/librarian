@@ -198,7 +198,7 @@ export function formatGrepResultsAsJson(
   results: { path: string; matches: SearchMatch[] }[]
 ): string {
   const totalMatches = results.reduce((sum, r) => sum + r.matches.length, 0);
-  
+
   const formattedResults = results.map((result) => ({
     path: result.path,
     matches: result.matches.map((match) => ({
@@ -210,22 +210,30 @@ export function formatGrepResultsAsJson(
     })),
   }));
 
-  return JSON.stringify({
-    totalMatches,
-    totalFiles: results.length,
-    results: formattedResults,
-  }, null, 0);
+  return JSON.stringify(
+    {
+      totalMatches,
+      totalFiles: results.length,
+      results: formattedResults,
+    },
+    null,
+    0
+  );
 }
 
 /**
  * Format find results as JSON for programmatic use in RLM scripts
  */
 export function formatFindAsJson(files: string[], patterns: string[]): string {
-  return JSON.stringify({
-    totalFiles: files.length,
-    patterns,
-    files,
-  }, null, 0);
+  return JSON.stringify(
+    {
+      totalFiles: files.length,
+      patterns,
+      files,
+    },
+    null,
+    0
+  );
 }
 
 /**
@@ -235,18 +243,22 @@ export function formatListAsJson(
   entries: FileSystemEntry[],
   directory: string
 ): string {
-  return JSON.stringify({
-    directory,
-    totalEntries: entries.length,
-    entries: entries.map((entry) => ({
-      name: entry.name,
-      path: path.relative(directory, entry.path),
-      isDirectory: entry.isDirectory,
-      ...(entry.size !== undefined && { size: entry.size }),
-      ...(entry.lineCount !== undefined && { lineCount: entry.lineCount }),
-      depth: entry.depth,
-    })),
-  }, null, 0);
+  return JSON.stringify(
+    {
+      directory,
+      totalEntries: entries.length,
+      entries: entries.map((entry) => ({
+        name: entry.name,
+        path: path.relative(directory, entry.path),
+        isDirectory: entry.isDirectory,
+        ...(entry.size !== undefined && { size: entry.size }),
+        ...(entry.lineCount !== undefined && { lineCount: entry.lineCount }),
+        depth: entry.depth,
+      })),
+    },
+    null,
+    0
+  );
 }
 
 /**
@@ -263,10 +275,14 @@ export function formatViewAsJson(
     content,
   }));
 
-  return JSON.stringify({
-    filePath,
-    totalLines: totalLines ?? lines.length,
-    viewRange: viewRange ?? null,
-    lines: formattedLines,
-  }, null, 0);
+  return JSON.stringify(
+    {
+      filePath,
+      totalLines: totalLines ?? lines.length,
+      viewRange: viewRange ?? null,
+      lines: formattedLines,
+    },
+    null,
+    0
+  );
 }

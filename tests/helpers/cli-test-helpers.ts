@@ -3,13 +3,13 @@
  * CLI testing utilities and mock command execution
  */
 
-import { spawn, type ChildProcess } from 'node:child_process';
-import type { ReadmeConfig, MockRepo } from './test-config.js';
-import fs from 'node:fs';
-import path from 'node:path';
+import { type ChildProcess, spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import type { MockRepo, ReadmeConfig } from "./test-config.js";
 
 // Type for bun:test expect object
-type BunTestExpect = ReturnType<typeof import('bun:test').expect>;
+type BunTestExpect = ReturnType<typeof import("bun:test").expect>;
 
 export interface CLICommandTest {
   command: string[];
@@ -47,16 +47,16 @@ export class TestCLIHelper {
    * Create a test configuration file
    */
   setConfig(config: ReadmeConfig): void {
-    const configDir = path.join(this.testDir, '.config', 'librarian');
+    const configDir = path.join(this.testDir, ".config", "librarian");
     fs.mkdirSync(configDir, { recursive: true });
 
-    this.configPath = path.join(configDir, 'config.yaml');
+    this.configPath = path.join(configDir, "config.yaml");
     const yamlContent = this.configToYaml(config);
     fs.writeFileSync(this.configPath, yamlContent);
 
     // Create .env file with test API key
-    const envPath = path.join(configDir, '.env');
-    fs.writeFileSync(envPath, 'LIBRARIAN_API_KEY=test-api-key-for-testing');
+    const envPath = path.join(configDir, ".env");
+    fs.writeFileSync(envPath, "LIBRARIAN_API_KEY=test-api-key-for-testing");
   }
 
   /**
@@ -64,12 +64,14 @@ export class TestCLIHelper {
    */
   private configToYaml(config: ReadmeConfig): string {
     const yamlSections: string[] = [];
-    
+
     yamlSections.push(`repos_path: "${config.repos_path}"`);
-    yamlSections.push('');
-    yamlSections.push('technologies:');
-    
-    for (const [groupName, technologies] of Object.entries(config.technologies)) {
+    yamlSections.push("");
+    yamlSections.push("technologies:");
+
+    for (const [groupName, technologies] of Object.entries(
+      config.technologies
+    )) {
       yamlSections.push(`  ${groupName}:`);
       for (const [techName, techConfig] of Object.entries(technologies)) {
         if (!techConfig) continue;
@@ -84,7 +86,7 @@ export class TestCLIHelper {
       }
     }
 
-    yamlSections.push('');
+    yamlSections.push("");
     yamlSections.push(`llm_provider: ${config.llm_provider}`);
 
     if (config.llm_model !== undefined) {
@@ -94,11 +96,9 @@ export class TestCLIHelper {
     if (config.base_url !== undefined) {
       yamlSections.push(`base_url: "${config.base_url}"`);
     }
-    
-    return yamlSections.join('\n');
+
+    return yamlSections.join("\n");
   }
-
-
 
   /**
    * Get captured output
@@ -127,7 +127,7 @@ export class TestCLIHelper {
       const startTime = Date.now();
 
       // Use the built CLI from dist/
-      const cliPath = path.join(process.cwd(), 'dist', 'cli.js');
+      const cliPath = path.join(process.cwd(), "dist", "cli.js");
 
       // If we have a config file set up, insert --config option after the command
       // The --config option is command-specific, so it needs to come after the command name
@@ -135,21 +135,26 @@ export class TestCLIHelper {
       if (this.configPath && args.length > 0) {
         const command = args[0];
         // Only add --config for commands that support it (list, explore)
-        if (command === 'list' || command === 'explore') {
-          commandArgs = [command, '--config', this.configPath, ...args.slice(1)];
+        if (command === "list" || command === "explore") {
+          commandArgs = [
+            command,
+            "--config",
+            this.configPath,
+            ...args.slice(1),
+          ];
         }
       }
 
-      const child: ChildProcess = spawn('bun', [cliPath, ...commandArgs], {
+      const child: ChildProcess = spawn("bun", [cliPath, ...commandArgs], {
         cwd: this.testDir,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ["pipe", "pipe", "pipe"],
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
 
       if (child.stdout) {
-        child.stdout.on('data', (data) => {
+        child.stdout.on("data", (data) => {
           const chunk = data.toString();
           stdout += chunk;
           this.outputCapture.stdout.push(chunk);
@@ -157,30 +162,30 @@ export class TestCLIHelper {
       }
 
       if (child.stderr) {
-        child.stderr.on('data', (data) => {
+        child.stderr.on("data", (data) => {
           const chunk = data.toString();
           stderr += chunk;
           this.outputCapture.stderr.push(chunk);
         });
       }
 
-      child.on('close', (code) => {
+      child.on("close", (code) => {
         const duration = Date.now() - startTime;
         resolve({
           exitCode: code || 0,
           stdout: stdout.trim(),
           stderr: stderr.trim(),
-          duration
+          duration,
         });
       });
 
-      child.on('error', (error) => {
+      child.on("error", (error) => {
         const duration = Date.now() - startTime;
         resolve({
           exitCode: 1,
           stdout: stdout.trim(),
           stderr: error.message,
-          duration
+          duration,
         });
       });
     });
@@ -199,7 +204,10 @@ export class TestCLIHelper {
 /**
  * Create mock repository structure for testing
  */
-export function createMockRepoStructure(basePath: string, repo: MockRepo): void {
+export function createMockRepoStructure(
+  basePath: string,
+  repo: MockRepo
+): void {
   const repoPath = path.join(basePath, repo.group, repo.name);
 
   // Create repository directory
@@ -225,32 +233,44 @@ export function createMockRepoStructure(basePath: string, repo: MockRepo): void 
 export function createStandardMockRepos(_basePath: string): MockRepo[] {
   return [
     {
-      name: 'react-mock',
-      group: 'default',
+      name: "react-mock",
+      group: "default",
       files: {
-        'README.md': '# React Mock\nA mock React repository for testing.',
-        'package.json': JSON.stringify({
-          name: 'react-mock',
-          version: '1.0.0',
-          main: 'index.js'
-        }, null, 2),
-        'src/index.js': '// React mock entry point\nexport const React = {};',
-        'src/components/Button.js': '// Button component\nexport const Button = () => {};'
-      }
+        "README.md": "# React Mock\nA mock React repository for testing.",
+        "package.json": JSON.stringify(
+          {
+            name: "react-mock",
+            version: "1.0.0",
+            main: "index.js",
+          },
+          null,
+          2
+        ),
+        "src/index.js": "// React mock entry point\nexport const React = {};",
+        "src/components/Button.js":
+          "// Button component\nexport const Button = () => {};",
+      },
     },
     {
-      name: 'langchain-mock',
-      group: 'langchain',
+      name: "langchain-mock",
+      group: "langchain",
       files: {
-        'README.md': '# LangChain Mock\nA mock LangChain repository for testing.',
-        'package.json': JSON.stringify({
-          name: 'langchain-mock',
-          version: '1.0.0'
-        }, null, 2),
-        'src/index.js': '// LangChain mock entry point\nexport const LangChain = {};',
-        'src/agents/BaseAgent.js': '// Base agent implementation\nexport class BaseAgent {}'
-      }
-    }
+        "README.md":
+          "# LangChain Mock\nA mock LangChain repository for testing.",
+        "package.json": JSON.stringify(
+          {
+            name: "langchain-mock",
+            version: "1.0.0",
+          },
+          null,
+          2
+        ),
+        "src/index.js":
+          "// LangChain mock entry point\nexport const LangChain = {};",
+        "src/agents/BaseAgent.js":
+          "// Base agent implementation\nexport class BaseAgent {}",
+      },
+    },
   ];
 }
 
@@ -261,16 +281,16 @@ export function createStandardMockRepos(_basePath: string): MockRepo[] {
 export function assertCLIResult(
   result: TestResult,
   expected: CLICommandTest,
-  expect: BunTestExpect,
+  expect: BunTestExpect
 ): void {
   if (expected.expectedExitCode !== undefined) {
     expect(result.exitCode).toBe(expected.expectedExitCode);
   }
-  
+
   if (expected.expectedOutput) {
     expect(result.stdout).toContain(expected.expectedOutput);
   }
-  
+
   if (expected.expectedError) {
     expect(result.stderr).toContain(expected.expectedError);
   }
@@ -282,24 +302,24 @@ export function assertCLIResult(
 export function createCLITestScenarios(): CLICommandTest[] {
   return [
     {
-      command: ['list'],
+      command: ["list"],
       expectedExitCode: 0,
-      expectedOutput: 'default'
+      expectedOutput: "default",
     },
     {
-      command: ['list', '--help'],
+      command: ["list", "--help"],
       expectedExitCode: 0,
-      expectedOutput: 'Usage:'
+      expectedOutput: "Usage:",
     },
     {
-      command: ['explore', '--help'],
+      command: ["explore", "--help"],
       expectedExitCode: 0,
-      expectedOutput: 'Usage:'
+      expectedOutput: "Usage:",
     },
     {
-      command: ['--help'],
+      command: ["--help"],
       expectedExitCode: 0,
-      expectedOutput: 'librarian'
-    }
+      expectedOutput: "librarian",
+    },
   ];
 }
