@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+// Librarian CLI - Technology Research Agent
+
 import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
