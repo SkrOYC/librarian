@@ -35,7 +35,9 @@
     "test:watch": "bun test --watch tests/",
     "lint": "biome check --write",
     "format": "biome format --write",
-    "start": "bun dist/index.js"
+    "start": "bun dist/index.js",
+    "cli": "bun dist/cli.js",
+    "postinstall": "bunx bun2nix -o bun.nix"
   },
   "keywords": [
     "cli",

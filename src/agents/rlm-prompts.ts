@@ -38,7 +38,7 @@ Spawn a fresh worker with isolated state to run recursive processing. Use this f
 - Recursive decomposition (split context, process each chunk)
 - Complex multi-step tasks requiring isolated buffers
 - \`scriptCode\`: JavaScript code to execute in the fresh worker
-- Returns: The finalAnswer if set, otherwise the result object
+- Returns: An object with \`finalAnswer\` property if set, otherwise execution result
 
 ### repo object
 - \`repo.grep({query: "term"})\` - Search for text
@@ -113,8 +113,7 @@ Example:
 buffers.analysis = llm_query("Analyze", context);
 FINAL_VAR("analysis");
 // OR
-FINAL("The answer is: " + buffers.result);
-\`\`\`
+FINAL("The answer is: " + buffers.analysis);
 
 ## RULES
 
@@ -122,7 +121,7 @@ FINAL("The answer is: " + buffers.result);
 - The \`buffers\` object is pre-initialized - use it to store intermediate results for aggregation
 - Prefer \`llm_query\` over \`sub_rlm\` for simple tasks
 - Use \`sub_rlm\` when you need isolated state or recursive processing
-- Batch information into \`llm_query\` calls when possible (~200K chars per call)
+- Batch information into \`llm_query\` calls when possible (~500K chars per call)
 - Use \`Promise.all\` for parallel execution when possible
 ${contextBlock}
 
