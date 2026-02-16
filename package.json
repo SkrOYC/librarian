@@ -33,10 +33,9 @@
     "build:dev": "tsc",
     "test": "bun test tests/",
     "test:watch": "bun test --watch tests/",
-    "lint": "eslint src --ext .ts",
-    "start": "bun dist/index.js",
-    "cli": "bun dist/cli.js",
-    "postinstall": "bunx bun2nix -o bun.nix"
+    "lint": "biome check --write",
+    "format": "biome format --write",
+    "start": "bun dist/index.js"
   },
   "keywords": [
     "cli",
