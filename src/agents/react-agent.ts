@@ -821,8 +821,9 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       llmConfig,
       repoContentLoader: () => this.loadRepoContentForRlm(),
       workingDir: this.config.workingDir,
-      maxIterations: 10,
-      stdoutPreviewLength: 1000,
+      maxIterations: 30,
+      stdoutPreviewLength: 2000,
+      systemPrompt: this.createRlmSystemPrompt(),
     };
 
     this.rlmOrchestrator = new RlmOrchestrator(orchestratorConfig);
@@ -835,21 +836,73 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
   /**
    * Load repository content for RLM context
    * Used by the RLM engine to lazily load context
+   * Loads actual file contents (README, package.json, key files) for the model to analyze
    */
   private async loadRepoContentForRlm(): Promise<string> {
     const { workingDir } = this.config;
+    const parts: string[] = [];
 
-    // Simple approach: read key files and package.json
-    // For large repos, scripts should handle chunking
     try {
-      // Get file listing
+      // Get file listing to understand structure
       const listing = await listTool.invoke(
         { directoryPath: workingDir, recursive: false, maxDepth: 2 },
         { context: { workingDir, group: "", technology: "" } }
       );
+      parts.push(`File listing (depth 2):\n${listing}\n`);
 
+      // Try to read README.md
+      try {
+        const readme = await viewTool.invoke(
+          { filePath: "README.md" },
+          { context: { workingDir, group: "", technology: "" } }
+        );
+        if (readme && !readme.includes("error") && readme.length > 10) {
+          parts.push(`=== README.md ===\n${readme}\n`);
+        }
+      } catch {
+        // README not found, that's ok
+      }
+
+      // Try to read package.json
+      try {
+        const packageJson = await viewTool.invoke(
+          { filePath: "package.json" },
+          { context: { workingDir, group: "", technology: "" } }
+        );
+        if (packageJson && !packageJson.includes("error") && packageJson.length > 10) {
+          parts.push(`=== package.json ===\n${packageJson}\n`);
+        }
+      } catch {
+        // package.json not found, that's ok
+      }
+
+      // Try to read main source files (index.js, index.ts, main.js, main.ts)
+      const mainFiles = ["index.ts", "index.js", "main.ts", "main.js", "src/index.ts", "src/index.js"];
+      for (const file of mainFiles) {
+        try {
+          const content = await viewTool.invoke(
+            { filePath: file, viewRange: [1, 100] },
+            { context: { workingDir, group: "", technology: "" } }
+          );
+          if (content && !content.includes("error") && content.length > 20) {
+            parts.push(`=== ${file} ===\n${content}\n`);
+            break; // Only load one main file
+          }
+        } catch {
+          // File not found, try next
+        }
+      }
+
+      const context = parts.join("\n");
+      
+      // If we got meaningful content, return it
+      if (context.length > 100) {
+        return `Repository: ${workingDir}\n\n${context}`;
+      }
+
+      // Fallback: just return listing
       return `Repository content loaded from: ${workingDir}\n\nFile listing:\n${listing}`;
-    } catch {
+    } catch (error) {
       return `Repository content loaded from: ${workingDir}\n\nNote: Full repository access available via repo API (repo.list, repo.view, repo.find, repo.grep)`;
     }
   }

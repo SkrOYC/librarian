@@ -41,6 +41,7 @@ export interface LlmConfig {
   apiKey: string;
   model?: string | undefined;
   baseURL?: string | undefined;
+  systemPrompt?: string;
 }
 
 /**
@@ -91,7 +92,7 @@ export function createRepoApi(workingDir: string): RepoApi {
   return {
     list: async (args) => {
       try {
-        return await listTool.invoke(
+        const result = await listTool.invoke(
           {
             directoryPath: args.directoryPath ?? ".",
             includeHidden: args.includeHidden ?? false,
@@ -100,25 +101,35 @@ export function createRepoApi(workingDir: string): RepoApi {
           },
           { context: toolContext }
         );
+        // Parse JSON result and return just the entries for readability
+        const parsed = JSON.parse(result);
+        if (parsed.entries && Array.isArray(parsed.entries)) {
+          return parsed.entries.map((e: { path: string; type: string }) => 
+            `${e.type === 'directory' ? '[DIR]' : '[FILE]'} ${e.path}`
+          ).join('\n');
+        }
+        return result;
       } catch (error) {
-        return JSON.stringify({
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return `Error: ${error instanceof Error ? error.message : String(error)}`;
       }
     },
     view: async (args) => {
       try {
-        return await viewTool.invoke(
+        const result = await viewTool.invoke(
           {
             filePath: args.filePath,
             viewRange: args.viewRange,
           },
           { context: toolContext }
         );
+        // Parse JSON result and return just the text content for readability
+        const parsed = JSON.parse(result);
+        if (parsed.lines && Array.isArray(parsed.lines)) {
+          return parsed.lines.map((l: { content: string }) => l.content).join('\n');
+        }
+        return result;
       } catch (error) {
-        return JSON.stringify({
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return `Error: ${error instanceof Error ? error.message : String(error)}`;
       }
     },
     find: async (args) => {
@@ -142,7 +153,7 @@ export function createRepoApi(workingDir: string): RepoApi {
     },
     grep: async (args) => {
       try {
-        return await grepTool.invoke(
+        const result = await grepTool.invoke(
           {
             searchPath: args.searchPath ?? ".",
             query: args.query,
@@ -158,10 +169,16 @@ export function createRepoApi(workingDir: string): RepoApi {
           },
           { context: toolContext }
         );
+        // Parse JSON result and return just the matches for readability
+        const parsed = JSON.parse(result);
+        if (parsed.matches && Array.isArray(parsed.matches)) {
+          return parsed.matches.map((m: { file: string; lineNumber: number; lineContent: string }) => 
+            `${m.file}:${m.lineNumber}: ${m.lineContent}`
+          ).join('\n');
+        }
+        return result;
       } catch (error) {
-        return JSON.stringify({
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return `Error: ${error instanceof Error ? error.message : String(error)}`;
       }
     },
   };
@@ -177,6 +194,8 @@ export function createRepoApi(workingDir: string): RepoApi {
 export function createLlmQuery(
   config: LlmConfig
 ): (instruction: string, data: string) => Promise<string> {
+  const systemPrompt = config.systemPrompt || SUB_AGENT_SYSTEM_PROMPT;
+
   return async (instruction: string, data: string): Promise<string> => {
     logger.debug("RLM", "llm_query invoked", {
       type: config.type,
@@ -196,8 +215,7 @@ export function createLlmQuery(
           }
           const client = new Anthropic({ apiKey: config.apiKey });
           const message = await client.messages.create({
-            max_tokens: 1024,
-            system: SUB_AGENT_SYSTEM_PROMPT,
+            system: systemPrompt,
             messages: [{ role: "user", content: input }],
             model: config.model,
           });
@@ -228,8 +246,7 @@ export function createLlmQuery(
             baseURL: config.baseURL,
           });
           const message = await client.messages.create({
-            max_tokens: 1024,
-            system: SUB_AGENT_SYSTEM_PROMPT,
+            system: systemPrompt,
             messages: [{ role: "user", content: input }],
             model: config.model,
           });
@@ -268,7 +285,7 @@ export function createLlmQuery(
           const client = new OpenAI({ apiKey: config.apiKey });
           const response = await client.responses.create({
             model: config.model,
-            instructions: SUB_AGENT_SYSTEM_PROMPT,
+            instructions: systemPrompt,
             input,
           });
           // Log full response for debugging
@@ -292,7 +309,7 @@ export function createLlmQuery(
           });
           const response = await client.responses.create({
             model: config.model,
-            instructions: SUB_AGENT_SYSTEM_PROMPT,
+            instructions: systemPrompt,
             input,
           });
           content = response.output_text || "";
@@ -308,7 +325,7 @@ export function createLlmQuery(
             model: config.model,
             contents: input,
             config: {
-              systemInstruction: SUB_AGENT_SYSTEM_PROMPT,
+              systemInstruction: systemPrompt,
             },
           });
           // Log full response for debugging

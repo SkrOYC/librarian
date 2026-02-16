@@ -25,6 +25,7 @@
  */
 
 import { logger } from "../utils/logger.js";
+import { createRlmSystemPrompt } from "./rlm-prompts.js";
 import {
   createLlmQuery,
   createRepoApi,
@@ -53,6 +54,8 @@ export interface RlmOrchestratorConfig {
   maxIterations?: number;
   /** Maximum stdout length for preview (default: 1000) */
   stdoutPreviewLength?: number;
+  /** System prompt for the RLM */
+  systemPrompt?: string;
 }
 
 /**
@@ -134,14 +137,52 @@ export class RlmOrchestrator {
       if (this.config.llmQuery) {
         this.llmQuery = this.config.llmQuery;
       } else if (this.config.llmConfig) {
-        // Otherwise create from llmConfig
-        this.llmQuery = createLlmQuery(this.config.llmConfig);
+        // Otherwise create from llmConfig, passing systemPrompt if available
+        this.llmQuery = createLlmQuery({
+          ...this.config.llmConfig,
+          systemPrompt: this.config.systemPrompt,
+        });
       } else {
         throw new Error("Either llmConfig or llmQuery must be provided");
       }
       logger.debug("RLM Orchestrator", "Created/retrieved llm_query function");
     }
     return this.llmQuery;
+  }
+
+  /**
+   * Extract JavaScript code from markdown code blocks in the LLM response.
+   * The paper's prompt instructs LLMs to wrap code in ```repl blocks.
+   * This function extracts the code from those blocks before execution.
+   */
+  private extractCodeFromResponse(response: string): string {
+    // Try to match ```repl blocks (preferred per paper)
+    const replMatch = response.match(/```repl\s*([\s\S]*?)```/);
+    if (replMatch) {
+      const code = replMatch[1].trim();
+      logger.debug("RLM Orchestrator", "Extracted code from ```repl block", {
+        codeLength: code.length,
+      });
+      return code;
+    }
+
+    // Fallback: also try ```javascript and ```js
+    const jsMatch = response.match(/```(?:javascript|js)\s*([\s\S]*?)```/);
+    if (jsMatch) {
+      const code = jsMatch[1].trim();
+      logger.debug("RLM Orchestrator", "Extracted code from ```js block", {
+        codeLength: code.length,
+      });
+      return code;
+    }
+
+    // If no code blocks found, return the original response
+    // (might be direct code or the LLM didn't follow instructions)
+    logger.debug("RLM Orchestrator", "No code block found, using raw response", {
+      responseLength: response.length,
+      responsePreview: response.slice(0, 100),
+    });
+    return response.trim();
   }
 
   /**
@@ -314,6 +355,12 @@ export class RlmOrchestrator {
     // Start with the initial query
     historyParts.push(`## Task\n${query}`);
 
+    // Add iteration countdown reminder
+    const remainingIterations = this.config.maxIterations - this.state.iteration;
+    if (remainingIterations <= 10) {
+      historyParts.push(`\n⚠️ **IMPORTANT**: You have only ${remainingIterations} iteration(s) left! Call FINAL() or FINAL_VAR() now with your answer.\n`);
+    }
+
     // Add all metadata from previous iterations
     for (const metadata of this.metadataHistory) {
       historyParts.push(this.formatMetadata(metadata));
@@ -329,10 +376,11 @@ export class RlmOrchestrator {
     finalAnswer?: string;
     cleanedStdout: string;
   } {
-    // Match FINAL(content) - can span multiple lines
-    const finalMatch = output.match(/FINAL\(([\s\S]*?)\)/);
+    // Match FINAL(content) - more robust matching for multiline content
+    // Handle cases like FINAL(answer) or FINAL(answer\n)
+    const finalMatch = output.match(/FINAL\s*\(\s*([\s\S]*?)\s*\)\s*$/m);
     // Match FINAL_VAR(bufferName)
-    const finalVarMatch = output.match(/FINAL_VAR\((\w+)\)/);
+    const finalVarMatch = output.match(/FINAL_VAR\s*\(\s*(\w+)\s*\)/);
 
     let finalAnswer: string | undefined;
 
@@ -356,8 +404,8 @@ export class RlmOrchestrator {
 
     // Clean FINAL/FINAL_VAR signals from stdout
     const cleanedStdout = output
-      .replace(/FINAL\([\s\S]*?\)/g, "")
-      .replace(/FINAL_VAR\(\w+\)/g, "")
+      .replace(/FINAL\s*\([\s\S]*?\)\s*$/gm, "")
+      .replace(/FINAL_VAR\s*\(\s*\w+\s*\)/g, "")
       .trim();
 
     return { finalAnswer, cleanedStdout };
@@ -425,12 +473,15 @@ export class RlmOrchestrator {
           responsePreview: llmResponse.slice(0, 200),
         });
 
+        // Extract code from markdown code blocks if present
+        const code = this.extractCodeFromResponse(llmResponse);
+        
         // Execute the code in REPL
         logger.debug("RLM Orchestrator", "About to execute code", {
-          codeLength: llmResponse.length,
-          codePreview: llmResponse.slice(0, 100),
+          codeLength: code.length,
+          codePreview: code.slice(0, 100),
         });
-        const execResult = await this.executeCode(llmResponse);
+        const execResult = await this.executeCode(code);
 
         logger.debug("RLM Orchestrator", "Execution result", {
           stdoutLength: execResult.stdout.length,
@@ -479,10 +530,34 @@ export class RlmOrchestrator {
         this.state.iteration++;
       }
 
-      // Max iterations reached
+      // Max iterations reached - try to generate a final answer from accumulated output
       logger.warn("RLM Orchestrator", "Max iterations reached", {
         iterations: this.state.iteration,
       });
+
+      // Try to generate a final answer from accumulated stdout using the LLM
+      const accumulatedOutput = this.state.stdout || "";
+      
+      if (accumulatedOutput.length > 50) {
+        try {
+          const llmQuery = this.getLlmQuery();
+          const finalAnswer = await llmQuery(
+            `The RLM reached max iterations without calling FINAL(). 
+Based on the accumulated exploration output below, provide a direct answer to the original query: "${query}"
+            
+Accumulated exploration output:
+${accumulatedOutput.slice(-10000)}`,
+            ""
+          );
+          
+          logger.timingEnd(timingId, "RLM Orchestrator", "Max iterations");
+          return finalAnswer;
+        } catch (error) {
+          logger.warn("RLM Orchestrator", "Failed to generate fallback answer", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
 
       const summary = this.generateIterationSummary();
       logger.timingEnd(timingId, "RLM Orchestrator", "Max iterations");
