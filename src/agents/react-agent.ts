@@ -19,16 +19,13 @@ import { viewTool } from "../tools/file-reading.tool.js";
 import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import type { AgentContext } from "./context-schema.js";
+import {
+  RlmOrchestrator,
+  type RlmOrchestratorConfig,
+} from "./rlm-orchestrator.js";
+import { createRlmSystemPrompt } from "./rlm-prompts.js";
+import type { LlmConfig } from "./rlm-sandbox.js";
 import { createResearchRepositoryTool } from "./rlm-tool.js";
-import {
-  RlmEngine,
-  type RlmEngineConfig,
-} from "./rlm-engine.js";
-import { LlmConfig } from "./rlm-sandbox.js";
-import {
-  createRlmSystemPrompt,
-  formatMetadataForPrompt,
-} from "./rlm-prompts.js";
 
 // Re-export for consumer convenience
 export type { AgentContext } from "./context-schema.js";
@@ -70,7 +67,7 @@ export class ReactAgent {
     | ChatGoogleGenerativeAI;
   private readonly tools: DynamicStructuredTool[];
   private readonly rlmTool?: DynamicStructuredTool;
-  private rlmEngine?: RlmEngine;
+  private rlmOrchestrator?: RlmOrchestrator;
   private agent?: ReturnType<typeof createAgent>;
   private readonly config: ReactAgentConfig;
   private readonly contextSchema?: z.ZodType | undefined;
@@ -110,11 +107,13 @@ export class ReactAgent {
   /**
    * Generates a pre-computed directory listing for the repository at depth 2.
    * This is used to provide the agent with structural context about the codebase.
-   * 
+   *
    * @param workingDir - The directory to list
    * @returns The directory listing as a string, or undefined if it fails
    */
-  private async getRepoOutline(workingDir: string): Promise<string | undefined> {
+  private async getRepoOutline(
+    workingDir: string
+  ): Promise<string | undefined> {
     try {
       const toolContext = { workingDir, group: "", technology: "" };
       const result = await listTool.invoke(
@@ -126,19 +125,21 @@ export class ReactAgent {
         },
         { context: toolContext }
       );
-      
+
       // Parse to get a cleaner format for the prompt
       const parsed = JSON.parse(result);
-      
+
       // Format as a simple tree structure for readability
       const lines: string[] = [];
       for (const entry of parsed.entries || []) {
         const indent = entry.depth === 0 ? "" : "  ".repeat(entry.depth);
         const marker = entry.isDirectory ? "[DIR]" : "[FILE]";
-        const size = entry.size ? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})` : "";
+        const size = entry.size
+          ? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})`
+          : "";
         lines.push(`${indent}${marker} ${entry.name}${size}`);
       }
-      
+
       return lines.join("\n");
     } catch (error) {
       logger.warn("AGENT", "Failed to generate repo outline", {
@@ -159,15 +160,14 @@ export class ReactAgent {
       return `You have been provided the **${technology.name}** repository.
 Repository: ${technology.repository}
 Your Working Directory: ${workingDir}`;
-    } else {
-      return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
     }
+    return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
   }
 
   /**
    * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
    * Delegates to rlm-prompts.ts for the actual prompt template.
-   * 
+   *
    * @param repoOutline - Optional pre-computed directory listing
    * @returns A context-aware RLM system prompt string
    */
@@ -796,22 +796,28 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
    * CLI-based providers (claude-code, gemini-cli) use their own execution path
    */
   private shouldUseRlm(): boolean {
-    const rlmProviders = ['openai', 'anthropic', 'google', 'openai-compatible', 'anthropic-compatible'];
+    const rlmProviders = [
+      "openai",
+      "anthropic",
+      "google",
+      "openai-compatible",
+      "anthropic-compatible",
+    ];
     return rlmProviders.includes(this.config.aiProvider.type);
   }
 
   /**
-   * Initialize the RLM engine on first use
+   * Initialize the RLM orchestrator on first use
    */
-  private async initializeRlmEngine(): Promise<void> {
+  private initializeRlmOrchestrator(): void {
     const llmConfig: LlmConfig = {
-      type: this.config.aiProvider.type as LlmConfig['type'],
+      type: this.config.aiProvider.type as LlmConfig["type"],
       apiKey: this.config.aiProvider.apiKey,
       model: this.config.aiProvider.model,
       baseURL: this.config.aiProvider.baseURL,
     };
 
-    const engineConfig: RlmEngineConfig = {
+    const orchestratorConfig: RlmOrchestratorConfig = {
       llmConfig,
       repoContentLoader: () => this.loadRepoContentForRlm(),
       workingDir: this.config.workingDir,
@@ -819,10 +825,10 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       stdoutPreviewLength: 1000,
     };
 
-    this.rlmEngine = new RlmEngine(engineConfig);
-    logger.info("AGENT", "RLM Engine initialized", {
+    this.rlmOrchestrator = new RlmOrchestrator(orchestratorConfig);
+    logger.info("AGENT", "RLM Orchestrator initialized", {
       workingDir: this.config.workingDir,
-      maxIterations: engineConfig.maxIterations,
+      maxIterations: orchestratorConfig.maxIterations,
     });
   }
 
@@ -847,49 +853,23 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       return `Repository content loaded from: ${workingDir}\n\nNote: Full repository access available via repo API (repo.list, repo.view, repo.find, repo.grep)`;
     }
   }
-
   /**
-   * Execute query using RLM REPL loop
-   * This implements the multi-turn RLM pattern from the paper
+   * Execute query using RLM Orchestrator
+   * This implements the multi-turn RLM pattern from the paper using RlmOrchestrator
    */
   private async executeRlmQuery(query: string): Promise<string> {
     const timingId = logger.timingStart("rlmQuery");
 
-    if (!this.agent) {
-      throw new Error("Agent not initialized for RLM query");
+    // Initialize orchestrator if not already done
+    if (!this.rlmOrchestrator) {
+      this.initializeRlmOrchestrator();
     }
 
-    // Get repo outline for context
-    const repoOutline = await this.getRepoOutline(this.config.workingDir);
-    const systemPrompt = this.createRlmSystemPrompt(repoOutline);
+    // Run the orchestrator with the query
+    const result = await this.rlmOrchestrator!.run(query);
 
-    // Single invocation - the agent handles the tool calling loop
-    const result = await this.agent.invoke(
-      { messages: [new HumanMessage(systemPrompt + "\n\n## Task\n" + query)] },
-      { 
-        recursionLimit: 100,
-        context: { workingDir: this.config.workingDir }
-      }
-    );
-
-    // Extract final answer from agent result
-    const lastMessage = result.messages[result.messages.length - 1];
-    let finalAnswer: string;
-    
-    if (typeof lastMessage.content === "string") {
-      finalAnswer = lastMessage.content;
-    } else if (Array.isArray(lastMessage.content)) {
-      // Handle array format (e.g., MiniMax with thinking blocks)
-      // Extract text from content blocks
-      const textParts = lastMessage.content
-        .filter((block: any) => block.text && typeof block.text === 'string')
-        .map((block: any) => block.text);
-      finalAnswer = textParts.join('\n');
-    } else {
-      finalAnswer = JSON.stringify(lastMessage.content);
-    }
     logger.timingEnd(timingId, "AGENT", "RLM query completed");
-    return finalAnswer;
+    return result;
   }
 
   /**
@@ -967,10 +947,10 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       // Use streamEvents for true token-by-token streaming
       const eventStream = await this.agent.streamEvents(
         { messages },
-        { 
+        {
           version: "v2",
           recursionLimit: 100,
-          ...(context ? { context } : {})
+          ...(context ? { context } : {}),
         }
       );
 

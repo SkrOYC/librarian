@@ -4,7 +4,7 @@
  * Prompts following the "Recursive Language Models" paper (arXiv:2512.24601v2).
  */
 
-import type { RlmMetadata } from "./rlm-engine.js";
+import type { RlmMetadata } from "./rlm-orchestrator.js";
 /**
  * System prompt for the Librarian Agent
  */

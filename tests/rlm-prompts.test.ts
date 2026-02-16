@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { RlmMetadata } from "../src/agents/rlm-engine.js";
+import type { RlmMetadata } from "../src/agents/rlm-orchestrator.js";
 import {
   createRlmSystemPrompt,
   formatMetadataForPrompt,
