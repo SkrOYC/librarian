@@ -22,7 +22,12 @@ export interface ReadmeConfig {
       };
     };
   };
-  llm_provider: "openai" | "anthropic" | "google" | "openai-compatible";
+  llm_provider:
+    | "openai"
+    | "anthropic"
+    | "google"
+    | "openai-compatible"
+    | "codex-cli";
   llm_model?: string;
   base_url?: string;
 }

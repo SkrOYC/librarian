@@ -30,7 +30,8 @@ export interface LibrarianConfig {
       | "openai-compatible"
       | "anthropic-compatible"
       | "claude-code"
-      | "gemini-cli";
+      | "gemini-cli"
+      | "codex-cli";
     apiKey: string;
     model?: string;
     baseURL?: string;
@@ -52,6 +53,7 @@ export class Librarian {
       "anthropic-compatible",
       "claude-code",
       "gemini-cli",
+      "codex-cli",
     ] as const;
     type ValidProviderType = (typeof validProviderTypes)[number];
 
@@ -76,38 +78,16 @@ export class Librarian {
   }
 
   async initialize(): Promise<void> {
-    // Check if Claude CLI is available if using claude-code provider
-    if (this.config.aiProvider.type === "claude-code") {
-      try {
-        const { execSync } = await import("node:child_process");
-        execSync("claude --version", { stdio: "ignore" });
-        logger.info("LIBRARIAN", "Claude CLI verified");
-      } catch {
-        logger.error("LIBRARIAN", "Claude CLI not found in PATH", undefined, {
-          type: "claude-code",
-        });
-        console.error(
-          'Error: "claude" CLI not found. Please install it to use the "claude-code" provider.'
-        );
-        process.exit(1);
-      }
-    }
+    const cliProviders = {
+      "claude-code": { command: "claude", displayName: "Claude" },
+      "gemini-cli": { command: "gemini", displayName: "Gemini" },
+      "codex-cli": { command: "codex", displayName: "Codex" },
+    } as const;
 
-    // Check if Gemini CLI is available if using gemini-cli provider
-    if (this.config.aiProvider.type === "gemini-cli") {
-      try {
-        const { execSync } = await import("node:child_process");
-        execSync("gemini --version", { stdio: "ignore" });
-        logger.info("LIBRARIAN", "Gemini CLI verified");
-      } catch {
-        logger.error("LIBRARIAN", "Gemini CLI not found in PATH", undefined, {
-          type: "gemini-cli",
-        });
-        console.error(
-          'Error: "gemini" CLI not found. Please install it to use the "gemini-cli" provider.'
-        );
-        process.exit(1);
-      }
+    if (this.config.aiProvider.type in cliProviders) {
+      const providerType = this.config.aiProvider.type as keyof typeof cliProviders;
+      const { command, displayName } = cliProviders[providerType];
+      this.verifyCliProvider(command, providerType, displayName);
     }
 
     // Create working directory if it doesn't exist
@@ -124,6 +104,36 @@ export class Librarian {
     }
 
     logger.info("LIBRARIAN", "Initialization complete");
+  }
+
+  private verifyCliProvider(
+    command: "claude" | "gemini" | "codex",
+    providerType: "claude-code" | "gemini-cli" | "codex-cli",
+    displayName: "Claude" | "Gemini" | "Codex"
+  ): void {
+    try {
+      const result = Bun.spawnSync([command, "--version"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if (result.exitCode !== 0) {
+        throw new Error(`${command} --version exited with ${result.exitCode}`);
+      }
+      logger.info("LIBRARIAN", `${displayName} CLI verified`);
+    } catch {
+      logger.error(
+        "LIBRARIAN",
+        `${displayName} CLI not found in PATH`,
+        undefined,
+        {
+          type: providerType,
+        }
+      );
+      console.error(
+        `Error: "${command}" CLI not found. Please install it to use the "${providerType}" provider.`
+      );
+      process.exit(1);
+    }
   }
 
   resolveTechnology(

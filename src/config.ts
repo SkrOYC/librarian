@@ -29,8 +29,9 @@ const ConfigSchema = z.object({
         "anthropic-compatible",
         "claude-code",
         "gemini-cli",
+        "codex-cli",
       ]),
-      apiKey: z.string().optional(), // Optional - will be loaded from .env or not needed for claude-code/gemini-cli
+      apiKey: z.string().optional(), // Optional - will be loaded from .env or not needed for CLI providers
       model: z.string().optional(),
       baseURL: z.string().optional(),
     })
@@ -45,6 +46,7 @@ const ConfigSchema = z.object({
       "anthropic-compatible",
       "claude-code",
       "gemini-cli",
+      "codex-cli",
     ])
     .optional(),
   llm_model: z.string().optional(),
@@ -116,7 +118,8 @@ function validateApiKey(
 ): void {
   const isCliProvider =
     config.aiProvider.type === "claude-code" ||
-    config.aiProvider.type === "gemini-cli";
+    config.aiProvider.type === "gemini-cli" ||
+    config.aiProvider.type === "codex-cli";
   if (
     !isCliProvider &&
     (!config.aiProvider.apiKey || config.aiProvider.apiKey.trim() === "")
