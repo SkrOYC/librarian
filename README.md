@@ -20,7 +20,7 @@ Librarian CLI allows AI coding agents to:
 
 - **Repository Management**: Auto-clone and sync from Git before each query
 - **LangChain-Powered Agent**: Advanced AI agent using LangChain's createAgent for intelligent exploration
-- **Unified Model Abstraction**: Support for OpenAI, Anthropic, Google, OpenAI-compatible, Anthropic-compatible, Claude CLI, and Gemini CLI APIs through LangChain (OpenCode Zen integration - no LLM required by default)
+- **Unified Model Abstraction**: Support for OpenAI, Anthropic, Google, OpenAI-compatible, Anthropic-compatible, Claude CLI, Gemini CLI, and Codex CLI APIs through LangChain (OpenCode Zen integration - no LLM required by default)
 - **Dynamic Prompt Construction**: Context-aware system prompts based on technology/group selection
 - **Sandboxed Tool Execution**: Secure file operations within isolated working directories
 - **Integrated Toolset**: Built-in tools for file listing, reading, grep, and glob search
@@ -245,7 +245,7 @@ technologies:
 			description: "LangGraph is low-level orchestration framework..."
 # Optional: Uncomment and configure LLM provider if you want to override OpenCode Zen
 # aiProvider:
-#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli
+#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
 #   model: gpt-5.2
 #   baseURL: # Optional for openai-compatible providers
@@ -366,7 +366,7 @@ technologies:
       description: "LangGraph is low-level orchestration framework..."
 # Optional: Uncomment and configure LLM provider if you want to override OpenCode Zen
 # aiProvider:
-#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli
+#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
 #   model: gpt-5.2
 #   baseURL: # Optional for openai-compatible providers
@@ -557,6 +557,16 @@ aiProvider:
 ```
 
 **Note**: For Gemini CLI provider, ensure the `gemini` CLI is installed and available in your PATH.
+
+### Codex CLI (CLI-based)
+
+```yaml
+aiProvider:
+  type: codex-cli
+  model: gpt-5.3-codex # Optional model passed to Codex CLI
+```
+
+**Note**: For Codex CLI provider, ensure the `codex` CLI is installed and available in your PATH.
 
 **Note**: The same configuration interface works across all providers thanks to LangChain's `initChatModel` abstraction and OpenCode Zen integration.
 

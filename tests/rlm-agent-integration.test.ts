@@ -27,7 +27,7 @@ describe("ReactAgent RLM Integration", () => {
       expect(prompt).toContain("llm_query");
       expect(prompt).toContain("my-lib");
       expect(prompt).toContain("/test/repo");
-      expect(prompt).toContain("Promise.all");
+      expect(prompt).toContain("FINAL(");
     });
 
     it("should include technology context in RLM prompt", () => {
@@ -55,7 +55,7 @@ describe("ReactAgent RLM Integration", () => {
 
       const prompt = agent.createRlmSystemPrompt();
       expect(prompt).toContain("/sandbox/group");
-      expect(prompt).toContain("Promise.all");
+      expect(prompt).toContain("FINAL(");
     });
   });
 
@@ -105,6 +105,14 @@ describe("ReactAgent RLM Integration", () => {
       expect(agent).toBeDefined();
     });
 
+    it("should skip RLM tool for codex-cli provider", () => {
+      const agent = new ReactAgent({
+        aiProvider: { type: "codex-cli", apiKey: "" },
+        workingDir: "/test/repo",
+      });
+      expect(agent).toBeDefined();
+    });
+
     it("should have streamRepository method regardless of provider", () => {
       const langchainAgent = new ReactAgent({
         aiProvider: { type: "openai", apiKey: "test-key" },
@@ -135,6 +143,17 @@ describe("ReactAgent RLM Integration", () => {
     it("should initialize gemini-cli provider without LangChain setup", async () => {
       const agent = new ReactAgent({
         aiProvider: { type: "gemini-cli", apiKey: "" },
+        workingDir: "/test/repo",
+      });
+
+      // Should resolve without error (skips LangChain)
+      await agent.initialize();
+      expect(agent).toBeDefined();
+    });
+
+    it("should initialize codex-cli provider without LangChain setup", async () => {
+      const agent = new ReactAgent({
+        aiProvider: { type: "codex-cli", apiKey: "" },
         workingDir: "/test/repo",
       });
 

@@ -95,6 +95,29 @@ describe("Config Schema Alignment", () => {
     expect(loaded.aiProvider?.type).toBe("openai-compatible");
   });
 
+  it("should support codex-cli provider without API key", async () => {
+    const newConfig = {
+      technologies: {
+        default: {
+          demo: { repo: "http://example.com" },
+        },
+      },
+      repos_path: "./libs",
+      aiProvider: {
+        type: "codex-cli",
+        model: "gpt-5.3-codex",
+      },
+    };
+
+    fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
+
+    const loaded: any = await loadConfig(TEST_CONFIG_PATH);
+
+    expect(loaded.aiProvider?.type).toBe("codex-cli");
+    expect(loaded.aiProvider?.model).toBe("gpt-5.3-codex");
+    expect(loaded.aiProvider?.apiKey).toBe("");
+  });
+
   it("should auto-create default config when file missing", async () => {
     const nonExistentPath = path.join(
       process.cwd(),

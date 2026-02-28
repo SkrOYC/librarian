@@ -30,7 +30,8 @@ export interface LibrarianConfig {
       | "openai-compatible"
       | "anthropic-compatible"
       | "claude-code"
-      | "gemini-cli";
+      | "gemini-cli"
+      | "codex-cli";
     apiKey: string;
     model?: string;
     baseURL?: string;
@@ -52,6 +53,7 @@ export class Librarian {
       "anthropic-compatible",
       "claude-code",
       "gemini-cli",
+      "codex-cli",
     ] as const;
     type ValidProviderType = (typeof validProviderTypes)[number];
 
@@ -105,6 +107,23 @@ export class Librarian {
         });
         console.error(
           'Error: "gemini" CLI not found. Please install it to use the "gemini-cli" provider.'
+        );
+        process.exit(1);
+      }
+    }
+
+    // Check if Codex CLI is available if using codex-cli provider
+    if (this.config.aiProvider.type === "codex-cli") {
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync("codex --version", { stdio: "ignore" });
+        logger.info("LIBRARIAN", "Codex CLI verified");
+      } catch {
+        logger.error("LIBRARIAN", "Codex CLI not found in PATH", undefined, {
+          type: "codex-cli",
+        });
+        console.error(
+          'Error: "codex" CLI not found. Please install it to use the "codex-cli" provider.'
         );
         process.exit(1);
       }
