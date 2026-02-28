@@ -647,13 +647,15 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       ...(this.config.aiProvider.model
         ? ["-m", this.config.aiProvider.model]
         : []),
+      "--",
       query,
     ];
 
     logger.debug("AGENT", "Spawning Codex CLI", {
-      args,
       workingDir,
       model: this.config.aiProvider.model || "default",
+      queryLength: query.length,
+      mode: "read-only",
     });
 
     const proc = spawn("codex", args, {
