@@ -1,8 +1,6 @@
-import { spawn } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -449,9 +447,11 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       workingDir,
     });
 
-    const proc = spawn("claude", args, {
+    const proc = Bun.spawn(["claude", ...args], {
       cwd: workingDir,
       env,
+      stdout: "pipe",
+      stderr: "pipe",
     });
 
     let buffer = "";
@@ -460,10 +460,19 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       throw new Error("Failed to capture Claude CLI output");
     }
 
-    const readable = Readable.from(proc.stdout);
+    const stderrPromise = proc.stderr
+      ? new Response(proc.stderr).text()
+      : Promise.resolve("");
+    const decoder = new TextDecoder();
+    const reader = proc.stdout.getReader();
 
-    for await (const chunk of readable) {
-      buffer += chunk.toString();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
 
@@ -492,17 +501,39 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       }
     }
 
-    // Wait for process to exit
-    await new Promise<void>((resolve, reject) => {
-      proc.on("exit", (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`Claude CLI exited with code ${code}`));
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      try {
+        const data = JSON.parse(buffer);
+        // Handle trailing partial line if the stream didn't end with newline
+        if (data.type === "text" && data.content) {
+          yield data.content;
+        } else if (data.type === "content_block_delta" && data.delta?.text) {
+          yield data.delta.text;
+        } else if (data.type === "message" && Array.isArray(data.content)) {
+          for (const block of data.content) {
+            if (block.type === "text" && block.text) {
+              yield block.text;
+            }
+          }
         }
-      });
-      proc.on("error", reject);
-    });
+      } catch {
+        // Ignore non-JSON trailing log lines emitted by claude CLI.
+      }
+    }
+
+    const [exitCode, stderrOutput] = await Promise.all([
+      proc.exited,
+      stderrPromise,
+    ]);
+    if (exitCode !== 0) {
+      const stderrPreview = stderrOutput.trim().slice(0, 500);
+      throw new Error(
+        stderrPreview
+          ? `Claude CLI exited with code ${exitCode}: ${stderrPreview}`
+          : `Claude CLI exited with code ${exitCode}`
+      );
+    }
   }
 
   private async *streamGeminiCli(
@@ -658,25 +689,32 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       mode: "read-only",
     });
 
-    const proc = spawn("codex", args, {
+    const proc = Bun.spawn(["codex", ...args], {
       cwd: workingDir,
       env: Bun.env,
+      stdout: "pipe",
+      stderr: "pipe",
     });
 
     if (!proc.stdout) {
       throw new Error("Failed to capture Codex CLI output");
     }
 
-    let stderrBuffer = "";
-    proc.stderr?.on("data", (chunk) => {
-      stderrBuffer += chunk.toString();
-    });
+    const stderrPromise = proc.stderr
+      ? new Response(proc.stderr).text()
+      : Promise.resolve("");
 
     let buffer = "";
-    const readable = Readable.from(proc.stdout);
+    const decoder = new TextDecoder();
+    const reader = proc.stdout.getReader();
 
-    for await (const chunk of readable) {
-      buffer += chunk.toString();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
 
@@ -696,23 +734,31 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       }
     }
 
-    await new Promise<void>((resolve, reject) => {
-      proc.on("exit", (code) => {
-        if (code === 0) {
-          resolve();
-          return;
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      try {
+        const data = JSON.parse(buffer);
+        const text = this.parseCodexExecStreamLine(data);
+        if (text) {
+          yield text;
         }
-        const stderrPreview = stderrBuffer.trim().slice(0, 500);
-        reject(
-          new Error(
-            stderrPreview
-              ? `Codex CLI exited with code ${code}: ${stderrPreview}`
-              : `Codex CLI exited with code ${code}`
-          )
-        );
-      });
-      proc.on("error", reject);
-    });
+      } catch {
+        // Ignore non-JSON trailing log lines emitted by codex CLI.
+      }
+    }
+
+    const [exitCode, stderrOutput] = await Promise.all([
+      proc.exited,
+      stderrPromise,
+    ]);
+    if (exitCode !== 0) {
+      const stderrPreview = stderrOutput.trim().slice(0, 500);
+      throw new Error(
+        stderrPreview
+          ? `Codex CLI exited with code ${exitCode}: ${stderrPreview}`
+          : `Codex CLI exited with code ${exitCode}`
+      );
+    }
   }
 
   private isCliProvider(): boolean {

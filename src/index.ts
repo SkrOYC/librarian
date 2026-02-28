@@ -87,7 +87,7 @@ export class Librarian {
     if (this.config.aiProvider.type in cliProviders) {
       const providerType = this.config.aiProvider.type as keyof typeof cliProviders;
       const { command, displayName } = cliProviders[providerType];
-      await this.verifyCliProvider(command, providerType, displayName);
+      this.verifyCliProvider(command, providerType, displayName);
     }
 
     // Create working directory if it doesn't exist
@@ -106,14 +106,19 @@ export class Librarian {
     logger.info("LIBRARIAN", "Initialization complete");
   }
 
-  private async verifyCliProvider(
+  private verifyCliProvider(
     command: "claude" | "gemini" | "codex",
     providerType: "claude-code" | "gemini-cli" | "codex-cli",
     displayName: "Claude" | "Gemini" | "Codex"
-  ): Promise<void> {
+  ): void {
     try {
-      const { execSync } = await import("node:child_process");
-      execSync(`${command} --version`, { stdio: "ignore" });
+      const result = Bun.spawnSync([command, "--version"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if (result.exitCode !== 0) {
+        throw new Error(`${command} --version exited with ${result.exitCode}`);
+      }
       logger.info("LIBRARIAN", `${displayName} CLI verified`);
     } catch {
       logger.error(
