@@ -673,8 +673,6 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       'approval_policy="never"',
       "-c",
       "mcp_servers={}",
-      "-C",
-      workingDir,
       ...(this.config.aiProvider.model
         ? ["-m", this.config.aiProvider.model]
         : []),
