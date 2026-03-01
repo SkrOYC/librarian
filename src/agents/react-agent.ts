@@ -425,21 +425,18 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
 	private async setupCodexConfig(
 		tempDir: string,
 		systemPrompt: string,
-	): Promise<{ instructionsPath: string; configPath: string }> {
+	): Promise<{ instructionsPath: string; configPath: string; codexHome: string }> {
 		const instructionsPath = path.join(tempDir, "instructions.md");
-		const configPath = path.join(tempDir, "config.toml");
+		const codexHome = path.join(tempDir, ".codex-home");
+		const configPath = path.join(codexHome, "config.toml");
 
 		// Write the system prompt to a file
 		await Bun.write(instructionsPath, systemPrompt);
+		await mkdir(codexHome, { recursive: true });
 
 		// Create Codex config that uses the instructions file
 		const config = `# Librarian Codex Configuration
 # This config is isolated from user config
-# Codex example configuration (config.toml)
-#
-# This file lists all keys Codex reads from config.toml, their default values,
-# and concise explanations. Values here mirror the effective defaults compiled
-# into the CLI. Adjust as needed.
 #
 # Notes
 # - Root keys must appear before tables in TOML.
@@ -529,6 +526,13 @@ show_raw_agent_reasoning = true
 check_for_update_on_startup = false
 
 ################################################################################
+# Sandbox Advanced Settings
+################################################################################
+[sandbox_workspace_write]
+# Allow outbound network access inside the sandbox
+network_access = false
+
+################################################################################
 # Web Search
 ################################################################################
 
@@ -537,6 +541,26 @@ check_for_update_on_startup = false
 # cached returns pre-indexed results; live fetches the most recent data.
 # If you use --yolo or another full access sandbox setting, web search defaults to live.
 web_search = "disabled"
+
+################################################################################
+# Tool Controls
+################################################################################
+
+[tools]
+# Disable native web search tool regardless of mode defaults.
+web_search = false
+
+################################################################################
+# External Integrations
+################################################################################
+
+[mcp_servers]
+# Keep empty to prevent inherited MCP tool access.
+
+[apps._default]
+# Disable app/connectors so no external app tool can be invoked.
+enabled = false
+open_world_enabled = false
 
 ################################################################################
 # History (table)
@@ -558,19 +582,39 @@ notifications = false
 `;
 
 		await Bun.write(configPath, config);
+		await this.copyCodexAuthFile(codexHome);
 
-		return { instructionsPath, configPath };
+		return { instructionsPath, configPath, codexHome };
+	}
+
+	private async copyCodexAuthFile(codexHome: string): Promise<void> {
+		const sourceCodexHome = Bun.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+		const sourceAuthPath = path.join(sourceCodexHome, "auth.json");
+		const targetAuthPath = path.join(codexHome, "auth.json");
+
+		const sourceAuth = Bun.file(sourceAuthPath);
+		if (!(await sourceAuth.exists())) {
+			logger.warn("AGENT", "Codex auth file not found in source CODEX_HOME", {
+				sourceCodexHome: sourceCodexHome.replace(os.homedir(), "~"),
+			});
+			return;
+		}
+
+		await Bun.write(targetAuthPath, sourceAuth);
 	}
 
 	private buildCodexEnv(
-		tempDir: string,
+		codexHome: string,
 		model?: string,
 	): Record<string, string | undefined> {
-		const configPath = path.join(tempDir, "config.toml");
+		const env = { ...Bun.env };
+		delete env.CODEX_HOME;
+		delete env.CODEX_CONFIG_PATH;
+		delete env.CODEX_THREAD_ID;
 
 		return {
-			...Bun.env,
-			CODEX_CONFIG_PATH: configPath,
+			...env,
+			CODEX_HOME: codexHome,
 			...(model && { CODEX_MODEL: model }),
 		};
 	}
@@ -837,7 +881,7 @@ notifications = false
 		const model = this.config.aiProvider.model;
 
 		try {
-			await this.setupCodexConfig(tempDir, systemPrompt);
+			const codexSetup = await this.setupCodexConfig(tempDir, systemPrompt);
 
 			// Build args - now simpler since config is in the temp file
 			const args = [
@@ -854,7 +898,7 @@ notifications = false
 				query,
 			];
 
-			const env = this.buildCodexEnv(tempDir, model);
+			const env = this.buildCodexEnv(codexSetup.codexHome, model);
 
 			logger.debug("AGENT", "Spawning Codex CLI", {
 				workingDir,
@@ -862,7 +906,8 @@ notifications = false
 				queryLength: query.length,
 				systemPromptLength: systemPrompt.length,
 				mode: "read-only",
-				configPath: path.join(tempDir, "config.toml"),
+				configPath: codexSetup.configPath,
+				codexHome: codexSetup.codexHome,
 			});
 
 			const proc = Bun.spawn(["codex", ...args], {
