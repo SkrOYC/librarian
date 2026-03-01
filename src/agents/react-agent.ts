@@ -208,7 +208,8 @@ You are a **Codebase Investigator**. Your mission is to provide technical insigh
 ## Evidence & Citations
 
 - **Source of Truth**: The local working directory is the definitive truth. If external documentation contradicts local code, the local code is correct.
-- **Mandatory Citations**: Every technical claim must cite specific repository-relative file paths (e.g., \`src/utils/logger.ts\`) and, where possible, line numbers or function names. Vague references are insufficient.
+- **Mandatory Citations (CRITICAL)**: You MUST cite specific file paths and line numbers for EVERY technical claim. Never provide information without evidence from the local codebase. Format: \`path/to/file.ts:LINES\`. If you cannot find the source, explicitly state "I could not locate the source" - do NOT guess or provide generic answers.
+- **No Sources = No Answer**: If you cannot find evidence in the repository to answer a question, clearly state what you searched for and that no source was found. Never hallucinate source locations or provide unverified information.
 - **Knowledge Gaps**: If information is missing from the directory, explicitly state what you couldn't find before providing general industry standard alternatives.
 - **Fact vs. Inference**: Distinguish clearly between verified code behavior (citing files) and inferred patterns or conventions.
 
@@ -410,6 +411,68 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
       await rm(tempDir, { recursive: true, force: true });
     } catch (err) {
       logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
+        error: err,
+      });
+    }
+  }
+
+  private async createCodexTempDir(): Promise<string> {
+    const tempDir = path.join(os.tmpdir(), `librarian-codex-${Date.now()}`);
+    await mkdir(tempDir, { recursive: true });
+    return tempDir;
+  }
+
+  private async setupCodexConfig(
+    tempDir: string,
+    systemPrompt: string
+  ): Promise<{ instructionsPath: string; configPath: string }> {
+    const instructionsPath = path.join(tempDir, "instructions.md");
+    const configPath = path.join(tempDir, "config.toml");
+
+    // Write the system prompt to a file
+    await Bun.write(instructionsPath, systemPrompt);
+
+    // Create Codex config that uses the instructions file
+    const config = `# Librarian Codex Configuration
+# This config is isolated from user config
+
+# Use the instructions file for system prompt
+model_instructions_file = "${instructionsPath}"
+
+# Disable web search to force local-only analysis
+web_search = "disabled"
+
+# Disable MCP servers
+mcp_servers = {}
+
+# Auto-approve all commands (we're in read-only sandbox anyway)
+approval_policy = "never"
+
+# Disable tools we don't need
+[tools]
+# Disable various tools to focus on reading
+`;
+
+    await Bun.write(configPath, config);
+
+    return { instructionsPath, configPath };
+  }
+
+  private buildCodexEnv(tempDir: string, model?: string): Record<string, string | undefined> {
+    const configPath = path.join(tempDir, "config.toml");
+
+    return {
+      ...Bun.env,
+      CODEX_CONFIG_PATH: configPath,
+      ...(model && { CODEX_MODEL: model }),
+    };
+  }
+
+  private async cleanupCodexTempDir(tempDir: string): Promise<void> {
+    try {
+      await rm(tempDir, { recursive: true, force: true });
+    } catch (err) {
+      logger.warn("AGENT", "Failed to cleanup Codex temp files", {
         error: err,
       });
     }
@@ -660,45 +723,53 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
     context?: AgentContext
   ): AsyncGenerator<string, void, unknown> {
     const workingDir = context?.workingDir || this.config.workingDir;
-    const args = [
-      "exec",
-      "--json",
-      "--ephemeral",
-      "--sandbox",
-      "read-only",
-      "--skip-git-repo-check",
-      "--color",
-      "never",
-      "-c",
-      'approval_policy="never"',
-      "-c",
-      "mcp_servers={}",
-      ...(this.config.aiProvider.model
-        ? ["-m", this.config.aiProvider.model]
-        : []),
-      "--",
-      query,
-    ];
+    const systemPrompt = this.createDynamicSystemPrompt();
+    
+    // Create a temporary directory with isolated Codex config
+    const tempDir = await this.createCodexTempDir();
+    const model = this.config.aiProvider.model;
 
-    logger.debug("AGENT", "Spawning Codex CLI", {
-      workingDir,
-      model: this.config.aiProvider.model || "default",
-      queryLength: query.length,
-      mode: "read-only",
-    });
+    try {
+      await this.setupCodexConfig(tempDir, systemPrompt);
 
-    const proc = Bun.spawn(["codex", ...args], {
-      cwd: workingDir,
-      env: Bun.env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+      // Build args - now simpler since config is in the temp file
+      const args = [
+        "exec",
+        "--json",
+        "--ephemeral",
+        "--sandbox",
+        "read-only",
+        "--skip-git-repo-check",
+        "--color",
+        "never",
+        ...(model ? ["-m", model] : []),
+        "--",
+        query,
+      ];
 
-    if (!proc.stdout) {
-      throw new Error("Failed to capture Codex CLI output");
-    }
+      const env = this.buildCodexEnv(tempDir, model);
 
-    const stderrPromise = proc.stderr
+      logger.debug("AGENT", "Spawning Codex CLI", {
+        workingDir,
+        model: model || "default",
+        queryLength: query.length,
+        systemPromptLength: systemPrompt.length,
+        mode: "read-only",
+        configPath: path.join(tempDir, "config.toml"),
+      });
+
+      const proc = Bun.spawn(["codex", ...args], {
+        cwd: workingDir,
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      if (!proc.stdout) {
+        throw new Error("Failed to capture Codex CLI output");
+      }
+
+      const stderrPromise = proc.stderr
       ? new Response(proc.stderr).text()
       : Promise.resolve("");
 
@@ -756,6 +827,9 @@ Remember that ALL tool calls MUST be executed using absolute path in \`${working
           ? `Codex CLI exited with code ${exitCode}: ${stderrPreview}`
           : `Codex CLI exited with code ${exitCode}`
       );
+    }
+    } finally {
+      await this.cleanupCodexTempDir(tempDir);
     }
   }
 
