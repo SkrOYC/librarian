@@ -6,9 +6,9 @@ import { HumanMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
 import {
-  anthropicPromptCachingMiddleware,
-  createAgent,
-  type DynamicStructuredTool,
+	anthropicPromptCachingMiddleware,
+	createAgent,
+	type DynamicStructuredTool,
 } from "langchain";
 import type { z } from "zod";
 import { findTool } from "../tools/file-finding.tool.js";
@@ -18,8 +18,8 @@ import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import type { AgentContext } from "./context-schema.js";
 import {
-  RlmOrchestrator,
-  type RlmOrchestratorConfig,
+	RlmOrchestrator,
+	type RlmOrchestratorConfig,
 } from "./rlm-orchestrator.js";
 import { createRlmSystemPrompt } from "./rlm-prompts.js";
 import type { LlmConfig } from "./rlm-sandbox.js";
@@ -32,156 +32,156 @@ export type { AgentContext } from "./context-schema.js";
  * Configuration interface for ReactAgent
  */
 export interface ReactAgentConfig {
-  /** AI provider configuration including type, API key, and optional model/base URL */
-  aiProvider: {
-    type:
-      | "openai"
-      | "anthropic"
-      | "google"
-      | "openai-compatible"
-      | "anthropic-compatible"
-      | "claude-code"
-      | "gemini-cli"
-      | "codex-cli";
-    apiKey: string;
-    model?: string;
-    baseURL?: string;
-  };
-  /** Working directory where the agent operates */
-  workingDir: string;
-  /** Optional technology context for dynamic system prompt construction */
-  technology?: {
-    name: string;
-    repository: string;
-    branch: string;
-  };
-  /** Optional context schema for runtime context validation */
-  contextSchema?: z.ZodType | undefined;
+	/** AI provider configuration including type, API key, and optional model/base URL */
+	aiProvider: {
+		type:
+			| "openai"
+			| "anthropic"
+			| "google"
+			| "openai-compatible"
+			| "anthropic-compatible"
+			| "claude-code"
+			| "gemini-cli"
+			| "codex-cli";
+		apiKey: string;
+		model?: string;
+		baseURL?: string;
+	};
+	/** Working directory where the agent operates */
+	workingDir: string;
+	/** Optional technology context for dynamic system prompt construction */
+	technology?: {
+		name: string;
+		repository: string;
+		branch: string;
+	};
+	/** Optional context schema for runtime context validation */
+	contextSchema?: z.ZodType | undefined;
 }
 
 export class ReactAgent {
-  private readonly aiModel?:
-    | ChatOpenAI
-    | ChatAnthropic
-    | ChatGoogleGenerativeAI;
-  private readonly tools: DynamicStructuredTool[];
-  private readonly rlmTool?: DynamicStructuredTool;
-  private rlmOrchestrator?: RlmOrchestrator;
-  private agent?: ReturnType<typeof createAgent>;
-  private readonly config: ReactAgentConfig;
-  private readonly contextSchema?: z.ZodType | undefined;
+	private readonly aiModel?:
+		| ChatOpenAI
+		| ChatAnthropic
+		| ChatGoogleGenerativeAI;
+	private readonly tools: DynamicStructuredTool[];
+	private readonly rlmTool?: DynamicStructuredTool;
+	private rlmOrchestrator?: RlmOrchestrator;
+	private agent?: ReturnType<typeof createAgent>;
+	private readonly config: ReactAgentConfig;
+	private readonly contextSchema?: z.ZodType | undefined;
 
-  constructor(config: ReactAgentConfig) {
-    this.config = config;
-    this.contextSchema = config.contextSchema;
+	constructor(config: ReactAgentConfig) {
+		this.config = config;
+		this.contextSchema = config.contextSchema;
 
-    if (!this.isCliProvider()) {
-      this.aiModel = this.createAIModel(config.aiProvider);
-      // Create the RLM research_repository tool with direct SDK config.
-      // Uses direct provider SDKs to avoid LangChain callback interference.
-      this.rlmTool = createResearchRepositoryTool({
-        type: config.aiProvider.type as LlmConfig["type"],
-        apiKey: config.aiProvider.apiKey || "",
-        model: config.aiProvider.model,
-        baseURL: config.aiProvider.baseURL,
-      });
-    }
+		if (!this.isCliProvider()) {
+			this.aiModel = this.createAIModel(config.aiProvider);
+			// Create the RLM research_repository tool with direct SDK config.
+			// Uses direct provider SDKs to avoid LangChain callback interference.
+			this.rlmTool = createResearchRepositoryTool({
+				type: config.aiProvider.type as LlmConfig["type"],
+				apiKey: config.aiProvider.apiKey || "",
+				model: config.aiProvider.model,
+				baseURL: config.aiProvider.baseURL,
+			});
+		}
 
-    // Keep atomic tools available (used by CLI providers and the RLM sandbox internally)
-    this.tools = [listTool, viewTool, grepTool, findTool];
+		// Keep atomic tools available (used by CLI providers and the RLM sandbox internally)
+		this.tools = [listTool, viewTool, grepTool, findTool];
 
-    logger.info("AGENT", "Initializing ReactAgent", {
-      aiProviderType: config.aiProvider.type,
-      model: config.aiProvider.model,
-      workingDir: config.workingDir.replace(os.homedir(), "~"),
-      toolCount: this.rlmTool ? 1 : this.tools.length,
-      mode: this.rlmTool ? "rlm" : "cli",
-      hasContextSchema: !!this.contextSchema,
-    });
-  }
+		logger.info("AGENT", "Initializing ReactAgent", {
+			aiProviderType: config.aiProvider.type,
+			model: config.aiProvider.model,
+			workingDir: config.workingDir.replace(os.homedir(), "~"),
+			toolCount: this.rlmTool ? 1 : this.tools.length,
+			mode: this.rlmTool ? "rlm" : "cli",
+			hasContextSchema: !!this.contextSchema,
+		});
+	}
 
-  /**
-   * Generates a pre-computed directory listing for the repository at depth 2.
-   * This is used to provide the agent with structural context about the codebase.
-   *
-   * @param workingDir - The directory to list
-   * @returns The directory listing as a string, or undefined if it fails
-   */
-  private async getRepoOutline(
-    workingDir: string
-  ): Promise<string | undefined> {
-    try {
-      const toolContext = { workingDir, group: "", technology: "" };
-      const result = await listTool.invoke(
-        {
-          directoryPath: ".",
-          recursive: true,
-          maxDepth: 2,
-          includeHidden: false,
-        },
-        { context: toolContext }
-      );
+	/**
+	 * Generates a pre-computed directory listing for the repository at depth 2.
+	 * This is used to provide the agent with structural context about the codebase.
+	 *
+	 * @param workingDir - The directory to list
+	 * @returns The directory listing as a string, or undefined if it fails
+	 */
+	private async getRepoOutline(
+		workingDir: string,
+	): Promise<string | undefined> {
+		try {
+			const toolContext = { workingDir, group: "", technology: "" };
+			const result = await listTool.invoke(
+				{
+					directoryPath: ".",
+					recursive: true,
+					maxDepth: 2,
+					includeHidden: false,
+				},
+				{ context: toolContext },
+			);
 
-      // Parse to get a cleaner format for the prompt
-      const parsed = JSON.parse(result);
+			// Parse to get a cleaner format for the prompt
+			const parsed = JSON.parse(result);
 
-      // Format as a simple tree structure for readability
-      const lines: string[] = [];
-      for (const entry of parsed.entries || []) {
-        const indent = entry.depth === 0 ? "" : "  ".repeat(entry.depth);
-        const marker = entry.isDirectory ? "[DIR]" : "[FILE]";
-        const size = entry.size
-          ? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})`
-          : "";
-        lines.push(`${indent}${marker} ${entry.name}${size}`);
-      }
+			// Format as a simple tree structure for readability
+			const lines: string[] = [];
+			for (const entry of parsed.entries || []) {
+				const indent = entry.depth === 0 ? "" : "  ".repeat(entry.depth);
+				const marker = entry.isDirectory ? "[DIR]" : "[FILE]";
+				const size = entry.size
+					? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})`
+					: "";
+				lines.push(`${indent}${marker} ${entry.name}${size}`);
+			}
 
-      return lines.join("\n");
-    } catch (error) {
-      logger.warn("AGENT", "Failed to generate repo outline", {
-        workingDir: workingDir.replace(os.homedir(), "~"),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return undefined;
-    }
-  }
+			return lines.join("\n");
+		} catch (error) {
+			logger.warn("AGENT", "Failed to generate repo outline", {
+				workingDir: workingDir.replace(os.homedir(), "~"),
+				error: error instanceof Error ? error.message : String(error),
+			});
+			return undefined;
+		}
+	}
 
-  /**
-   * Builds the context block describing the repository
-   */
-  private buildContextBlock(): string {
-    const { workingDir, technology } = this.config;
+	/**
+	 * Builds the context block describing the repository
+	 */
+	private buildContextBlock(): string {
+		const { workingDir, technology } = this.config;
 
-    if (technology) {
-      return `You have been provided the **${technology.name}** repository.
+		if (technology) {
+			return `You have been provided the **${technology.name}** repository.
 Repository: ${technology.repository}
 Your Working Directory: ${workingDir}`;
-    }
-    return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
-  }
+		}
+		return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
+	}
 
-  /**
-   * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
-   * Delegates to rlm-prompts.ts for the actual prompt template.
-   *
-   * @param repoOutline - Optional pre-computed directory listing
-   * @returns A context-aware RLM system prompt string
-   */
-  createRlmSystemPrompt(repoOutline?: string): string {
-    const contextBlock = this.buildContextBlock();
-    return createRlmSystemPrompt(contextBlock, repoOutline);
-  }
+	/**
+	 * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
+	 * Delegates to rlm-prompts.ts for the actual prompt template.
+	 *
+	 * @param repoOutline - Optional pre-computed directory listing
+	 * @returns A context-aware RLM system prompt string
+	 */
+	createRlmSystemPrompt(repoOutline?: string): string {
+		const contextBlock = this.buildContextBlock();
+		return createRlmSystemPrompt(contextBlock, repoOutline);
+	}
 
-  /**
-   * Creates a dynamic system prompt based on current configuration and technology context.
-   * Used by CLI providers (claude-code, gemini-cli, codex-cli).
-   * @returns A context-aware system prompt string
-   */
-  createDynamicSystemPrompt(): string {
-    const { workingDir, technology } = this.config;
+	/**
+	 * Creates a dynamic system prompt based on current configuration and technology context.
+	 * Used by CLI providers (claude-code, gemini-cli, codex-cli).
+	 * @returns A context-aware system prompt string
+	 */
+	createDynamicSystemPrompt(): string {
+		const { workingDir, technology } = this.config;
 
-    // Dynamic system prompt generation code
-    let prompt = `
+		// Dynamic system prompt generation code
+		let prompt = `
 You are a **Codebase Investigator**. Your mission is to provide technical insights grounded in source code evidence. You approach every query as a methodical investigation, prioritizing verification over assumptions and ensuring every conclusion is backed by specific file citations.
 
 # Instructions
@@ -324,856 +324,974 @@ Remember: ALL tool calls MUST be executed using absolute path in \`[WORKING_DIRE
 **Final Reminder: Every claim must be backed by evidence. If you haven't verified it in the code, don't say it.**
 `;
 
-    // Add technology context if available
-    if (technology) {
-      prompt = prompt.replace(
-        "<context_block>",
-        `You have been provided the **${technology.name}** repository.
+		// Add technology context if available
+		if (technology) {
+			prompt = prompt.replace(
+				"<context_block>",
+				`You have been provided the **${technology.name}** repository.
 Repository: ${technology.repository}
 Your Working Directory: ${workingDir}
 
-Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``
-      );
-      prompt = prompt.replace("</context_block>", "");
-    } else {
-      prompt = prompt.replace(
-        "<context_block>",
-        `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}
+Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``,
+			);
+			prompt = prompt.replace("</context_block>", "");
+		} else {
+			prompt = prompt.replace(
+				"<context_block>",
+				`You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}
 
-Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``
-      );
-      prompt = prompt.replace("</context_block>", "");
-    }
+Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``,
+			);
+			prompt = prompt.replace("</context_block>", "");
+		}
 
-    logger.debug("AGENT", "Dynamic system prompt generated", {
-      hasTechnologyContext: !!technology,
-      promptLength: prompt.length,
-    });
+		logger.debug("AGENT", "Dynamic system prompt generated", {
+			hasTechnologyContext: !!technology,
+			promptLength: prompt.length,
+		});
 
-    return prompt;
-  }
+		return prompt;
+	}
 
-  private async createGeminiTempDir(): Promise<string> {
-    const tempDir = path.join(os.tmpdir(), `librarian-gemini-${Date.now()}`);
-    await mkdir(tempDir, { recursive: true });
-    return tempDir;
-  }
+	private async createGeminiTempDir(): Promise<string> {
+		const tempDir = path.join(os.tmpdir(), `librarian-gemini-${Date.now()}`);
+		await mkdir(tempDir, { recursive: true });
+		return tempDir;
+	}
 
-  private async setupGeminiConfig(
-    tempDir: string,
-    systemPrompt: string,
-    _model: string
-  ): Promise<{ systemPromptPath: string; settingsPath: string }> {
-    const systemPromptPath = path.join(tempDir, "system.md");
-    const settingsPath = path.join(tempDir, "settings.json");
+	private async setupGeminiConfig(
+		tempDir: string,
+		systemPrompt: string,
+		_model: string,
+	): Promise<{ systemPromptPath: string; settingsPath: string }> {
+		const systemPromptPath = path.join(tempDir, "system.md");
+		const settingsPath = path.join(tempDir, "settings.json");
 
-    await Bun.write(systemPromptPath, systemPrompt);
+		await Bun.write(systemPromptPath, systemPrompt);
 
-    const settings = {
-      tools: {
-        core: ["list_directory", "read_file", "glob", "search_file_content"],
-        autoAccept: true,
-      },
-      mcpServers: {},
-      mcp: {
-        excluded: ["*"],
-      },
-      experimental: {
-        enableAgents: false,
-      },
-      output: {
-        format: "json",
-      },
-    };
-    await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
+		const settings = {
+			tools: {
+				core: ["list_directory", "read_file", "glob", "search_file_content"],
+				autoAccept: true,
+			},
+			mcpServers: {},
+			mcp: {
+				excluded: ["*"],
+			},
+			experimental: {
+				enableAgents: false,
+			},
+			output: {
+				format: "json",
+			},
+		};
+		await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
 
-    return { systemPromptPath, settingsPath };
-  }
+		return { systemPromptPath, settingsPath };
+	}
 
-  private buildGeminiEnv(
-    tempDir: string,
-    model: string
-  ): Record<string, string | undefined> {
-    const settingsPath = path.join(tempDir, "settings.json");
-    const systemPromptPath = path.join(tempDir, "system.md");
+	private buildGeminiEnv(
+		tempDir: string,
+		model: string,
+	): Record<string, string | undefined> {
+		const settingsPath = path.join(tempDir, "settings.json");
+		const systemPromptPath = path.join(tempDir, "system.md");
 
-    return {
-      ...Bun.env,
-      GEMINI_SYSTEM_MD: systemPromptPath,
-      GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath,
-      GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
-      GEMINI_MODEL: model,
-    };
-  }
+		return {
+			...Bun.env,
+			GEMINI_SYSTEM_MD: systemPromptPath,
+			GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath,
+			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
+			GEMINI_MODEL: model,
+		};
+	}
 
-  private async cleanupGeminiTempDir(tempDir: string): Promise<void> {
-    try {
-      await rm(tempDir, { recursive: true, force: true });
-    } catch (err) {
-      logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
-        error: err,
-      });
-    }
-  }
+	private async cleanupGeminiTempDir(tempDir: string): Promise<void> {
+		try {
+			await rm(tempDir, { recursive: true, force: true });
+		} catch (err) {
+			logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
+				error: err,
+			});
+		}
+	}
 
-  private async createCodexTempDir(): Promise<string> {
-    const tempDir = path.join(os.tmpdir(), `librarian-codex-${Date.now()}`);
-    await mkdir(tempDir, { recursive: true });
-    return tempDir;
-  }
+	private async createCodexTempDir(): Promise<string> {
+		const tempDir = path.join(os.tmpdir(), `librarian-codex-${Date.now()}`);
+		await mkdir(tempDir, { recursive: true });
+		return tempDir;
+	}
 
-  private async setupCodexConfig(
-    tempDir: string,
-    systemPrompt: string
-  ): Promise<{ instructionsPath: string; configPath: string }> {
-    const instructionsPath = path.join(tempDir, "instructions.md");
-    const configPath = path.join(tempDir, "config.toml");
+	private async setupCodexConfig(
+		tempDir: string,
+		systemPrompt: string,
+	): Promise<{ instructionsPath: string; configPath: string }> {
+		const instructionsPath = path.join(tempDir, "instructions.md");
+		const configPath = path.join(tempDir, "config.toml");
 
-    // Write the system prompt to a file
-    await Bun.write(instructionsPath, systemPrompt);
+		// Write the system prompt to a file
+		await Bun.write(instructionsPath, systemPrompt);
 
-    // Create Codex config that uses the instructions file
-    const config = `# Librarian Codex Configuration
+		// Create Codex config that uses the instructions file
+		const config = `# Librarian Codex Configuration
 # This config is isolated from user config
+# Codex example configuration (config.toml)
+#
+# This file lists all keys Codex reads from config.toml, their default values,
+# and concise explanations. Values here mirror the effective defaults compiled
+# into the CLI. Adjust as needed.
+#
+# Notes
+# - Root keys must appear before tables in TOML.
+# - Optional keys that default to "unset" are shown commented out with notes.
+# - MCP servers, profiles, and model providers are examples; remove or edit.
 
-# Use the instructions file for system prompt
+################################################################################
+# Core Model Selection
+################################################################################
+
+# Primary model used by Codex. Default: "gpt-5.2-codex" on all platforms.
+model = "gpt-5.3-codex"
+
+# Default communication style for supported models. Default: "friendly".
+# Allowed values: none | friendly | pragmatic
+personality = "friendly"
+
+################################################################################
+# Reasoning & Verbosity (Responses API capable models)
+################################################################################
+
+# Reasoning effort: minimal | low | medium | high | xhigh (default: medium; xhigh on gpt-5.2-codex and gpt-5.2)
+model_reasoning_effort = "high"
+
+# Reasoning summary: auto | concise | detailed | none (default: auto)
+model_reasoning_summary = "none"
+
+# Text verbosity for GPT-5 family (Responses API): low | medium | high (default: medium)
+model_verbosity = "high"
+
+################################################################################
+# Instruction Overrides
+################################################################################
+
+# Override built-in base instructions with a file path. Default: unset.
 model_instructions_file = "${instructionsPath}"
 
-# Disable web search to force local-only analysis
+################################################################################
+# Notifications
+################################################################################
+
+# External notifier program (argv array). When unset: disabled.
+# Example: notify = ["notify-send", "Codex"]
+notify = [ ]
+
+################################################################################
+# Approval & Sandbox
+################################################################################
+
+# When to ask for command approval:
+# - untrusted: only known-safe read-only commands auto-run; others prompt
+# - on-request: model decides when to ask (default)
+# - never: never prompt (risky)
+# - { reject = { ... } }: auto-reject selected prompt categories
+approval_policy = "untrusted"
+# Example granular auto-reject policy:
+# approval_policy = { reject = { sandbox_approval = true, rules = false, mcp_elicitations = false } }
+
+# Allow login-shell semantics for shell-based tools when they request \`login = true\`.
+# Default: true. Set false to force non-login shells and reject explicit login-shell requests.
+allow_login_shell = false
+
+# Filesystem/network sandbox policy for tool calls:
+# - read-only (default)
+# - workspace-write
+# - danger-full-access (no sandbox; extremely risky)
+sandbox_mode = "read-only"
+
+################################################################################
+# History & File Opener
+################################################################################
+
+# URI scheme for clickable citations: vscode (default) | vscode-insiders | windsurf | cursor | none
+file_opener = "none"
+
+################################################################################
+# UI, Notifications, and Misc
+################################################################################
+
+# Suppress internal reasoning events from output. Default: false
+hide_agent_reasoning = true
+
+# Show raw reasoning content when available. Default: false
+show_raw_agent_reasoning = true
+
+# Check for updates on startup. Default: true
+check_for_update_on_startup = false
+
+################################################################################
+# Web Search
+################################################################################
+
+# Web search mode: disabled | cached | live. Default: "cached"
+# cached serves results from a web search cache (an OpenAI-maintained index).
+# cached returns pre-indexed results; live fetches the most recent data.
+# If you use --yolo or another full access sandbox setting, web search defaults to live.
 web_search = "disabled"
 
-# Disable MCP servers
-mcp_servers = {}
+################################################################################
+# History (table)
+################################################################################
 
-# Auto-approve all commands (we're in read-only sandbox anyway)
-approval_policy = "never"
+[history]
+# save-all (default) | none
+persistence = "none"
 
-# Disable tools we don't need
-[tools]
-# Disable various tools to focus on reading
+################################################################################
+# UI, Notifications, and Misc (tables)
+################################################################################
+
+[tui]
+# Desktop notifications from the TUI: boolean or filtered list. Default: true
+# Examples: false | ["agent-turn-complete", "approval-requested"]
+notifications = false
+
 `;
 
-    await Bun.write(configPath, config);
-
-    return { instructionsPath, configPath };
-  }
-
-  private buildCodexEnv(tempDir: string, model?: string): Record<string, string | undefined> {
-    const configPath = path.join(tempDir, "config.toml");
-
-    return {
-      ...Bun.env,
-      CODEX_CONFIG_PATH: configPath,
-      ...(model && { CODEX_MODEL: model }),
-    };
-  }
-
-  private async cleanupCodexTempDir(tempDir: string): Promise<void> {
-    try {
-      await rm(tempDir, { recursive: true, force: true });
-    } catch (err) {
-      logger.warn("AGENT", "Failed to cleanup Codex temp files", {
-        error: err,
-      });
-    }
-  }
-
-  private async *streamClaudeCli(
-    query: string,
-    context?: AgentContext
-  ): AsyncGenerator<string, void, unknown> {
-    const workingDir = context?.workingDir || this.config.workingDir;
-    const systemPrompt = this.createDynamicSystemPrompt();
-
-    const args = [
-      "-p",
-      query,
-      "--system-prompt",
-      systemPrompt,
-      "--tools",
-      "Read,Glob,Grep",
-      "--dangerously-skip-permissions",
-      "--output-format",
-      "stream-json",
-    ];
-
-    const env = {
-      ...Bun.env,
-      CLAUDE_PROJECT_DIR: workingDir,
-      ...(this.config.aiProvider.model && {
-        ANTHROPIC_MODEL: this.config.aiProvider.model,
-      }),
-    };
-
-    logger.debug("AGENT", "Spawning Claude CLI", {
-      args: args.map((a) => (a.length > 100 ? `${a.substring(0, 100)}...` : a)),
-      workingDir,
-    });
-
-    const proc = Bun.spawn(["claude", ...args], {
-      cwd: workingDir,
-      env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    let buffer = "";
-
-    if (!proc.stdout) {
-      throw new Error("Failed to capture Claude CLI output");
-    }
-
-    const stderrPromise = proc.stderr
-      ? new Response(proc.stderr).text()
-      : Promise.resolve("");
-    const decoder = new TextDecoder();
-    const reader = proc.stdout.getReader();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) {
-          continue;
-        }
-        try {
-          const data = JSON.parse(line);
-          // Filter for text content blocks in the stream
-          if (data.type === "text" && data.content) {
-            yield data.content;
-          } else if (data.type === "content_block_delta" && data.delta?.text) {
-            yield data.delta.text;
-          } else if (data.type === "message" && Array.isArray(data.content)) {
-            // Final message might come as a whole
-            for (const block of data.content) {
-              if (block.type === "text" && block.text) {
-                yield block.text;
-              }
-            }
-          }
-        } catch {
-          // Silent fail for non-JSON or partial lines
-        }
-      }
-    }
-
-    buffer += decoder.decode();
-    if (buffer.trim()) {
-      try {
-        const data = JSON.parse(buffer);
-        // Handle trailing partial line if the stream didn't end with newline
-        if (data.type === "text" && data.content) {
-          yield data.content;
-        } else if (data.type === "content_block_delta" && data.delta?.text) {
-          yield data.delta.text;
-        } else if (data.type === "message" && Array.isArray(data.content)) {
-          for (const block of data.content) {
-            if (block.type === "text" && block.text) {
-              yield block.text;
-            }
-          }
-        }
-      } catch {
-        // Ignore non-JSON trailing log lines emitted by claude CLI.
-      }
-    }
-
-    const [exitCode, stderrOutput] = await Promise.all([
-      proc.exited,
-      stderrPromise,
-    ]);
-    if (exitCode !== 0) {
-      const stderrPreview = stderrOutput.trim().slice(0, 500);
-      throw new Error(
-        stderrPreview
-          ? `Claude CLI exited with code ${exitCode}: ${stderrPreview}`
-          : `Claude CLI exited with code ${exitCode}`
-      );
-    }
-  }
-
-  private async *streamGeminiCli(
-    query: string,
-    context?: AgentContext
-  ): AsyncGenerator<string, void, unknown> {
-    const workingDir = context?.workingDir || this.config.workingDir;
-    const systemPrompt = this.createDynamicSystemPrompt();
-
-    const tempDir = await this.createGeminiTempDir();
-    const model = this.config.aiProvider.model || "gemini-2.5-flash";
-
-    try {
-      await this.setupGeminiConfig(tempDir, systemPrompt, model);
-
-      const args = [
-        "gemini",
-        "-p",
-        query,
-        "--output-format",
-        "stream-json",
-        "--yolo",
-      ];
-
-      const env = this.buildGeminiEnv(tempDir, model);
-
-      logger.debug("AGENT", "Spawning Gemini CLI", {
-        args,
-        workingDir,
-        model,
-      });
-
-      const proc = Bun.spawn(args, {
-        cwd: workingDir,
-        env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      const reader = proc.stdout.getReader();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        buffer += new TextDecoder().decode(value);
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.trim()) {
-            continue;
-          }
-          try {
-            const data = JSON.parse(line);
-            const text = this.parseGeminiStreamLine(data);
-            if (text) {
-              yield text;
-            }
-          } catch {
-            // Silent fail for non-JSON or partial lines
-          }
-        }
-      }
-
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        throw new Error(`Gemini CLI exited with code ${exitCode}`);
-      }
-    } finally {
-      await this.cleanupGeminiTempDir(tempDir);
-    }
-  }
-
-  private parseGeminiStreamLine(data: unknown): string | null {
-    if (
-      data &&
-      typeof data === "object" &&
-      "type" in data &&
-      "role" in data &&
-      "content" in data
-    ) {
-      const typedData = data as { type: string; role: string; content: string };
-      if (
-        typedData.type === "message" &&
-        typedData.role === "assistant" &&
-        typedData.content
-      ) {
-        return typedData.content;
-      }
-    }
-    return null;
-  }
-
-  private parseCodexExecStreamLine(data: unknown): string | null {
-    if (!data || typeof data !== "object" || !("type" in data)) {
-      return null;
-    }
-
-    const typedData = data as {
-      type: string;
-      item?: {
-        type?: string;
-        text?: string;
-      };
-    };
-
-    if (
-      typedData.type === "item.completed" &&
-      typedData.item?.type === "agent_message" &&
-      typedData.item.text
-    ) {
-      return typedData.item.text;
-    }
-
-    return null;
-  }
-
-  private async *streamCodexCli(
-    query: string,
-    context?: AgentContext
-  ): AsyncGenerator<string, void, unknown> {
-    const workingDir = context?.workingDir || this.config.workingDir;
-    const systemPrompt = this.createDynamicSystemPrompt();
-    
-    // Create a temporary directory with isolated Codex config
-    const tempDir = await this.createCodexTempDir();
-    const model = this.config.aiProvider.model;
-
-    try {
-      await this.setupCodexConfig(tempDir, systemPrompt);
-
-      // Build args - now simpler since config is in the temp file
-      const args = [
-        "exec",
-        "--json",
-        "--ephemeral",
-        "--sandbox",
-        "read-only",
-        "--skip-git-repo-check",
-        "--color",
-        "never",
-        ...(model ? ["-m", model] : []),
-        "--",
-        query,
-      ];
-
-      const env = this.buildCodexEnv(tempDir, model);
-
-      logger.debug("AGENT", "Spawning Codex CLI", {
-        workingDir,
-        model: model || "default",
-        queryLength: query.length,
-        systemPromptLength: systemPrompt.length,
-        mode: "read-only",
-        configPath: path.join(tempDir, "config.toml"),
-      });
-
-      const proc = Bun.spawn(["codex", ...args], {
-        cwd: workingDir,
-        env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      if (!proc.stdout) {
-        throw new Error("Failed to capture Codex CLI output");
-      }
-
-      const stderrPromise = proc.stderr
-      ? new Response(proc.stderr).text()
-      : Promise.resolve("");
-
-    let buffer = "";
-    const decoder = new TextDecoder();
-    const reader = proc.stdout.getReader();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) {
-          continue;
-        }
-        try {
-          const data = JSON.parse(line);
-          const text = this.parseCodexExecStreamLine(data);
-          if (text) {
-            yield text;
-          }
-        } catch {
-          // Ignore non-JSON log lines emitted by codex CLI.
-        }
-      }
-    }
-
-    buffer += decoder.decode();
-    if (buffer.trim()) {
-      try {
-        const data = JSON.parse(buffer);
-        const text = this.parseCodexExecStreamLine(data);
-        if (text) {
-          yield text;
-        }
-      } catch {
-        // Ignore non-JSON trailing log lines emitted by codex CLI.
-      }
-    }
-
-    const [exitCode, stderrOutput] = await Promise.all([
-      proc.exited,
-      stderrPromise,
-    ]);
-    if (exitCode !== 0) {
-      const stderrPreview = stderrOutput.trim().slice(0, 500);
-      throw new Error(
-        stderrPreview
-          ? `Codex CLI exited with code ${exitCode}: ${stderrPreview}`
-          : `Codex CLI exited with code ${exitCode}`
-      );
-    }
-    } finally {
-      await this.cleanupCodexTempDir(tempDir);
-    }
-  }
-
-  private isCliProvider(): boolean {
-    return (
-      this.config.aiProvider.type === "claude-code" ||
-      this.config.aiProvider.type === "gemini-cli" ||
-      this.config.aiProvider.type === "codex-cli"
-    );
-  }
-
-  private createAIModel(
-    aiProvider: ReactAgentConfig["aiProvider"]
-  ): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
-    const { type, apiKey, model, baseURL } = aiProvider;
-
-    logger.debug("AGENT", "Creating AI model instance", {
-      type,
-      model,
-      hasBaseURL: !!baseURL,
-    });
-
-    switch (type) {
-      case "openai":
-        return new ChatOpenAI({
-          apiKey,
-          modelName: model || "gpt-5.2",
-        });
-      case "openai-compatible":
-        return new ChatOpenAI({
-          apiKey,
-          modelName: model || "gpt-5.2",
-          configuration: {
-            baseURL: baseURL || "https://api.openai.com/v1",
-          },
-        });
-      case "anthropic":
-        return new ChatAnthropic({
-          apiKey,
-          modelName: model || "claude-sonnet-4-5",
-        });
-      case "anthropic-compatible":
-        if (!baseURL) {
-          throw new Error(
-            "baseURL is required for anthropic-compatible provider"
-          );
-        }
-        if (!model) {
-          throw new Error(
-            "model is required for anthropic-compatible provider"
-          );
-        }
-        return new ChatAnthropic({
-          apiKey,
-          modelName: model,
-          anthropicApiUrl: baseURL,
-        });
-      case "google":
-        return new ChatGoogleGenerativeAI({
-          apiKey,
-          model: model || "gemini-3-flash-preview",
-        });
-      default:
-        logger.error(
-          "AGENT",
-          "Unsupported AI provider type",
-          new Error(`Unsupported AI provider type: ${type}`),
-          { type }
-        );
-        throw new Error(`Unsupported AI provider type: ${type}`);
-    }
-  }
-
-  async initialize(): Promise<void> {
-    if (this.isCliProvider()) {
-      logger.info(
-        "AGENT",
-        `${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`
-      );
-      return;
-    }
-
-    if (!this.aiModel) {
-      throw new Error("AI model not created for non-CLI provider");
-    }
-
-    if (!this.rlmTool) {
-      throw new Error("RLM tool not created for non-CLI provider");
-    }
-
-    // Get repo outline for system prompt
-    const repoOutline = await this.getRepoOutline(this.config.workingDir);
-
-    // Create the agent with the single research_repository tool and RLM system prompt.
-    // The 4 atomic tools are used internally by the sandbox, not exposed to the agent.
-    this.agent = createAgent({
-      model: this.aiModel,
-      tools: [this.rlmTool],
-      systemPrompt: this.createRlmSystemPrompt(repoOutline),
-      middleware: [
-        ...(this.config.aiProvider.type === "anthropic" ||
-        this.config.aiProvider.type === "anthropic-compatible"
-          ? [anthropicPromptCachingMiddleware()]
-          : []),
-      ],
-    });
-
-    logger.info("AGENT", "Agent initialized with RLM mode", {
-      toolCount: 1,
-      toolName: "research_repository",
-      hasContextSchema: !!this.contextSchema,
-    });
-  }
-
-  /**
-   * Query repository with a given query and optional context
-   *
-   * @param repoPath - The repository path (deprecated, for compatibility)
-   * @param query - The query string
-   * @param context - Optional context object containing working directory and metadata
-   * @returns The agent's response as a string
-   */
-  async queryRepository(
-    _repoPath: string,
-    query: string,
-    context?: AgentContext
-  ): Promise<string> {
-    logger.info("AGENT", "Query started", {
-      queryLength: query.length,
-      hasContext: !!context,
-    });
-
-    // Use RLM mode for supported providers (not CLI-based ones)
-    if (this.shouldUseRlm()) {
-      logger.info("AGENT", "Using RLM mode");
-      return await this.executeRlmQuery(query);
-    }
-
-    if (this.config.aiProvider.type === "claude-code") {
-      let fullContent = "";
-      for await (const chunk of this.streamClaudeCli(query, context)) {
-        fullContent += chunk;
-      }
-      return fullContent;
-    }
-
-    if (this.config.aiProvider.type === "gemini-cli") {
-      let fullContent = "";
-      for await (const chunk of this.streamGeminiCli(query, context)) {
-        fullContent += chunk;
-      }
-      return fullContent;
-    }
-
-    if (this.config.aiProvider.type === "codex-cli") {
-      let fullContent = "";
-      for await (const chunk of this.streamCodexCli(query, context)) {
-        fullContent += chunk;
-      }
-      return fullContent;
-    }
-
-    const timingId = logger.timingStart("agentQuery");
-
-    if (!this.agent) {
-      logger.error(
-        "AGENT",
-        "Agent not initialized",
-        new Error("Agent not initialized. Call initialize() first.")
-      );
-      throw new Error("Agent not initialized. Call initialize() first.");
-    }
-
-    // Prepare the messages for the agent - system prompt already set during initialization
-    const messages = [new HumanMessage(query)];
-
-    logger.debug("AGENT", "Invoking agent with messages", {
-      messageCount: messages.length,
-      hasContext: !!context,
-    });
-
-    // Execute the agent with optional context
-    const result = await this.agent.invoke(
-      {
-        messages,
-      },
-      { recursionLimit: 100, ...(context ? { context } : {}) }
-    );
-
-    // Extract the last message content from the state
-    const lastMessage = result.messages.at(-1);
-    const content =
-      typeof lastMessage.content === "string"
-        ? lastMessage.content
-        : JSON.stringify(lastMessage.content);
-
-    logger.timingEnd(timingId, "AGENT", "Query completed");
-    logger.info("AGENT", "Query result received", {
-      responseLength: content.length,
-    });
-
-    return content;
-  }
-
-  /**
-   * Check if RLM mode should be used based on provider type
-   * RLM mode is used for API-based providers (OpenAI, Anthropic, Google)
-   * CLI-based providers (claude-code, gemini-cli, codex-cli) use their own execution path
-   */
-  private shouldUseRlm(): boolean {
-    const rlmProviders = [
-      "openai",
-      "anthropic",
-      "google",
-      "openai-compatible",
-      "anthropic-compatible",
-    ];
-    return rlmProviders.includes(this.config.aiProvider.type);
-  }
-
-  /**
-   * Initialize the RLM orchestrator on first use
-   */
-  private initializeRlmOrchestrator(): void {
-    const llmConfig: LlmConfig = {
-      type: this.config.aiProvider.type as LlmConfig["type"],
-      apiKey: this.config.aiProvider.apiKey,
-      model: this.config.aiProvider.model,
-      baseURL: this.config.aiProvider.baseURL,
-    };
-
-    const orchestratorConfig: RlmOrchestratorConfig = {
-      llmConfig,
-      repoContentLoader: () => this.loadRepoContentForRlm(),
-      workingDir: this.config.workingDir,
-      maxIterations: 30,
-      stdoutPreviewLength: 2000,
-      systemPrompt: this.createRlmSystemPrompt(),
-    };
-
-    this.rlmOrchestrator = new RlmOrchestrator(orchestratorConfig);
-    logger.info("AGENT", "RLM Orchestrator initialized", {
-      workingDir: this.config.workingDir,
-      maxIterations: orchestratorConfig.maxIterations,
-    });
-  }
-
-  /**
-   * Load repository content for RLM context
-   * Used by the RLM engine to lazily load context
-   * Loads actual file contents (README, package.json, key files) for the model to analyze
-   */
-  private async loadRepoContentForRlm(): Promise<string> {
-    const { workingDir } = this.config;
-    const parts: string[] = [];
-
-    try {
-      // Get file listing to understand structure
-      const listing = await listTool.invoke(
-        { directoryPath: workingDir, recursive: false, maxDepth: 2 },
-        { context: { workingDir, group: "", technology: "" } }
-      );
-      parts.push(`File listing (depth 2):\n${listing}\n`);
-
-      // Try to read README.md
-      try {
-        const readme = await viewTool.invoke(
-          { filePath: "README.md" },
-          { context: { workingDir, group: "", technology: "" } }
-        );
-        if (readme && !readme.includes("error") && readme.length > 10) {
-          parts.push(`=== README.md ===\n${readme}\n`);
-        }
-      } catch {
-        // README not found, that's ok
-      }
-
-      // Try to read package.json
-      try {
-        const packageJson = await viewTool.invoke(
-          { filePath: "package.json" },
-          { context: { workingDir, group: "", technology: "" } }
-        );
-        if (packageJson && !packageJson.includes("error") && packageJson.length > 10) {
-          parts.push(`=== package.json ===\n${packageJson}\n`);
-        }
-      } catch {
-        // package.json not found, that's ok
-      }
-
-      // Try to read main source files (index.js, index.ts, main.js, main.ts)
-      const mainFiles = ["index.ts", "index.js", "main.ts", "main.js", "src/index.ts", "src/index.js"];
-      for (const file of mainFiles) {
-        try {
-          const content = await viewTool.invoke(
-            { filePath: file, viewRange: [1, 100] },
-            { context: { workingDir, group: "", technology: "" } }
-          );
-          if (content && !content.includes("error") && content.length > 20) {
-            parts.push(`=== ${file} ===\n${content}\n`);
-            break; // Only load one main file
-          }
-        } catch {
-          // File not found, try next
-        }
-      }
-
-      const context = parts.join("\n");
-      
-      // If we got meaningful content, return it
-      if (context.length > 100) {
-        return `Repository: ${workingDir}\n\n${context}`;
-      }
-
-      // Fallback: just return listing
-      return `Repository content loaded from: ${workingDir}\n\nFile listing:\n${listing}`;
-    } catch (error) {
-      return `Repository content loaded from: ${workingDir}\n\nNote: Full repository access available via repo API (repo.list, repo.view, repo.find, repo.grep)`;
-    }
-  }
-  /**
-   * Execute query using RLM Orchestrator
-   * This implements the multi-turn RLM pattern from the paper using RlmOrchestrator
-   */
-  private async executeRlmQuery(query: string): Promise<string> {
-    const timingId = logger.timingStart("rlmQuery");
-
-    // Initialize orchestrator if not already done
-    if (!this.rlmOrchestrator) {
-      this.initializeRlmOrchestrator();
-    }
-
-    // Run the orchestrator with the query
-    const result = await this.rlmOrchestrator!.run(query);
-
-    logger.timingEnd(timingId, "AGENT", "RLM query completed");
-    return result;
-  }
-
-  /**
+		await Bun.write(configPath, config);
+
+		return { instructionsPath, configPath };
+	}
+
+	private buildCodexEnv(
+		tempDir: string,
+		model?: string,
+	): Record<string, string | undefined> {
+		const configPath = path.join(tempDir, "config.toml");
+
+		return {
+			...Bun.env,
+			CODEX_CONFIG_PATH: configPath,
+			...(model && { CODEX_MODEL: model }),
+		};
+	}
+
+	private async cleanupCodexTempDir(tempDir: string): Promise<void> {
+		try {
+			await rm(tempDir, { recursive: true, force: true });
+		} catch (err) {
+			logger.warn("AGENT", "Failed to cleanup Codex temp files", {
+				error: err,
+			});
+		}
+	}
+
+	private async *streamClaudeCli(
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		const workingDir = context?.workingDir || this.config.workingDir;
+		const systemPrompt = this.createDynamicSystemPrompt();
+
+		const args = [
+			"-p",
+			query,
+			"--system-prompt",
+			systemPrompt,
+			"--tools",
+			"Read,Glob,Grep",
+			"--dangerously-skip-permissions",
+			"--output-format",
+			"stream-json",
+		];
+
+		const env = {
+			...Bun.env,
+			CLAUDE_PROJECT_DIR: workingDir,
+			...(this.config.aiProvider.model && {
+				ANTHROPIC_MODEL: this.config.aiProvider.model,
+			}),
+		};
+
+		logger.debug("AGENT", "Spawning Claude CLI", {
+			args: args.map((a) => (a.length > 100 ? `${a.substring(0, 100)}...` : a)),
+			workingDir,
+		});
+
+		const proc = Bun.spawn(["claude", ...args], {
+			cwd: workingDir,
+			env,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+
+		let buffer = "";
+
+		if (!proc.stdout) {
+			throw new Error("Failed to capture Claude CLI output");
+		}
+
+		const stderrPromise = proc.stderr
+			? new Response(proc.stderr).text()
+			: Promise.resolve("");
+		const decoder = new TextDecoder();
+		const reader = proc.stdout.getReader();
+
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) {
+				break;
+			}
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split("\n");
+			buffer = lines.pop() || "";
+
+			for (const line of lines) {
+				if (!line.trim()) {
+					continue;
+				}
+				try {
+					const data = JSON.parse(line);
+					// Filter for text content blocks in the stream
+					if (data.type === "text" && data.content) {
+						yield data.content;
+					} else if (data.type === "content_block_delta" && data.delta?.text) {
+						yield data.delta.text;
+					} else if (data.type === "message" && Array.isArray(data.content)) {
+						// Final message might come as a whole
+						for (const block of data.content) {
+							if (block.type === "text" && block.text) {
+								yield block.text;
+							}
+						}
+					}
+				} catch {
+					// Silent fail for non-JSON or partial lines
+				}
+			}
+		}
+
+		buffer += decoder.decode();
+		if (buffer.trim()) {
+			try {
+				const data = JSON.parse(buffer);
+				// Handle trailing partial line if the stream didn't end with newline
+				if (data.type === "text" && data.content) {
+					yield data.content;
+				} else if (data.type === "content_block_delta" && data.delta?.text) {
+					yield data.delta.text;
+				} else if (data.type === "message" && Array.isArray(data.content)) {
+					for (const block of data.content) {
+						if (block.type === "text" && block.text) {
+							yield block.text;
+						}
+					}
+				}
+			} catch {
+				// Ignore non-JSON trailing log lines emitted by claude CLI.
+			}
+		}
+
+		const [exitCode, stderrOutput] = await Promise.all([
+			proc.exited,
+			stderrPromise,
+		]);
+		if (exitCode !== 0) {
+			const stderrPreview = stderrOutput.trim().slice(0, 500);
+			throw new Error(
+				stderrPreview
+					? `Claude CLI exited with code ${exitCode}: ${stderrPreview}`
+					: `Claude CLI exited with code ${exitCode}`,
+			);
+		}
+	}
+
+	private async *streamGeminiCli(
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		const workingDir = context?.workingDir || this.config.workingDir;
+		const systemPrompt = this.createDynamicSystemPrompt();
+
+		const tempDir = await this.createGeminiTempDir();
+		const model = this.config.aiProvider.model || "gemini-2.5-flash";
+
+		try {
+			await this.setupGeminiConfig(tempDir, systemPrompt, model);
+
+			const args = [
+				"gemini",
+				"-p",
+				query,
+				"--output-format",
+				"stream-json",
+				"--yolo",
+			];
+
+			const env = this.buildGeminiEnv(tempDir, model);
+
+			logger.debug("AGENT", "Spawning Gemini CLI", {
+				args,
+				workingDir,
+				model,
+			});
+
+			const proc = Bun.spawn(args, {
+				cwd: workingDir,
+				env,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+
+			const reader = proc.stdout.getReader();
+			let buffer = "";
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) {
+					break;
+				}
+
+				buffer += new TextDecoder().decode(value);
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+
+				for (const line of lines) {
+					if (!line.trim()) {
+						continue;
+					}
+					try {
+						const data = JSON.parse(line);
+						const text = this.parseGeminiStreamLine(data);
+						if (text) {
+							yield text;
+						}
+					} catch {
+						// Silent fail for non-JSON or partial lines
+					}
+				}
+			}
+
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				throw new Error(`Gemini CLI exited with code ${exitCode}`);
+			}
+		} finally {
+			await this.cleanupGeminiTempDir(tempDir);
+		}
+	}
+
+	private parseGeminiStreamLine(data: unknown): string | null {
+		if (
+			data &&
+			typeof data === "object" &&
+			"type" in data &&
+			"role" in data &&
+			"content" in data
+		) {
+			const typedData = data as { type: string; role: string; content: string };
+			if (
+				typedData.type === "message" &&
+				typedData.role === "assistant" &&
+				typedData.content
+			) {
+				return typedData.content;
+			}
+		}
+		return null;
+	}
+
+	private parseCodexExecStreamLine(data: unknown): string | null {
+		if (!data || typeof data !== "object" || !("type" in data)) {
+			return null;
+		}
+
+		const typedData = data as {
+			type: string;
+			item?: {
+				type?: string;
+				text?: string;
+			};
+		};
+
+		if (
+			typedData.type === "item.completed" &&
+			typedData.item?.type === "agent_message" &&
+			typedData.item.text
+		) {
+			return typedData.item.text;
+		}
+
+		return null;
+	}
+
+	private async *streamCodexCli(
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		const workingDir = context?.workingDir || this.config.workingDir;
+		const systemPrompt = this.createDynamicSystemPrompt();
+
+		// Create a temporary directory with isolated Codex config
+		const tempDir = await this.createCodexTempDir();
+		const model = this.config.aiProvider.model;
+
+		try {
+			await this.setupCodexConfig(tempDir, systemPrompt);
+
+			// Build args - now simpler since config is in the temp file
+			const args = [
+				"exec",
+				"--json",
+				"--ephemeral",
+				"--sandbox",
+				"read-only",
+				"--skip-git-repo-check",
+				"--color",
+				"never",
+				...(model ? ["-m", model] : []),
+				"--",
+				query,
+			];
+
+			const env = this.buildCodexEnv(tempDir, model);
+
+			logger.debug("AGENT", "Spawning Codex CLI", {
+				workingDir,
+				model: model || "default",
+				queryLength: query.length,
+				systemPromptLength: systemPrompt.length,
+				mode: "read-only",
+				configPath: path.join(tempDir, "config.toml"),
+			});
+
+			const proc = Bun.spawn(["codex", ...args], {
+				cwd: workingDir,
+				env,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+
+			if (!proc.stdout) {
+				throw new Error("Failed to capture Codex CLI output");
+			}
+
+			const stderrPromise = proc.stderr
+				? new Response(proc.stderr).text()
+				: Promise.resolve("");
+
+			let buffer = "";
+			const decoder = new TextDecoder();
+			const reader = proc.stdout.getReader();
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) {
+					break;
+				}
+
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+
+				for (const line of lines) {
+					if (!line.trim()) {
+						continue;
+					}
+					try {
+						const data = JSON.parse(line);
+						const text = this.parseCodexExecStreamLine(data);
+						if (text) {
+							yield text;
+						}
+					} catch {
+						// Ignore non-JSON log lines emitted by codex CLI.
+					}
+				}
+			}
+
+			buffer += decoder.decode();
+			if (buffer.trim()) {
+				try {
+					const data = JSON.parse(buffer);
+					const text = this.parseCodexExecStreamLine(data);
+					if (text) {
+						yield text;
+					}
+				} catch {
+					// Ignore non-JSON trailing log lines emitted by codex CLI.
+				}
+			}
+
+			const [exitCode, stderrOutput] = await Promise.all([
+				proc.exited,
+				stderrPromise,
+			]);
+			if (exitCode !== 0) {
+				const stderrPreview = stderrOutput.trim().slice(0, 500);
+				throw new Error(
+					stderrPreview
+						? `Codex CLI exited with code ${exitCode}: ${stderrPreview}`
+						: `Codex CLI exited with code ${exitCode}`,
+				);
+			}
+		} finally {
+			await this.cleanupCodexTempDir(tempDir);
+		}
+	}
+
+	private isCliProvider(): boolean {
+		return (
+			this.config.aiProvider.type === "claude-code" ||
+			this.config.aiProvider.type === "gemini-cli" ||
+			this.config.aiProvider.type === "codex-cli"
+		);
+	}
+
+	private createAIModel(
+		aiProvider: ReactAgentConfig["aiProvider"],
+	): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
+		const { type, apiKey, model, baseURL } = aiProvider;
+
+		logger.debug("AGENT", "Creating AI model instance", {
+			type,
+			model,
+			hasBaseURL: !!baseURL,
+		});
+
+		switch (type) {
+			case "openai":
+				return new ChatOpenAI({
+					apiKey,
+					modelName: model || "gpt-5.2",
+				});
+			case "openai-compatible":
+				return new ChatOpenAI({
+					apiKey,
+					modelName: model || "gpt-5.2",
+					configuration: {
+						baseURL: baseURL || "https://api.openai.com/v1",
+					},
+				});
+			case "anthropic":
+				return new ChatAnthropic({
+					apiKey,
+					modelName: model || "claude-sonnet-4-5",
+				});
+			case "anthropic-compatible":
+				if (!baseURL) {
+					throw new Error(
+						"baseURL is required for anthropic-compatible provider",
+					);
+				}
+				if (!model) {
+					throw new Error(
+						"model is required for anthropic-compatible provider",
+					);
+				}
+				return new ChatAnthropic({
+					apiKey,
+					modelName: model,
+					anthropicApiUrl: baseURL,
+				});
+			case "google":
+				return new ChatGoogleGenerativeAI({
+					apiKey,
+					model: model || "gemini-3-flash-preview",
+				});
+			default:
+				logger.error(
+					"AGENT",
+					"Unsupported AI provider type",
+					new Error(`Unsupported AI provider type: ${type}`),
+					{ type },
+				);
+				throw new Error(`Unsupported AI provider type: ${type}`);
+		}
+	}
+
+	async initialize(): Promise<void> {
+		if (this.isCliProvider()) {
+			logger.info(
+				"AGENT",
+				`${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`,
+			);
+			return;
+		}
+
+		if (!this.aiModel) {
+			throw new Error("AI model not created for non-CLI provider");
+		}
+
+		if (!this.rlmTool) {
+			throw new Error("RLM tool not created for non-CLI provider");
+		}
+
+		// Get repo outline for system prompt
+		const repoOutline = await this.getRepoOutline(this.config.workingDir);
+
+		// Create the agent with the single research_repository tool and RLM system prompt.
+		// The 4 atomic tools are used internally by the sandbox, not exposed to the agent.
+		this.agent = createAgent({
+			model: this.aiModel,
+			tools: [this.rlmTool],
+			systemPrompt: this.createRlmSystemPrompt(repoOutline),
+			middleware: [
+				...(this.config.aiProvider.type === "anthropic" ||
+				this.config.aiProvider.type === "anthropic-compatible"
+					? [anthropicPromptCachingMiddleware()]
+					: []),
+			],
+		});
+
+		logger.info("AGENT", "Agent initialized with RLM mode", {
+			toolCount: 1,
+			toolName: "research_repository",
+			hasContextSchema: !!this.contextSchema,
+		});
+	}
+
+	/**
+	 * Query repository with a given query and optional context
+	 *
+	 * @param repoPath - The repository path (deprecated, for compatibility)
+	 * @param query - The query string
+	 * @param context - Optional context object containing working directory and metadata
+	 * @returns The agent's response as a string
+	 */
+	async queryRepository(
+		_repoPath: string,
+		query: string,
+		context?: AgentContext,
+	): Promise<string> {
+		logger.info("AGENT", "Query started", {
+			queryLength: query.length,
+			hasContext: !!context,
+		});
+
+		// Use RLM mode for supported providers (not CLI-based ones)
+		if (this.shouldUseRlm()) {
+			logger.info("AGENT", "Using RLM mode");
+			return await this.executeRlmQuery(query);
+		}
+
+		if (this.config.aiProvider.type === "claude-code") {
+			let fullContent = "";
+			for await (const chunk of this.streamClaudeCli(query, context)) {
+				fullContent += chunk;
+			}
+			return fullContent;
+		}
+
+		if (this.config.aiProvider.type === "gemini-cli") {
+			let fullContent = "";
+			for await (const chunk of this.streamGeminiCli(query, context)) {
+				fullContent += chunk;
+			}
+			return fullContent;
+		}
+
+		if (this.config.aiProvider.type === "codex-cli") {
+			let fullContent = "";
+			for await (const chunk of this.streamCodexCli(query, context)) {
+				fullContent += chunk;
+			}
+			return fullContent;
+		}
+
+		const timingId = logger.timingStart("agentQuery");
+
+		if (!this.agent) {
+			logger.error(
+				"AGENT",
+				"Agent not initialized",
+				new Error("Agent not initialized. Call initialize() first."),
+			);
+			throw new Error("Agent not initialized. Call initialize() first.");
+		}
+
+		// Prepare the messages for the agent - system prompt already set during initialization
+		const messages = [new HumanMessage(query)];
+
+		logger.debug("AGENT", "Invoking agent with messages", {
+			messageCount: messages.length,
+			hasContext: !!context,
+		});
+
+		// Execute the agent with optional context
+		const result = await this.agent.invoke(
+			{
+				messages,
+			},
+			{ recursionLimit: 100, ...(context ? { context } : {}) },
+		);
+
+		// Extract the last message content from the state
+		const lastMessage = result.messages.at(-1);
+		const content =
+			typeof lastMessage.content === "string"
+				? lastMessage.content
+				: JSON.stringify(lastMessage.content);
+
+		logger.timingEnd(timingId, "AGENT", "Query completed");
+		logger.info("AGENT", "Query result received", {
+			responseLength: content.length,
+		});
+
+		return content;
+	}
+
+	/**
+	 * Check if RLM mode should be used based on provider type
+	 * RLM mode is used for API-based providers (OpenAI, Anthropic, Google)
+	 * CLI-based providers (claude-code, gemini-cli, codex-cli) use their own execution path
+	 */
+	private shouldUseRlm(): boolean {
+		const rlmProviders = [
+			"openai",
+			"anthropic",
+			"google",
+			"openai-compatible",
+			"anthropic-compatible",
+		];
+		return rlmProviders.includes(this.config.aiProvider.type);
+	}
+
+	/**
+	 * Initialize the RLM orchestrator on first use
+	 */
+	private initializeRlmOrchestrator(): void {
+		const llmConfig: LlmConfig = {
+			type: this.config.aiProvider.type as LlmConfig["type"],
+			apiKey: this.config.aiProvider.apiKey,
+			model: this.config.aiProvider.model,
+			baseURL: this.config.aiProvider.baseURL,
+		};
+
+		const orchestratorConfig: RlmOrchestratorConfig = {
+			llmConfig,
+			repoContentLoader: () => this.loadRepoContentForRlm(),
+			workingDir: this.config.workingDir,
+			maxIterations: 30,
+			stdoutPreviewLength: 2000,
+			systemPrompt: this.createRlmSystemPrompt(),
+		};
+
+		this.rlmOrchestrator = new RlmOrchestrator(orchestratorConfig);
+		logger.info("AGENT", "RLM Orchestrator initialized", {
+			workingDir: this.config.workingDir,
+			maxIterations: orchestratorConfig.maxIterations,
+		});
+	}
+
+	/**
+	 * Load repository content for RLM context
+	 * Used by the RLM engine to lazily load context
+	 * Loads actual file contents (README, package.json, key files) for the model to analyze
+	 */
+	private async loadRepoContentForRlm(): Promise<string> {
+		const { workingDir } = this.config;
+		const parts: string[] = [];
+
+		try {
+			// Get file listing to understand structure
+			const listing = await listTool.invoke(
+				{ directoryPath: workingDir, recursive: false, maxDepth: 2 },
+				{ context: { workingDir, group: "", technology: "" } },
+			);
+			parts.push(`File listing (depth 2):\n${listing}\n`);
+
+			// Try to read README.md
+			try {
+				const readme = await viewTool.invoke(
+					{ filePath: "README.md" },
+					{ context: { workingDir, group: "", technology: "" } },
+				);
+				if (readme && !readme.includes("error") && readme.length > 10) {
+					parts.push(`=== README.md ===\n${readme}\n`);
+				}
+			} catch {
+				// README not found, that's ok
+			}
+
+			// Try to read package.json
+			try {
+				const packageJson = await viewTool.invoke(
+					{ filePath: "package.json" },
+					{ context: { workingDir, group: "", technology: "" } },
+				);
+				if (
+					packageJson &&
+					!packageJson.includes("error") &&
+					packageJson.length > 10
+				) {
+					parts.push(`=== package.json ===\n${packageJson}\n`);
+				}
+			} catch {
+				// package.json not found, that's ok
+			}
+
+			// Try to read main source files (index.js, index.ts, main.js, main.ts)
+			const mainFiles = [
+				"index.ts",
+				"index.js",
+				"main.ts",
+				"main.js",
+				"src/index.ts",
+				"src/index.js",
+			];
+			for (const file of mainFiles) {
+				try {
+					const content = await viewTool.invoke(
+						{ filePath: file, viewRange: [1, 100] },
+						{ context: { workingDir, group: "", technology: "" } },
+					);
+					if (content && !content.includes("error") && content.length > 20) {
+						parts.push(`=== ${file} ===\n${content}\n`);
+						break; // Only load one main file
+					}
+				} catch {
+					// File not found, try next
+				}
+			}
+
+			const context = parts.join("\n");
+
+			// If we got meaningful content, return it
+			if (context.length > 100) {
+				return `Repository: ${workingDir}\n\n${context}`;
+			}
+
+			// Fallback: just return listing
+			return `Repository content loaded from: ${workingDir}\n\nFile listing:\n${listing}`;
+		} catch (error) {
+			return `Repository content loaded from: ${workingDir}\n\nNote: Full repository access available via repo API (repo.list, repo.view, repo.find, repo.grep)`;
+		}
+	}
+	/**
+	 * Execute query using RLM Orchestrator
+	 * This implements the multi-turn RLM pattern from the paper using RlmOrchestrator
+	 */
+	private async executeRlmQuery(query: string): Promise<string> {
+		const timingId = logger.timingStart("rlmQuery");
+
+		// Initialize orchestrator if not already done
+		if (!this.rlmOrchestrator) {
+			this.initializeRlmOrchestrator();
+		}
+
+		// Run the orchestrator with the query
+		const result = await this.rlmOrchestrator!.run(query);
+
+		logger.timingEnd(timingId, "AGENT", "RLM query completed");
+		return result;
+	}
+
+	/**
 
   /**
    * Stream repository query with optional context
-   * 
+   *
    * Implements true token-by-token streaming: yields LLM tokens as they are generated.
    * Only emits content from on_chat_model_stream events, filtering out tool calls
    * and intermediate chain events.
@@ -1183,140 +1301,140 @@ approval_policy = "never"
    * @param context - Optional context object containing working directory and metadata
    * @returns Async generator yielding token-by-token chunks from the LLM
    */
-  async *streamRepository(
-    _repoPath: string,
-    query: string,
-    context?: AgentContext
-  ): AsyncGenerator<string, void, unknown> {
-    logger.info("AGENT", "Stream started", {
-      queryLength: query.length,
-      hasContext: !!context,
-    });
+	async *streamRepository(
+		_repoPath: string,
+		query: string,
+		context?: AgentContext,
+	): AsyncGenerator<string, void, unknown> {
+		logger.info("AGENT", "Stream started", {
+			queryLength: query.length,
+			hasContext: !!context,
+		});
 
-    if (this.config.aiProvider.type === "claude-code") {
-      yield* this.streamClaudeCli(query, context);
-      return;
-    }
+		if (this.config.aiProvider.type === "claude-code") {
+			yield* this.streamClaudeCli(query, context);
+			return;
+		}
 
-    if (this.config.aiProvider.type === "gemini-cli") {
-      yield* this.streamGeminiCli(query, context);
-      return;
-    }
+		if (this.config.aiProvider.type === "gemini-cli") {
+			yield* this.streamGeminiCli(query, context);
+			return;
+		}
 
-    if (this.config.aiProvider.type === "codex-cli") {
-      yield* this.streamCodexCli(query, context);
-      return;
-    }
+		if (this.config.aiProvider.type === "codex-cli") {
+			yield* this.streamCodexCli(query, context);
+			return;
+		}
 
-    // Use RLM mode for API-based providers to avoid "Tool repo.grep not found" errors
-    // The LangChain streaming agent only has research_repository tool, but the system prompt
-    // mentions repo.grep/repo.find which don't exist as LangChain tools
-    if (this.shouldUseRlm()) {
-      // For RLM mode, yield progress indicator then execute and return final result
-      yield "Exploring repository...\n";
-      const result = await this.queryRepository(_repoPath, query, context);
-      yield result;
-      return;
-    }
+		// Use RLM mode for API-based providers to avoid "Tool repo.grep not found" errors
+		// The LangChain streaming agent only has research_repository tool, but the system prompt
+		// mentions repo.grep/repo.find which don't exist as LangChain tools
+		if (this.shouldUseRlm()) {
+			// For RLM mode, yield progress indicator then execute and return final result
+			yield "Exploring repository...\n";
+			const result = await this.queryRepository(_repoPath, query, context);
+			yield result;
+			return;
+		}
 
-    const timingId = logger.timingStart("agentStream");
+		const timingId = logger.timingStart("agentStream");
 
-    if (!this.agent) {
-      logger.error(
-        "AGENT",
-        "Agent not initialized",
-        new Error("Agent not initialized. Call initialize() first.")
-      );
-      throw new Error("Agent not initialized. Call initialize() first.");
-    }
+		if (!this.agent) {
+			logger.error(
+				"AGENT",
+				"Agent not initialized",
+				new Error("Agent not initialized. Call initialize() first."),
+			);
+			throw new Error("Agent not initialized. Call initialize() first.");
+		}
 
-    const messages = [new HumanMessage(query)];
+		const messages = [new HumanMessage(query)];
 
-    logger.debug("AGENT", "Invoking agent stream with messages", {
-      messageCount: messages.length,
-      hasContext: !!context,
-    });
+		logger.debug("AGENT", "Invoking agent stream with messages", {
+			messageCount: messages.length,
+			hasContext: !!context,
+		});
 
-    const cleanup = () => {
-      // Signal interruption for potential future use
-    };
+		const cleanup = () => {
+			// Signal interruption for potential future use
+		};
 
-    logger.debug("AGENT", "Setting up interruption handlers for streaming");
-    process.on("SIGINT", cleanup);
-    process.on("SIGTERM", cleanup);
+		logger.debug("AGENT", "Setting up interruption handlers for streaming");
+		process.on("SIGINT", cleanup);
+		process.on("SIGTERM", cleanup);
 
-    try {
-      // Use streamEvents for true token-by-token streaming
-      const eventStream = await this.agent.streamEvents(
-        { messages },
-        {
-          version: "v2",
-          recursionLimit: 100,
-          ...(context ? { context } : {}),
-        }
-      );
+		try {
+			// Use streamEvents for true token-by-token streaming
+			const eventStream = await this.agent.streamEvents(
+				{ messages },
+				{
+					version: "v2",
+					recursionLimit: 100,
+					...(context ? { context } : {}),
+				},
+			);
 
-      for await (const event of eventStream) {
-        // Only emit content from LLM token streaming events
-        // Skip all other events (tool calls, chain events, etc.)
-        if (event.event === "on_chat_model_stream") {
-          // Use .text getter which handles all content types correctly
-          // (string content, empty content, content blocks, etc.)
-          const text = event.data.chunk?.text;
-          if (text) {
-            yield text;
-          }
-        }
-      }
+			for await (const event of eventStream) {
+				// Only emit content from LLM token streaming events
+				// Skip all other events (tool calls, chain events, etc.)
+				if (event.event === "on_chat_model_stream") {
+					// Use .text getter which handles all content types correctly
+					// (string content, empty content, content blocks, etc.)
+					const text = event.data.chunk?.text;
+					if (text) {
+						yield text;
+					}
+				}
+			}
 
-      // Yield trailing newline for terminal compatibility
-      yield "\n";
-    } catch (error) {
-      const errorMessage = getStreamingErrorMessage(error);
-      logger.error(
-        "AGENT",
-        "Streaming error",
-        error instanceof Error ? error : new Error(errorMessage)
-      );
-      yield `\n\n[Error: ${errorMessage}]`;
-      throw error;
-    } finally {
-      process.removeListener("SIGINT", cleanup);
-      process.removeListener("SIGTERM", cleanup);
-      logger.timingEnd(timingId, "AGENT", "Streaming completed");
-    }
-  }
+			// Yield trailing newline for terminal compatibility
+			yield "\n";
+		} catch (error) {
+			const errorMessage = getStreamingErrorMessage(error);
+			logger.error(
+				"AGENT",
+				"Streaming error",
+				error instanceof Error ? error : new Error(errorMessage),
+			);
+			yield `\n\n[Error: ${errorMessage}]`;
+			throw error;
+		} finally {
+			process.removeListener("SIGINT", cleanup);
+			process.removeListener("SIGTERM", cleanup);
+			logger.timingEnd(timingId, "AGENT", "Streaming completed");
+		}
+	}
 }
 
 /**
  * Get user-friendly error message for streaming errors
  */
 function getStreamingErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Unknown streaming error";
-  }
+	if (!(error instanceof Error)) {
+		return "Unknown streaming error";
+	}
 
-  if (error.message.includes("timeout")) {
-    return "Streaming timeout - request took too long to complete";
-  }
+	if (error.message.includes("timeout")) {
+		return "Streaming timeout - request took too long to complete";
+	}
 
-  if (
-    error.message.includes("network") ||
-    error.message.includes("ENOTFOUND")
-  ) {
-    return "Network error - unable to connect to AI provider";
-  }
+	if (
+		error.message.includes("network") ||
+		error.message.includes("ENOTFOUND")
+	) {
+		return "Network error - unable to connect to AI provider";
+	}
 
-  if (error.message.includes("rate limit")) {
-    return "Rate limit exceeded - please try again later";
-  }
+	if (error.message.includes("rate limit")) {
+		return "Rate limit exceeded - please try again later";
+	}
 
-  if (
-    error.message.includes("authentication") ||
-    error.message.includes("unauthorized")
-  ) {
-    return "Authentication error - check your API credentials";
-  }
+	if (
+		error.message.includes("authentication") ||
+		error.message.includes("unauthorized")
+	) {
+		return "Authentication error - check your API credentials";
+	}
 
-  return `Streaming error: ${error.message}`;
+	return `Streaming error: ${error.message}`;
 }
