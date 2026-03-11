@@ -95,6 +95,38 @@ describe("Config Schema Alignment", () => {
     expect(loaded.aiProvider?.type).toBe("openai-compatible");
   });
 
+  it("should require a model for openai-compatible providers", async () => {
+    const newConfig = {
+      technologies: {
+        default: {
+          demo: { repo: "http://example.com" },
+        },
+      },
+      repos_path: "./libs",
+      aiProvider: {
+        type: "openai-compatible",
+        baseURL: "https://api.example.com/v1",
+        apiKey: "sk-test",
+      },
+    };
+
+    fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
+
+    const originalExit = process.exit;
+    const originalError = console.error;
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit:${code ?? 0}`);
+    }) as typeof process.exit;
+    console.error = (() => undefined) as typeof console.error;
+
+    try {
+      await expect(loadConfig(TEST_CONFIG_PATH)).rejects.toThrow("process.exit:1");
+    } finally {
+      process.exit = originalExit;
+      console.error = originalError;
+    }
+  });
+
   it("should support codex-cli provider without API key", async () => {
     const newConfig = {
       technologies: {

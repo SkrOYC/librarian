@@ -1,6 +1,7 @@
 import { logger } from "../utils/logger.js";
 import { createRootModelQuery, createSubModelQuery, createRepoApi } from "./rlm-sandbox.js";
 import type {
+  EnvironmentErrorPayload,
   EnvironmentMetadata,
   LlmConfig,
   RepoApi,
@@ -27,6 +28,8 @@ export interface RlmOrchestratorConfig {
   systemPrompt: string;
   initialContext?: string | undefined;
   rootHint?: string | undefined;
+  maxRecursionDepth?: number | undefined;
+  recursionDepth?: number | undefined;
   sharedIterationBudget?: IterationBudget | undefined;
 }
 
@@ -45,9 +48,15 @@ export interface RlmRunResult {
 
 export class RlmOrchestrator {
   private readonly config: Required<
-    Pick<RlmOrchestratorConfig, "maxIterations" | "stdoutPreviewLength" | "systemPrompt">
+    Pick<
+      RlmOrchestratorConfig,
+      "maxIterations" | "stdoutPreviewLength" | "systemPrompt" | "maxRecursionDepth" | "recursionDepth"
+    >
   > &
-    Omit<RlmOrchestratorConfig, "maxIterations" | "stdoutPreviewLength" | "systemPrompt">;
+    Omit<
+      RlmOrchestratorConfig,
+      "maxIterations" | "stdoutPreviewLength" | "systemPrompt" | "maxRecursionDepth" | "recursionDepth"
+    >;
   private readonly repoApi: RepoApi;
   private session: PersistentWorkerSession | null = null;
   private metadataHistory: RlmMetadata[] = [];
@@ -64,6 +73,8 @@ export class RlmOrchestrator {
     this.config = {
       maxIterations: 10,
       stdoutPreviewLength: 2000,
+      maxRecursionDepth: 8,
+      recursionDepth: 0,
       ...config,
     };
 
@@ -261,6 +272,15 @@ export class RlmOrchestrator {
       );
     }
 
+    const recursionDepth = this.config.recursionDepth ?? 0;
+    const maxRecursionDepth = this.config.maxRecursionDepth ?? 8;
+    const remainingDepth = maxRecursionDepth - recursionDepth;
+    if (remainingDepth <= 1) {
+      parts.push(
+        `Guardrail: recursion depth ${recursionDepth}/${maxRecursionDepth}. Avoid unnecessary sub_rlm calls.`,
+      );
+    }
+
     return parts.join("\n\n---\n\n");
   }
 
@@ -280,6 +300,26 @@ export class RlmOrchestrator {
 
   private async runChild(task: SubRlmRequest): Promise<SubRlmResult> {
     this.stats.subRlmCalls += 1;
+    const currentRecursionDepth = this.config.recursionDepth ?? 0;
+    const maxRecursionDepth = this.config.maxRecursionDepth ?? 8;
+    const childDepth = currentRecursionDepth + 1;
+    if (childDepth > maxRecursionDepth) {
+      logger.warn("RLM", "sub_rlm recursion depth limit exceeded", {
+        recursionDepth: childDepth,
+        maxRecursionDepth,
+      });
+      throw {
+        kind: "sub_rlm",
+        code: "SUB_RLM_MAX_DEPTH_EXCEEDED",
+        message:
+          `sub_rlm recursion depth ${childDepth} exceeds max depth ${maxRecursionDepth}`,
+        details: {
+          recursionDepth: childDepth,
+          maxRecursionDepth,
+        },
+      } satisfies EnvironmentErrorPayload;
+    }
+
     const sharedIterationBudget =
       this.currentIterationBudget ??
       {
@@ -305,6 +345,8 @@ export class RlmOrchestrator {
         : {}),
       initialContext: task.context,
       ...(task.rootHint ? { rootHint: task.rootHint } : {}),
+      maxRecursionDepth,
+      recursionDepth: childDepth,
       sharedIterationBudget,
     });
 
@@ -370,6 +412,8 @@ export class RlmOrchestrator {
       workingDir: rootMetadata.workingDir,
       target: rootMetadata.targetLabel,
       maxIterations: this.config.maxIterations ?? 10,
+      recursionDepth: this.config.recursionDepth,
+      maxRecursionDepth: this.config.maxRecursionDepth,
       remainingIterationBudget: iterationBudget.remaining,
       hasInitialContext: !!this.config.initialContext,
     });

@@ -248,7 +248,7 @@ technologies:
 # aiProvider:
 #   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
-#   model: gpt-5.2
+#   model: gpt-5.2 # Required for openai-compatible and anthropic-compatible providers
 #   baseURL: # Required for openai-compatible and anthropic-compatible providers
 ```
 
@@ -369,7 +369,7 @@ technologies:
 # aiProvider:
 #   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
-#   model: gpt-5.2
+#   model: gpt-5.2 # Required for openai-compatible and anthropic-compatible providers
 #   baseURL: # Required for openai-compatible and anthropic-compatible providers
 ```
 

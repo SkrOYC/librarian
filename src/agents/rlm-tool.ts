@@ -23,6 +23,20 @@ import {
  */
 export type ModelConfig = LlmConfig;
 
+function formatLegacyRepoError(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : error &&
+          typeof error === "object" &&
+          "message" in error &&
+          typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : String(error);
+
+  return `Error: ${message}`;
+}
+
 /**
  * Creates the legacy `research_repository` tool.
  *
@@ -54,16 +68,35 @@ export function createResearchRepositoryTool(config: LlmConfig) {
 
       const repo = createRepoApi(workingDir);
       const legacyRepo: SandboxRepoApi = {
-        list: async (args: Parameters<typeof repo.list>[0]) =>
-          JSON.stringify(await repo.list(args)),
-        view: async (args: Parameters<typeof repo.view>[0]) => {
-          const result = await repo.view(args);
-          return result.lines.map((line) => line.content).join("\n");
+        list: async (args: Parameters<typeof repo.list>[0]) => {
+          try {
+            return JSON.stringify(await repo.list(args));
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
         },
-        find: async (args: Parameters<typeof repo.find>[0]) =>
-          JSON.stringify(await repo.find(args)),
-        grep: async (args: Parameters<typeof repo.grep>[0]) =>
-          JSON.stringify(await repo.grep(args)),
+        view: async (args: Parameters<typeof repo.view>[0]) => {
+          try {
+            const result = await repo.view(args);
+            return result.lines.map((line) => line.content).join("\n");
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
+        },
+        find: async (args: Parameters<typeof repo.find>[0]) => {
+          try {
+            return JSON.stringify(await repo.find(args));
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
+        },
+        grep: async (args: Parameters<typeof repo.grep>[0]) => {
+          try {
+            return JSON.stringify(await repo.grep(args));
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
+        },
       };
       const result = await executeRlmScript(
         script,
@@ -115,7 +148,8 @@ Example:
 
 Legacy repo contract:
 - repo.list / repo.find / repo.grep return JSON strings
-- repo.view returns plain text file contents`,
+- repo.view returns plain text file contents
+- on failure, repo helpers return \`Error: ...\` strings instead of throwing`,
       schema: z.object({
         script: z
           .string()

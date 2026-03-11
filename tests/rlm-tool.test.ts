@@ -64,6 +64,7 @@ describe("RLM Tool - research_repository", () => {
       expect(tool.description).toContain("buffers");
       expect(tool.description).toContain("repo.list / repo.find / repo.grep return JSON strings");
       expect(tool.description).toContain("repo.view returns plain text file contents");
+      expect(tool.description).toContain("Error: ...");
     });
   });
 
@@ -229,6 +230,26 @@ describe("RLM Tool - research_repository", () => {
         hasHello: true,
         contentPreview: 'export function greet() ',
       });
+    });
+
+    it("should preserve legacy repo error strings for missing files", async () => {
+      const tool = createResearchRepositoryTool(mockLlmConfig);
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
+
+      const result = await tool.invoke(
+        {
+          script: `
+            return await repo.view({ filePath: "missing-file.ts" });
+          `,
+        },
+        { context }
+      );
+
+      expect(result).toContain("Error:");
     });
   });
 });

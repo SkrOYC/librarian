@@ -136,16 +136,24 @@ function validateBaseUrlForCompatibleProviders(
   config: LibrarianConfig,
   errors: string[]
 ): void {
-  if (
-    config.aiProvider.type === "openai-compatible" &&
-    !config.aiProvider.baseURL
-  ) {
-    const errorMsg = "base_url is required for openai-compatible providers";
-    errors.push(errorMsg);
-    logger.debug(
-      "CONFIG",
-      "Validation failed: base_url missing for openai-compatible provider"
-    );
+  if (config.aiProvider.type === "openai-compatible") {
+    if (!config.aiProvider.baseURL) {
+      const errorMsg = "base_url is required for openai-compatible providers";
+      errors.push(errorMsg);
+      logger.debug(
+        "CONFIG",
+        "Validation failed: base_url missing for openai-compatible provider"
+      );
+    }
+
+    if (!config.aiProvider.model) {
+      const errorMsg = "model is required for openai-compatible providers";
+      errors.push(errorMsg);
+      logger.debug(
+        "CONFIG",
+        "Validation failed: model missing for openai-compatible provider"
+      );
+    }
   }
 
   if (config.aiProvider.type === "anthropic-compatible") {

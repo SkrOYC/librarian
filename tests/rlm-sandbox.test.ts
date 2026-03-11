@@ -86,6 +86,21 @@ describe("RLM sandbox", () => {
   });
 
   describe("language model configuration", () => {
+    it("should require a model for openai-compatible providers", async () => {
+      const query = createRootModelQuery(
+        {
+          type: "openai-compatible",
+          apiKey: "test-key",
+          baseURL: "https://example.test/v1",
+        },
+        "system prompt",
+      );
+
+      await expect(query("history")).rejects.toThrow(
+        "model is required for openai-compatible provider",
+      );
+    });
+
     it("should require a baseURL for openai-compatible providers", async () => {
       const query = createRootModelQuery(
         {

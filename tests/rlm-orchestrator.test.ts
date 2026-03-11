@@ -343,6 +343,44 @@ describe("RlmOrchestrator", () => {
       expect(result.answer).toContain("1:0:RLM reached max iterations without FINAL()");
       expect(result.stats.subRlmCalls).toBe(2);
     });
+
+    it("should enforce a maximum recursion depth for child runs", async () => {
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        if (history.includes("Task:\nchild task")) {
+          return `
+            try {
+              await sub_rlm({
+                prompt: "grandchild task",
+                context: "grandchild context"
+              });
+              FINAL("unexpected");
+            } catch (error) {
+              FINAL(String(error.code));
+            }
+          `;
+        }
+
+        return `
+          const child = await sub_rlm({
+            prompt: "child task",
+            context: "child context"
+          });
+          FINAL(child.finalAnswer);
+        `;
+      });
+
+      const orchestrator = new RlmOrchestrator({
+        ...config,
+        llmQuery: mockLlm,
+        maxRecursionDepth: 1,
+      });
+
+      const result = await orchestrator.runDetailed("root task");
+
+      expect(result.answer).toBe("SUB_RLM_MAX_DEPTH_EXCEEDED");
+      expect(result.stats.subRlmCalls).toBe(2);
+      expect(mockLlm).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("completion and recovery", () => {

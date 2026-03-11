@@ -62,19 +62,27 @@ function createErrorPayload(
 function getDefaultModel(config: LlmConfig): string {
   switch (config.type) {
     case "openai":
-    case "openai-compatible":
       return "gpt-5";
     case "anthropic":
-    case "anthropic-compatible":
       return "claude-sonnet-4-5";
     case "google":
       return "gemini-2.5-flash";
+    case "openai-compatible":
+      throw new Error("model is required for openai-compatible provider");
+    case "anthropic-compatible":
+      throw new Error("model is required for anthropic-compatible provider");
   }
 }
 
 function validateLanguageModelConfig(config: LlmConfig): void {
-  if (config.type === "openai-compatible" && !config.baseURL) {
-    throw new Error("baseURL is required for openai-compatible provider");
+  if (config.type === "openai-compatible") {
+    if (!config.baseURL) {
+      throw new Error("baseURL is required for openai-compatible provider");
+    }
+
+    if (!config.model) {
+      throw new Error("model is required for openai-compatible provider");
+    }
   }
 
   if (config.type === "anthropic-compatible") {
