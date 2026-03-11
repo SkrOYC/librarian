@@ -1,29 +1,18 @@
 import { mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ChatAnthropic } from "@langchain/anthropic";
-import { HumanMessage } from "@langchain/core/messages";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { ChatOpenAI } from "@langchain/openai";
-import {
-	anthropicPromptCachingMiddleware,
-	createAgent,
-	type DynamicStructuredTool,
-} from "langchain";
 import type { z } from "zod";
-import { findTool } from "../tools/file-finding.tool.js";
 import { listTool } from "../tools/file-listing.tool.js";
-import { viewTool } from "../tools/file-reading.tool.js";
-import { grepTool } from "../tools/grep-content.tool.js";
 import { logger } from "../utils/logger.js";
 import type { AgentContext } from "./context-schema.js";
 import {
 	RlmOrchestrator,
 	type RlmOrchestratorConfig,
+	type RlmRunResult,
 } from "./rlm-orchestrator.js";
 import { createRlmSystemPrompt } from "./rlm-prompts.js";
 import type { LlmConfig } from "./rlm-sandbox.js";
-import { createResearchRepositoryTool } from "./rlm-tool.js";
+import type { RootRepoMetadata } from "./rlm-types.js";
 
 // Re-export for consumer convenience
 export type { AgentContext } from "./context-schema.js";
@@ -60,14 +49,7 @@ export interface ReactAgentConfig {
 }
 
 export class ReactAgent {
-	private readonly aiModel?:
-		| ChatOpenAI
-		| ChatAnthropic
-		| ChatGoogleGenerativeAI;
-	private readonly tools: DynamicStructuredTool[];
-	private readonly rlmTool?: DynamicStructuredTool;
 	private rlmOrchestrator?: RlmOrchestrator;
-	private agent?: ReturnType<typeof createAgent>;
 	private readonly config: ReactAgentConfig;
 	private readonly contextSchema?: z.ZodType | undefined;
 
@@ -75,27 +57,11 @@ export class ReactAgent {
 		this.config = config;
 		this.contextSchema = config.contextSchema;
 
-		if (!this.isCliProvider()) {
-			this.aiModel = this.createAIModel(config.aiProvider);
-			// Create the RLM research_repository tool with direct SDK config.
-			// Uses direct provider SDKs to avoid LangChain callback interference.
-			this.rlmTool = createResearchRepositoryTool({
-				type: config.aiProvider.type as LlmConfig["type"],
-				apiKey: config.aiProvider.apiKey || "",
-				model: config.aiProvider.model,
-				baseURL: config.aiProvider.baseURL,
-			});
-		}
-
-		// Keep atomic tools available (used by CLI providers and the RLM sandbox internally)
-		this.tools = [listTool, viewTool, grepTool, findTool];
-
 		logger.info("AGENT", "Initializing ReactAgent", {
 			aiProviderType: config.aiProvider.type,
 			model: config.aiProvider.model,
 			workingDir: config.workingDir.replace(os.homedir(), "~"),
-			toolCount: this.rlmTool ? 1 : this.tools.length,
-			mode: this.rlmTool ? "rlm" : "cli",
+			mode: this.isCliProvider() ? "cli" : "rlm",
 			hasContextSchema: !!this.contextSchema,
 		});
 	}
@@ -161,7 +127,7 @@ Your Working Directory: ${workingDir}`;
 	}
 
 	/**
-	 * Creates the RLM (Recursive Language Model) system prompt for LangChain agents.
+	 * Creates the RLM (Recursive Language Model) system prompt for API-backed providers.
 	 * Delegates to rlm-prompts.ts for the actual prompt template.
 	 *
 	 * @param repoOutline - Optional pre-computed directory listing
@@ -993,105 +959,16 @@ notifications = false
 		);
 	}
 
-	private createAIModel(
-		aiProvider: ReactAgentConfig["aiProvider"],
-	): ChatOpenAI | ChatAnthropic | ChatGoogleGenerativeAI {
-		const { type, apiKey, model, baseURL } = aiProvider;
-
-		logger.debug("AGENT", "Creating AI model instance", {
-			type,
-			model,
-			hasBaseURL: !!baseURL,
-		});
-
-		switch (type) {
-			case "openai":
-				return new ChatOpenAI({
-					apiKey,
-					modelName: model || "gpt-5.2",
-				});
-			case "openai-compatible":
-				return new ChatOpenAI({
-					apiKey,
-					modelName: model || "gpt-5.2",
-					configuration: {
-						baseURL: baseURL || "https://api.openai.com/v1",
-					},
-				});
-			case "anthropic":
-				return new ChatAnthropic({
-					apiKey,
-					modelName: model || "claude-sonnet-4-5",
-				});
-			case "anthropic-compatible":
-				if (!baseURL) {
-					throw new Error(
-						"baseURL is required for anthropic-compatible provider",
-					);
-				}
-				if (!model) {
-					throw new Error(
-						"model is required for anthropic-compatible provider",
-					);
-				}
-				return new ChatAnthropic({
-					apiKey,
-					modelName: model,
-					anthropicApiUrl: baseURL,
-				});
-			case "google":
-				return new ChatGoogleGenerativeAI({
-					apiKey,
-					model: model || "gemini-3-flash-preview",
-				});
-			default:
-				logger.error(
-					"AGENT",
-					"Unsupported AI provider type",
-					new Error(`Unsupported AI provider type: ${type}`),
-					{ type },
-				);
-				throw new Error(`Unsupported AI provider type: ${type}`);
-		}
-	}
-
 	async initialize(): Promise<void> {
 		if (this.isCliProvider()) {
 			logger.info(
 				"AGENT",
-				`${this.config.aiProvider.type} CLI mode initialized (skipping LangChain setup)`,
+				`${this.config.aiProvider.type} CLI mode initialized`,
 			);
 			return;
 		}
 
-		if (!this.aiModel) {
-			throw new Error("AI model not created for non-CLI provider");
-		}
-
-		if (!this.rlmTool) {
-			throw new Error("RLM tool not created for non-CLI provider");
-		}
-
-		// Get repo outline for system prompt
-		const repoOutline = await this.getRepoOutline(this.config.workingDir);
-
-		// Create the agent with the single research_repository tool and RLM system prompt.
-		// The 4 atomic tools are used internally by the sandbox, not exposed to the agent.
-		this.agent = createAgent({
-			model: this.aiModel,
-			tools: [this.rlmTool],
-			systemPrompt: this.createRlmSystemPrompt(repoOutline),
-			middleware: [
-				...(this.config.aiProvider.type === "anthropic" ||
-				this.config.aiProvider.type === "anthropic-compatible"
-					? [anthropicPromptCachingMiddleware()]
-					: []),
-			],
-		});
-
-		logger.info("AGENT", "Agent initialized with RLM mode", {
-			toolCount: 1,
-			toolName: "research_repository",
+		logger.info("AGENT", "Direct RLM mode initialized", {
 			hasContextSchema: !!this.contextSchema,
 		});
 	}
@@ -1117,7 +994,18 @@ notifications = false
 		// Use RLM mode for supported providers (not CLI-based ones)
 		if (this.shouldUseRlm()) {
 			logger.info("AGENT", "Using RLM mode");
-			return await this.executeRlmQuery(query);
+			const result = await this.executeRlmQuery(query);
+			logger.info("AGENT", "RLM query result received", {
+				root_iterations: result.stats.rootIterations,
+				sub_rlm_calls: result.stats.subRlmCalls,
+				sub_model_calls: result.stats.subModelCalls,
+				repo_calls: result.stats.repoCalls,
+				total_input_chars: result.stats.totalInputChars,
+				total_output_chars: result.stats.totalOutputChars,
+				final_set: result.stats.finalSet,
+				fallback_recovery_used: result.stats.fallbackRecoveryUsed,
+			});
+			return result.answer;
 		}
 
 		if (this.config.aiProvider.type === "claude-code") {
@@ -1144,46 +1032,9 @@ notifications = false
 			return fullContent;
 		}
 
-		const timingId = logger.timingStart("agentQuery");
-
-		if (!this.agent) {
-			logger.error(
-				"AGENT",
-				"Agent not initialized",
-				new Error("Agent not initialized. Call initialize() first."),
-			);
-			throw new Error("Agent not initialized. Call initialize() first.");
-		}
-
-		// Prepare the messages for the agent - system prompt already set during initialization
-		const messages = [new HumanMessage(query)];
-
-		logger.debug("AGENT", "Invoking agent with messages", {
-			messageCount: messages.length,
-			hasContext: !!context,
-		});
-
-		// Execute the agent with optional context
-		const result = await this.agent.invoke(
-			{
-				messages,
-			},
-			{ recursionLimit: 100, ...(context ? { context } : {}) },
+		throw new Error(
+			`Unsupported AI provider for direct repository query: ${this.config.aiProvider.type}`,
 		);
-
-		// Extract the last message content from the state
-		const lastMessage = result.messages.at(-1);
-		const content =
-			typeof lastMessage.content === "string"
-				? lastMessage.content
-				: JSON.stringify(lastMessage.content);
-
-		logger.timingEnd(timingId, "AGENT", "Query completed");
-		logger.info("AGENT", "Query result received", {
-			responseLength: content.length,
-		});
-
-		return content;
 	}
 
 	/**
@@ -1215,7 +1066,7 @@ notifications = false
 
 		const orchestratorConfig: RlmOrchestratorConfig = {
 			llmConfig,
-			repoContentLoader: () => this.loadRepoContentForRlm(),
+			rootMetadataLoader: () => this.loadRootMetadata(),
 			workingDir: this.config.workingDir,
 			maxIterations: 30,
 			stdoutPreviewLength: 2000,
@@ -1229,95 +1080,71 @@ notifications = false
 		});
 	}
 
-	/**
-	 * Load repository content for RLM context
-	 * Used by the RLM engine to lazily load context
-	 * Loads actual file contents (README, package.json, key files) for the model to analyze
-	 */
-	private async loadRepoContentForRlm(): Promise<string> {
-		const { workingDir } = this.config;
-		const parts: string[] = [];
+	private async loadRootMetadata(): Promise<RootRepoMetadata> {
+		const { workingDir, technology } = this.config;
+		let topLevelEntries: RootRepoMetadata["topLevelEntries"] = [];
 
 		try {
-			// Get file listing to understand structure
-			const listing = await listTool.invoke(
-				{ directoryPath: workingDir, recursive: false, maxDepth: 2 },
+			const rawListing = await listTool.invoke(
+				{
+					directoryPath: ".",
+					recursive: false,
+					maxDepth: 1,
+					includeHidden: false,
+				},
 				{ context: { workingDir, group: "", technology: "" } },
 			);
-			parts.push(`File listing (depth 2):\n${listing}\n`);
+			const listing = JSON.parse(rawListing) as {
+				entries?: Array<{
+					name: string;
+					path: string;
+					isDirectory: boolean;
+					size?: number;
+					lineCount?: number;
+					depth?: number;
+				}>;
+				error?: unknown;
+				message?: unknown;
+			};
 
-			// Try to read README.md
-			try {
-				const readme = await viewTool.invoke(
-					{ filePath: "README.md" },
-					{ context: { workingDir, group: "", technology: "" } },
-				);
-				if (readme && !readme.includes("error") && readme.length > 10) {
-					parts.push(`=== README.md ===\n${readme}\n`);
-				}
-			} catch {
-				// README not found, that's ok
+			if (!Array.isArray(listing.entries)) {
+				logger.warn("AGENT", "Root metadata listing returned no entries", {
+					workingDir: workingDir.replace(os.homedir(), "~"),
+					...(typeof listing.message === "string"
+						? { message: listing.message }
+						: {}),
+				});
+			} else {
+				topLevelEntries = listing.entries.map((entry) => ({
+					name: entry.name,
+					path: entry.path,
+					isDirectory: entry.isDirectory,
+					...(entry.size !== undefined ? { size: entry.size } : {}),
+					...(entry.lineCount !== undefined ? { lineCount: entry.lineCount } : {}),
+					...(entry.depth !== undefined ? { depth: entry.depth } : {}),
+				}));
 			}
-
-			// Try to read package.json
-			try {
-				const packageJson = await viewTool.invoke(
-					{ filePath: "package.json" },
-					{ context: { workingDir, group: "", technology: "" } },
-				);
-				if (
-					packageJson &&
-					!packageJson.includes("error") &&
-					packageJson.length > 10
-				) {
-					parts.push(`=== package.json ===\n${packageJson}\n`);
-				}
-			} catch {
-				// package.json not found, that's ok
-			}
-
-			// Try to read main source files (index.js, index.ts, main.js, main.ts)
-			const mainFiles = [
-				"index.ts",
-				"index.js",
-				"main.ts",
-				"main.js",
-				"src/index.ts",
-				"src/index.js",
-			];
-			for (const file of mainFiles) {
-				try {
-					const content = await viewTool.invoke(
-						{ filePath: file, viewRange: [1, 100] },
-						{ context: { workingDir, group: "", technology: "" } },
-					);
-					if (content && !content.includes("error") && content.length > 20) {
-						parts.push(`=== ${file} ===\n${content}\n`);
-						break; // Only load one main file
-					}
-				} catch {
-					// File not found, try next
-				}
-			}
-
-			const context = parts.join("\n");
-
-			// If we got meaningful content, return it
-			if (context.length > 100) {
-				return `Repository: ${workingDir}\n\n${context}`;
-			}
-
-			// Fallback: just return listing
-			return `Repository content loaded from: ${workingDir}\n\nFile listing:\n${listing}`;
 		} catch (error) {
-			return `Repository content loaded from: ${workingDir}\n\nNote: Full repository access available via repo API (repo.list, repo.view, repo.find, repo.grep)`;
+			logger.warn("AGENT", "Failed to load root metadata listing", {
+				workingDir: workingDir.replace(os.homedir(), "~"),
+				error: error instanceof Error ? error.message : String(error),
+			});
 		}
+
+		return {
+			workingDir,
+			targetLabel: technology ? technology.name : path.basename(workingDir),
+			...(technology?.repository ? { repository: technology.repository } : {}),
+			...(technology?.branch ? { branch: technology.branch } : {}),
+			outline: (await this.getRepoOutline(workingDir)) || "(outline unavailable)",
+			topLevelEntries,
+		};
 	}
 	/**
 	 * Execute query using RLM Orchestrator
 	 * This implements the multi-turn RLM pattern from the paper using RlmOrchestrator
 	 */
-	private async executeRlmQuery(query: string): Promise<string> {
+	private async executeRlmQuery(query: string): Promise<RlmRunResult> {
 		const timingId = logger.timingStart("rlmQuery");
 
 		// Initialize orchestrator if not already done
@@ -1326,13 +1153,11 @@ notifications = false
 		}
 
 		// Run the orchestrator with the query
-		const result = await this.rlmOrchestrator!.run(query);
+		const result = await this.rlmOrchestrator!.runDetailed(query);
 
 		logger.timingEnd(timingId, "AGENT", "RLM query completed");
 		return result;
 	}
-
-	/**
 
   /**
    * Stream repository query with optional context
@@ -1371,9 +1196,7 @@ notifications = false
 			return;
 		}
 
-		// Use RLM mode for API-based providers to avoid "Tool repo.grep not found" errors
-		// The LangChain streaming agent only has research_repository tool, but the system prompt
-		// mentions repo.grep/repo.find which don't exist as LangChain tools
+		// API-backed providers stream through the direct orchestrator path.
 		if (this.shouldUseRlm()) {
 			// For RLM mode, yield progress indicator then execute and return final result
 			yield "Exploring repository...\n";
@@ -1382,104 +1205,8 @@ notifications = false
 			return;
 		}
 
-		const timingId = logger.timingStart("agentStream");
-
-		if (!this.agent) {
-			logger.error(
-				"AGENT",
-				"Agent not initialized",
-				new Error("Agent not initialized. Call initialize() first."),
-			);
-			throw new Error("Agent not initialized. Call initialize() first.");
-		}
-
-		const messages = [new HumanMessage(query)];
-
-		logger.debug("AGENT", "Invoking agent stream with messages", {
-			messageCount: messages.length,
-			hasContext: !!context,
-		});
-
-		const cleanup = () => {
-			// Signal interruption for potential future use
-		};
-
-		logger.debug("AGENT", "Setting up interruption handlers for streaming");
-		process.on("SIGINT", cleanup);
-		process.on("SIGTERM", cleanup);
-
-		try {
-			// Use streamEvents for true token-by-token streaming
-			const eventStream = await this.agent.streamEvents(
-				{ messages },
-				{
-					version: "v2",
-					recursionLimit: 100,
-					...(context ? { context } : {}),
-				},
-			);
-
-			for await (const event of eventStream) {
-				// Only emit content from LLM token streaming events
-				// Skip all other events (tool calls, chain events, etc.)
-				if (event.event === "on_chat_model_stream") {
-					// Use .text getter which handles all content types correctly
-					// (string content, empty content, content blocks, etc.)
-					const text = event.data.chunk?.text;
-					if (text) {
-						yield text;
-					}
-				}
-			}
-
-			// Yield trailing newline for terminal compatibility
-			yield "\n";
-		} catch (error) {
-			const errorMessage = getStreamingErrorMessage(error);
-			logger.error(
-				"AGENT",
-				"Streaming error",
-				error instanceof Error ? error : new Error(errorMessage),
-			);
-			yield `\n\n[Error: ${errorMessage}]`;
-			throw error;
-		} finally {
-			process.removeListener("SIGINT", cleanup);
-			process.removeListener("SIGTERM", cleanup);
-			logger.timingEnd(timingId, "AGENT", "Streaming completed");
-		}
+		throw new Error(
+			`Unsupported AI provider for streaming query: ${this.config.aiProvider.type}`,
+		);
 	}
-}
-
-/**
- * Get user-friendly error message for streaming errors
- */
-function getStreamingErrorMessage(error: unknown): string {
-	if (!(error instanceof Error)) {
-		return "Unknown streaming error";
-	}
-
-	if (error.message.includes("timeout")) {
-		return "Streaming timeout - request took too long to complete";
-	}
-
-	if (
-		error.message.includes("network") ||
-		error.message.includes("ENOTFOUND")
-	) {
-		return "Network error - unable to connect to AI provider";
-	}
-
-	if (error.message.includes("rate limit")) {
-		return "Rate limit exceeded - please try again later";
-	}
-
-	if (
-		error.message.includes("authentication") ||
-		error.message.includes("unauthorized")
-	) {
-		return "Authentication error - check your API credentials";
-	}
-
-	return `Streaming error: ${error.message}`;
 }

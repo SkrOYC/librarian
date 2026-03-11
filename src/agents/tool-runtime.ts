@@ -15,7 +15,6 @@ export interface ToolRuntime {
 }
 
 /**
- * Type for the config parameter passed to tool functions
- * This aligns with LangChain's tool() function signature
+ * Type for the config parameter passed to invoke-compatible tool functions.
  */
 export type ToolConfig = ToolRuntime | undefined;

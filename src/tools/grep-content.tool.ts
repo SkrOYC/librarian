@@ -1,8 +1,8 @@
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { Glob } from "bun";
-import { tool } from "langchain";
 import { z } from "zod";
+import { createTool } from "./tool.js";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { isTextFile } from "../utils/file-utils.js";
 import {
@@ -173,8 +173,7 @@ function compileSearchRegex(
   return new RegExp(escapedQuery, flags);
 }
 
-// Create the modernized tool using the tool() function
-export const grepTool = tool(
+export const grepTool = createTool(
   async (
     {
       searchPath = ".",
@@ -413,5 +412,5 @@ Usage:
           "Whether to include hidden files and directories in the search. Defaults to `false`"
         ),
     }),
-  }
+  },
 );

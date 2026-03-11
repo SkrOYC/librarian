@@ -1,22 +1,21 @@
 /**
- * RLM Tool - The unified `research_repository` tool for LangChain agents.
+ * Legacy `research_repository` compatibility tool.
  *
- * Replaces the 4 atomic tools with a single tool that accepts a TypeScript
- * exploration script. The script is executed in a sandboxed environment with
- * access to `repo` (file operations) and `llm_query` (semantic analysis).
- *
- * IMPORTANT: This tool uses DIRECT PROVIDER SDKs for llm_query()
- * to avoid callback/interceptor interference from the main agent model.
+ * It accepts a TypeScript exploration script and executes it in a sandboxed
+ * environment with access to `repo` and `llm_query`. The main product runtime
+ * no longer depends on this tool, but older invoke-style consumers and tests
+ * still exercise it.
  */
 
-import { tool } from "langchain";
 import { z } from "zod";
 import { logger } from "../utils/logger.js";
+import { createTool } from "../tools/tool.js";
 import {
   createLlmQuery,
   createRepoApi,
   executeRlmScript,
   type LlmConfig,
+  type SandboxRepoApi,
 } from "./rlm-sandbox.js";
 
 /**
@@ -24,19 +23,33 @@ import {
  */
 export type ModelConfig = LlmConfig;
 
+function formatLegacyRepoError(error: unknown): string {
+  const message =
+    error instanceof Error
+      ? error.message
+      : error &&
+          typeof error === "object" &&
+          "message" in error &&
+          typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : String(error);
+
+  return `Error: ${message}`;
+}
+
 /**
- * Creates the `research_repository` LangChain tool.
+ * Creates the legacy `research_repository` tool.
  *
  * @param config - The LLM provider configuration
- * @returns A DynamicStructuredTool for research_repository
+ * @returns A simple invoke-compatible tool for research_repository
  *
- * Note: We use direct provider SDKs to ensure llm_query() operates
- * independently from the main agent's LangChain callback system.
+ * Note: We use the internal AI SDK-backed query adapter to keep the legacy
+ * compatibility surface isolated from the main runtime.
  */
 export function createResearchRepositoryTool(config: LlmConfig) {
   const llmQuery = createLlmQuery(config);
 
-  return tool(
+  return createTool(
     async ({ script }, toolConfig) => {
       const timingId = logger.timingStart("research_repository");
 
@@ -54,7 +67,42 @@ export function createResearchRepositoryTool(config: LlmConfig) {
       });
 
       const repo = createRepoApi(workingDir);
-      const result = await executeRlmScript(script, repo, llmQuery);
+      const legacyRepo: SandboxRepoApi = {
+        list: async (args: Parameters<typeof repo.list>[0]) => {
+          try {
+            return JSON.stringify(await repo.list(args));
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
+        },
+        view: async (args: Parameters<typeof repo.view>[0]) => {
+          try {
+            const result = await repo.view(args);
+            return result.lines.map((line) => line.content).join("\n");
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
+        },
+        find: async (args: Parameters<typeof repo.find>[0]) => {
+          try {
+            return JSON.stringify(await repo.find(args));
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
+        },
+        grep: async (args: Parameters<typeof repo.grep>[0]) => {
+          try {
+            return JSON.stringify(await repo.grep(args));
+          } catch (error) {
+            return formatLegacyRepoError(error);
+          }
+        },
+      };
+      const result = await executeRlmScript(
+        script,
+        legacyRepo,
+        llmQuery,
+      );
 
       logger.timingEnd(timingId, "RLM", "research_repository completed");
 
@@ -98,7 +146,10 @@ Example:
   "script": "const result = await repo.list({directoryPath: '.'}); print(result); return result;"
 }
 
-All repo.* methods return JSON strings - use JSON.parse() to access results.`,
+Legacy repo contract:
+- repo.list / repo.find / repo.grep return JSON strings
+- repo.view returns plain text file contents
+- on failure, repo helpers return \`Error: ...\` strings instead of throwing`,
       schema: z.object({
         script: z
           .string()
@@ -107,6 +158,6 @@ All repo.* methods return JSON strings - use JSON.parse() to access results.`,
             "The TypeScript exploration script to execute in the sandbox (max 100KB)"
           ),
       }),
-    }
+    },
   );
 }

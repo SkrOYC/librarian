@@ -10,6 +10,15 @@ Execution grounding for the provider-adapter work is intentionally tied to curre
 - AI SDK Providers and Models: https://ai-sdk.dev/docs/foundations/providers-and-models.md
 - AI SDK Core `generateText()`: https://ai-sdk.dev/docs/reference/ai-sdk-core/generate-text.md
 
+## Implementation Status
+
+As of March 11, 2026, Phase 1 has been implemented in the product runtime:
+
+- API-backed providers route through the direct internal RLM orchestrator backed by AI SDK adapters.
+- Root control is metadata-first, worker sessions are persistent, and `sub_rlm({ prompt, context, rootHint? })` launches child recursive runs.
+- Normal completion comes from `FINAL()` or `FINAL_VAR()`, with fallback summarization retained as recovery-only behavior.
+- The regression suite now validates the implemented contract rather than the pre-rewrite LangChain-era behavior.
+
 ## 1. Executive Summary
 
 - **Total Estimation:** 52 story points for Phase 1 strict RLM alignment.

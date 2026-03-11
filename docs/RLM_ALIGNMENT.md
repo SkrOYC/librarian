@@ -1,5 +1,13 @@
 # RLM Alignment Plan For `explore`
 
+Status note, March 11, 2026: Phase 1 of this plan has been implemented. This
+document is retained as a historical gap-analysis note for the pre-rewrite
+runtime. For the current runtime contract, use
+[Tasks.md](/home/oscar/GitHub/librarian/docs/Tasks.md),
+[Architecture.md](/home/oscar/GitHub/librarian/docs/Architecture.md), and
+[TechSpec.md](/home/oscar/GitHub/librarian/docs/TechSpec.md) as the source of
+truth.
+
 This document describes the changes needed for Librarian to behave like a
 Recursive Language Model (RLM) for `explore` queries, following the intended
 semantics from the paper "Recursive Language Models" (arXiv:2512.24601v2).
@@ -31,7 +39,7 @@ sense:
 5. The final answer is produced by the environment state, not by fallback
    prompt stuffing after the loop collapses.
 
-## Current State
+## Historical Baseline
 
 The current implementation is a useful scaffold, but it is not yet an RLM.
 

@@ -1,141 +1,116 @@
-/**
- * RLM Prompts Tests
- *
- * Tests for verifying that RLM system prompts include all required content
- * from the "Recursive Language Models" paper (arXiv:2512.24601v2).
- */
-
 import { describe, expect, it } from "bun:test";
 import type { RlmMetadata } from "../src/agents/rlm-orchestrator.js";
 import {
   createRlmSystemPrompt,
   formatMetadataForPrompt,
+  SUB_AGENT_SYSTEM_PROMPT,
 } from "../src/agents/rlm-prompts.js";
 
-describe("RLM Prompts", () => {
+describe("RLM prompts", () => {
   describe("createRlmSystemPrompt", () => {
-    it("should include llm_query documentation", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
+    it("should describe the metadata-first root contract", () => {
+      const prompt = createRlmSystemPrompt(
+        "You have been provided the **react** repository.",
+        "[DIR] src",
+      );
 
-      // The prompt should document the llm_query function
-      expect(prompt).toContain("llm_query");
+      expect(prompt).toContain("You do NOT receive a full repository preload");
+      expect(prompt).toContain("repository metadata");
+      expect(prompt).toContain("bounded environment metadata");
+      expect(prompt).toContain("persistent REPL session");
+      expect(prompt).toContain("Repository outline preview");
     });
 
-    it("should include sub_rlm documentation", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
+    it("should describe structured repo helpers and recursive child runs", () => {
+      const prompt = createRlmSystemPrompt("context block");
 
-      // The prompt should document the sub_rlm function for recursive processing
-      expect(prompt).toContain("sub_rlm");
+      expect(prompt).toContain("`repo.list(args)` -> structured directory metadata");
+      expect(prompt).toContain("`repo.view(args)` -> structured file contents");
+      expect(prompt).toContain("`repo.find(args)` -> structured glob results");
+      expect(prompt).toContain("`repo.grep(args)` -> structured grep results");
+      expect(prompt).toContain("sub_rlm({ prompt, context, rootHint? })");
     });
 
-    it("should include linear processing pattern example", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
+    it("should describe environment-owned completion without legacy tool routing", () => {
+      const prompt = createRlmSystemPrompt("context block");
 
-      // The prompt should include an example of linear processing (process each, aggregate)
-      // Looking for patterns like iteration, for loop, or aggregation
-      expect(
-        prompt.toLowerCase().includes("linear") ||
-          prompt.toLowerCase().includes("iterate") ||
-          prompt.toLowerCase().includes("for each") ||
-          prompt.toLowerCase().includes("for i in")
-      ).toBe(true);
+      expect(prompt).toContain("FINAL(answer)");
+      expect(prompt).toContain("FINAL_VAR(name)");
+      expect(prompt).toContain("Fallback summarization is recovery-only");
+      expect(prompt).not.toContain("research_repository");
+    });
+  });
+
+  describe("SUB_AGENT_SYSTEM_PROMPT", () => {
+    it("should keep the sub-model contract stateless and text-only", () => {
+      expect(SUB_AGENT_SYSTEM_PROMPT).toContain("stateless functional analyzer");
+      expect(SUB_AGENT_SYSTEM_PROMPT).toContain("Do not invent repository state");
+      expect(SUB_AGENT_SYSTEM_PROMPT).toContain("Return plain text only.");
+      expect(SUB_AGENT_SYSTEM_PROMPT).not.toContain("repo.list");
     });
 
-    it("should include quadratic processing pattern example", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
+    it("should remain distinct from the root controller prompt", () => {
+      const rootPrompt = createRlmSystemPrompt("context block");
 
-      // The prompt should include an example of quadratic processing (all pairs)
-      expect(
-        prompt.toLowerCase().includes("quadratic") ||
-          prompt.toLowerCase().includes("pair") ||
-          prompt.toLowerCase().includes("pairs")
-      ).toBe(true);
-    });
-
-    it("should include recursive decomposition pattern example", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
-
-      // The prompt should include an example of recursive decomposition (split and recurse)
-      expect(
-        prompt.toLowerCase().includes("recursive") ||
-          prompt.toLowerCase().includes("chunk") ||
-          prompt.toLowerCase().includes("split") ||
-          prompt.toLowerCase().includes("section")
-      ).toBe(true);
-    });
-
-    it("should explain context as a symbolic variable", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
-
-      // The prompt should explain that context is a string variable that can be manipulated
-      expect(
-        prompt.toLowerCase().includes("context") &&
-          (prompt.toLowerCase().includes("variable") ||
-            prompt.toLowerCase().includes("slice") ||
-            prompt.toLowerCase().includes("split") ||
-            prompt.toLowerCase().includes("string"))
-      ).toBe(true);
-    });
-
-    it("should document FINAL completion signal", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
-
-      // The prompt should document FINAL for returning the answer
-      expect(prompt).toContain("FINAL");
-    });
-
-    it("should document FINAL_VAR completion signal", () => {
-      const prompt = createRlmSystemPrompt("## Context\ntest context");
-
-      // The prompt should document FINAL_VAR for returning a buffer variable
-      expect(prompt).toContain("FINAL_VAR");
+      expect(rootPrompt).not.toBe(SUB_AGENT_SYSTEM_PROMPT);
+      expect(rootPrompt).toContain("persistent REPL session");
+      expect(SUB_AGENT_SYSTEM_PROMPT).not.toContain("persistent REPL session");
     });
   });
 
   describe("formatMetadataForPrompt", () => {
-    it("should format iteration number", () => {
+    it("should format the active environment summary", () => {
       const metadata: RlmMetadata = {
         iteration: 5,
-        stdoutPreview: "some output",
-        stdoutLength: 100,
-        bufferKeys: ["key1", "key2"],
-        bufferSummary: [
-          { key: "key1", preview: "value1", size: 10 },
-          { key: "key2", preview: "value2", size: 20 },
-        ],
+        environment: {
+          stdoutPreview: "some output",
+          stdoutLength: 100,
+          variableCount: 2,
+          variables: [
+            {
+              name: "counter",
+              type: "number",
+              preview: "2",
+              size: 1,
+            },
+            {
+              name: "helper",
+              type: "function",
+              preview: "[Function]",
+              size: 10,
+            },
+          ],
+          bufferKeys: ["results", "summary"],
+          finalSet: false,
+        },
         hasContext: true,
       };
 
       const formatted = formatMetadataForPrompt(metadata);
+
       expect(formatted).toContain("Iteration: 5");
-    });
-
-    it("should include buffer keys when present", () => {
-      const metadata: RlmMetadata = {
-        iteration: 1,
-        stdoutPreview: "",
-        stdoutLength: 0,
-        bufferKeys: ["results", "summary"],
-        bufferSummary: [{ key: "results", preview: "data", size: 100 }],
-        hasContext: true,
-      };
-
-      const formatted = formatMetadataForPrompt(metadata);
+      expect(formatted).toContain("Output: some output");
       expect(formatted).toContain("Buffers: results, summary");
+      expect(formatted).toContain("Variables: counter(number), helper(function)");
     });
 
     it("should include error feedback when present", () => {
       const metadata: RlmMetadata = {
         iteration: 1,
-        stdoutPreview: "",
-        stdoutLength: 0,
-        bufferKeys: [],
-        bufferSummary: [],
+        environment: {
+          stdoutPreview: "",
+          stdoutLength: 0,
+          variableCount: 0,
+          variables: [],
+          bufferKeys: [],
+          finalSet: false,
+        },
         hasContext: true,
         errorFeedback: "Syntax error in script",
       };
 
       const formatted = formatMetadataForPrompt(metadata);
+
       expect(formatted).toContain("Error: Syntax error in script");
     });
   });

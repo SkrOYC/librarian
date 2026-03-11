@@ -1,15 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Glob } from "bun";
-import { tool } from "langchain";
 import { z } from "zod";
+import { createTool } from "./tool.js";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { formatFindAsJson } from "../utils/format-utils.js";
 import { GitIgnoreService } from "../utils/gitignore-service.js";
 import { logger } from "../utils/logger.js";
 
-// Create the modernized tool using the tool() function
-export const findTool = tool(
+export const findTool = createTool(
   async (
     {
       searchPath = ".",
@@ -210,5 +209,5 @@ Usage
           "Whether to include hidden files and directories. Defaults to `false`"
         ),
     }),
-  }
+  },
 );
