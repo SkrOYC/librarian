@@ -15,6 +15,7 @@ import {
   createRepoApi,
   executeRlmScript,
   type LlmConfig,
+  type SandboxRepoApi,
 } from "./rlm-sandbox.js";
 
 /**
@@ -52,7 +53,7 @@ export function createResearchRepositoryTool(config: LlmConfig) {
       });
 
       const repo = createRepoApi(workingDir);
-      const legacyRepo = {
+      const legacyRepo: SandboxRepoApi = {
         list: async (args: Parameters<typeof repo.list>[0]) =>
           JSON.stringify(await repo.list(args)),
         view: async (args: Parameters<typeof repo.view>[0]) => {
@@ -66,7 +67,7 @@ export function createResearchRepositoryTool(config: LlmConfig) {
       };
       const result = await executeRlmScript(
         script,
-        legacyRepo as unknown as ReturnType<typeof createRepoApi>,
+        legacyRepo,
         llmQuery,
       );
 
@@ -112,7 +113,9 @@ Example:
   "script": "const result = await repo.list({directoryPath: '.'}); print(result); return result;"
 }
 
-All repo.* methods return JSON strings - use JSON.parse() to access results.`,
+Legacy repo contract:
+- repo.list / repo.find / repo.grep return JSON strings
+- repo.view returns plain text file contents`,
       schema: z.object({
         script: z
           .string()

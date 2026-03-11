@@ -305,6 +305,44 @@ describe("RlmOrchestrator", () => {
       expect(result.answer).toBe("deep answer");
       expect(result.stats.subRlmCalls).toBe(2);
     });
+
+    it("should share the root iteration budget across nested child runs", async () => {
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        if (history.includes("Task:\nchild task")) {
+          return `
+            const grandchild = await sub_rlm({
+              prompt: "grandchild task",
+              context: "grandchild context"
+            });
+            FINAL(String(grandchild.stats.rootIterations) + ":" + grandchild.finalAnswer);
+          `;
+        }
+
+        if (history.includes("Task:\ngrandchild task")) {
+          return "FINAL('grandchild final')";
+        }
+
+        return `
+          const child = await sub_rlm({
+            prompt: "child task",
+            context: "child context"
+          });
+          FINAL(String(child.stats.rootIterations) + ":" + child.finalAnswer);
+        `;
+      });
+
+      const orchestrator = new RlmOrchestrator({
+        ...config,
+        llmQuery: mockLlm,
+        maxIterations: 2,
+      });
+
+      const result = await orchestrator.runDetailed("root task");
+
+      expect(mockLlm).toHaveBeenCalledTimes(2);
+      expect(result.answer).toContain("1:0:RLM reached max iterations without FINAL()");
+      expect(result.stats.subRlmCalls).toBe(2);
+    });
   });
 
   describe("completion and recovery", () => {

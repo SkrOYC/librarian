@@ -49,6 +49,13 @@ export interface RepoGrepArgs {
   includeHidden?: boolean;
 }
 
+export interface SandboxRepoApi {
+  list: (args: RepoListArgs) => Promise<unknown>;
+  view: (args: RepoViewArgs) => Promise<unknown>;
+  find: (args: RepoFindArgs) => Promise<unknown>;
+  grep: (args: RepoGrepArgs) => Promise<unknown>;
+}
+
 export interface RepoListResult {
   directory: string;
   totalEntries: number;
@@ -94,7 +101,7 @@ export interface RepoGrepResult {
   }>;
 }
 
-export interface RepoApi {
+export interface RepoApi extends SandboxRepoApi {
   list: (args: RepoListArgs) => Promise<RepoListResult>;
   view: (args: RepoViewArgs) => Promise<RepoViewResult>;
   find: (args: RepoFindArgs) => Promise<RepoFindResult>;

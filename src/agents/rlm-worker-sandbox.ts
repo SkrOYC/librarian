@@ -3,14 +3,14 @@ import { transformReplScript } from "./repl-script-transform.js";
 import type {
   EnvironmentErrorPayload,
   EnvironmentMetadata,
-  RepoApi,
+  SandboxRepoApi,
   SubRlmRequest,
   SubRlmResult,
   WorkerSessionExecuteResult,
 } from "./rlm-types.js";
 
 export interface PersistentWorkerSessionConfig {
-  repo: RepoApi;
+  repo: SandboxRepoApi;
   llmQuery: (instruction: string, data: string) => Promise<string>;
   timeout?: number;
   initialBuffers?: Record<string, unknown> | undefined;
@@ -42,7 +42,7 @@ type WorkerMessage =
   | {
       type: "repo_call";
       requestId: string;
-      method: keyof RepoApi;
+      method: keyof SandboxRepoApi;
       args: unknown;
     }
   | { type: "repo_result"; requestId: string; result: unknown }
@@ -518,7 +518,7 @@ function toEnvironmentErrorPayload(
 }
 
 export class PersistentWorkerSession {
-  private readonly repo: RepoApi;
+  private readonly repo: SandboxRepoApi;
   private readonly llmQuery: (instruction: string, data: string) => Promise<string>;
   private readonly timeout: number;
   private readonly subRlmExecutor:

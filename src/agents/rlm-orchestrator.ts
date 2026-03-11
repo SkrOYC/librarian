@@ -11,6 +11,10 @@ import type {
 } from "./rlm-types.js";
 import { PersistentWorkerSession } from "./rlm-worker-sandbox.js";
 
+interface IterationBudget {
+  remaining: number;
+}
+
 export interface RlmOrchestratorConfig {
   llmConfig?: LlmConfig | undefined;
   llmQuery?: ((instruction: string, data: string) => Promise<string>) | undefined;
@@ -23,6 +27,7 @@ export interface RlmOrchestratorConfig {
   systemPrompt: string;
   initialContext?: string | undefined;
   rootHint?: string | undefined;
+  sharedIterationBudget?: IterationBudget | undefined;
 }
 
 export interface RlmMetadata {
@@ -49,6 +54,7 @@ export class RlmOrchestrator {
   private rootMetadata: RootRepoMetadata | undefined;
   private lastError: string | undefined;
   private stats: RlmRunStats = this.createEmptyStats();
+  private currentIterationBudget: IterationBudget | undefined;
   private rootModelQuery: ((history: string) => Promise<string>) | undefined;
   private subModelQuery:
     | ((instruction: string, data: string) => Promise<string>)
@@ -246,8 +252,9 @@ export class RlmOrchestrator {
       );
     }
 
-    const maxIterations = this.config.maxIterations ?? 10;
-    const remainingIterations = maxIterations - this.stats.rootIterations;
+    const remainingIterations =
+      this.currentIterationBudget?.remaining ??
+      Math.max((this.config.maxIterations ?? 10) - this.stats.rootIterations, 0);
     if (remainingIterations <= 5) {
       parts.push(
         `Guardrail: only ${remainingIterations} root iteration(s) remain. Set FINAL() or FINAL_VAR() when the answer is ready.`,
@@ -273,11 +280,19 @@ export class RlmOrchestrator {
 
   private async runChild(task: SubRlmRequest): Promise<SubRlmResult> {
     this.stats.subRlmCalls += 1;
+    const sharedIterationBudget =
+      this.currentIterationBudget ??
+      {
+        remaining: Math.max(
+          (this.config.maxIterations ?? 10) - this.stats.rootIterations,
+          0,
+        ),
+      };
 
     const child = new RlmOrchestrator({
       workingDir: this.config.workingDir,
       rootMetadataLoader: async () => await this.ensureRootMetadata(),
-      maxIterations: this.config.maxIterations,
+      maxIterations: this.config.maxIterations ?? 10,
       stdoutPreviewLength: this.config.stdoutPreviewLength,
       systemPrompt: this.config.systemPrompt,
       ...(this.config.llmConfig ? { llmConfig: this.config.llmConfig } : {}),
@@ -290,6 +305,7 @@ export class RlmOrchestrator {
         : {}),
       initialContext: task.context,
       ...(task.rootHint ? { rootHint: task.rootHint } : {}),
+      sharedIterationBudget,
     });
 
     const childResult = await child.runDetailed(task.prompt);
@@ -346,17 +362,22 @@ export class RlmOrchestrator {
     this.stats = this.createEmptyStats();
 
     const rootMetadata = await this.ensureRootMetadata();
+    const iterationBudget = this.config.sharedIterationBudget ?? {
+      remaining: this.config.maxIterations ?? 10,
+    };
+    this.currentIterationBudget = iterationBudget;
     logger.info("RLM", "Starting RLM orchestrator", {
       workingDir: rootMetadata.workingDir,
       target: rootMetadata.targetLabel,
-      maxIterations: this.config.maxIterations,
+      maxIterations: this.config.maxIterations ?? 10,
+      remainingIterationBudget: iterationBudget.remaining,
       hasInitialContext: !!this.config.initialContext,
     });
 
     try {
-      const maxIterations = this.config.maxIterations ?? 10;
-      for (let iteration = 1; iteration <= maxIterations; iteration++) {
+      for (let iteration = 1; iterationBudget.remaining > 0; iteration++) {
         const history = this.buildHistory(query);
+        iterationBudget.remaining -= 1;
         let codeResponse: string;
         try {
           codeResponse = await this.getRootModelQuery()(history);
@@ -427,6 +448,7 @@ export class RlmOrchestrator {
     } finally {
       this.session?.terminate();
       this.session = null;
+      this.currentIterationBudget = undefined;
     }
   }
 

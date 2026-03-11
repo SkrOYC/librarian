@@ -15,6 +15,7 @@ import type {
   LlmConfig,
   LlmProviderType,
   RepoApi,
+  SandboxRepoApi,
   RepoFindArgs,
   RepoFindResult,
   RepoGrepArgs,
@@ -26,7 +27,7 @@ import type {
 } from "./rlm-types.js";
 import { PersistentWorkerSession } from "./rlm-worker-sandbox.js";
 
-export type { LlmConfig, LlmProviderType, RepoApi } from "./rlm-types.js";
+export type { LlmConfig, LlmProviderType, RepoApi, SandboxRepoApi } from "./rlm-types.js";
 
 export interface RlmExecutionContext {
   context?: string | undefined;
@@ -329,7 +330,7 @@ export function createRepoApi(
 
 export async function executeRlmScript(
   script: string,
-  repo: RepoApi,
+  repo: SandboxRepoApi,
   llmQuery: (instruction: string, data: string) => Promise<string>,
   executionContext?: RlmExecutionContext,
 ): Promise<RlmExecutionResult> {

@@ -62,6 +62,8 @@ describe("RLM Tool - research_repository", () => {
       expect(tool.description).toContain("llm_query");
       expect(tool.description).toContain("print");
       expect(tool.description).toContain("buffers");
+      expect(tool.description).toContain("repo.list / repo.find / repo.grep return JSON strings");
+      expect(tool.description).toContain("repo.view returns plain text file contents");
     });
   });
 
@@ -199,6 +201,34 @@ describe("RLM Tool - research_repository", () => {
       expect(parsed.files.some((f: string) => f.includes("hello.ts"))).toBe(
         true
       );
+    });
+
+    it("should preserve the legacy mixed repo return contract", async () => {
+      const tool = createResearchRepositoryTool(mockLlmConfig);
+      const context = {
+        workingDir: testDir,
+        group: "test",
+        technology: "test",
+      };
+
+      const result = await tool.invoke(
+        {
+          script: `
+            const listing = JSON.parse(await repo.list({}));
+            const content = await repo.view({ filePath: "hello.ts" });
+            return JSON.stringify({
+              hasHello: listing.entries.some((entry) => entry.name === "hello.ts"),
+              contentPreview: content.slice(0, 24)
+            });
+          `,
+        },
+        { context }
+      );
+
+      expect(JSON.parse(result)).toEqual({
+        hasHello: true,
+        contentPreview: 'export function greet() ',
+      });
     });
   });
 });
