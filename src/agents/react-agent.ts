@@ -1080,20 +1080,54 @@ notifications = false
 
 	private async loadRootMetadata(): Promise<RootRepoMetadata> {
 		const { workingDir, technology } = this.config;
-		const rawListing = await listTool.invoke(
-			{ directoryPath: ".", recursive: false, maxDepth: 1, includeHidden: false },
-			{ context: { workingDir, group: "", technology: "" } },
-		);
-		const listing = JSON.parse(rawListing) as {
-			entries: Array<{
-				name: string;
-				path: string;
-				isDirectory: boolean;
-				size?: number;
-				lineCount?: number;
-				depth?: number;
-			}>;
-		};
+		let topLevelEntries: RootRepoMetadata["topLevelEntries"] = [];
+
+		try {
+			const rawListing = await listTool.invoke(
+				{
+					directoryPath: ".",
+					recursive: false,
+					maxDepth: 1,
+					includeHidden: false,
+				},
+				{ context: { workingDir, group: "", technology: "" } },
+			);
+			const listing = JSON.parse(rawListing) as {
+				entries?: Array<{
+					name: string;
+					path: string;
+					isDirectory: boolean;
+					size?: number;
+					lineCount?: number;
+					depth?: number;
+				}>;
+				error?: unknown;
+				message?: unknown;
+			};
+
+			if (!Array.isArray(listing.entries)) {
+				logger.warn("AGENT", "Root metadata listing returned no entries", {
+					workingDir: workingDir.replace(os.homedir(), "~"),
+					...(typeof listing.message === "string"
+						? { message: listing.message }
+						: {}),
+				});
+			} else {
+				topLevelEntries = listing.entries.map((entry) => ({
+					name: entry.name,
+					path: entry.path,
+					isDirectory: entry.isDirectory,
+					...(entry.size !== undefined ? { size: entry.size } : {}),
+					...(entry.lineCount !== undefined ? { lineCount: entry.lineCount } : {}),
+					...(entry.depth !== undefined ? { depth: entry.depth } : {}),
+				}));
+			}
+		} catch (error) {
+			logger.warn("AGENT", "Failed to load root metadata listing", {
+				workingDir: workingDir.replace(os.homedir(), "~"),
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 
 		return {
 			workingDir,
@@ -1101,14 +1135,7 @@ notifications = false
 			...(technology?.repository ? { repository: technology.repository } : {}),
 			...(technology?.branch ? { branch: technology.branch } : {}),
 			outline: (await this.getRepoOutline(workingDir)) || "(outline unavailable)",
-			topLevelEntries: listing.entries.map((entry) => ({
-				name: entry.name,
-				path: entry.path,
-				isDirectory: entry.isDirectory,
-				...(entry.size !== undefined ? { size: entry.size } : {}),
-				...(entry.lineCount !== undefined ? { lineCount: entry.lineCount } : {}),
-				...(entry.depth !== undefined ? { depth: entry.depth } : {}),
-			})),
+			topLevelEntries,
 		};
 	}
 	/**

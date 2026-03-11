@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { ReactAgent } from "../src/agents/react-agent.js";
+import { listTool } from "../src/tools/file-listing.tool.js";
 
 describe("ReactAgent RLM integration", () => {
   describe("RLM system prompt", () => {
@@ -172,6 +173,93 @@ describe("ReactAgent RLM integration", () => {
       await agent.initialize();
 
       expect((agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator).toBeUndefined();
+    });
+  });
+
+  describe("root metadata loading", () => {
+    it("should fall back to empty top-level entries when the listing is not JSON", async () => {
+      const agent = new ReactAgent({
+        aiProvider: { type: "openai", apiKey: "test-key" },
+        workingDir: "/test/repo",
+      });
+
+      const originalInvoke = listTool.invoke;
+      let callCount = 0;
+      (listTool as { invoke: typeof listTool.invoke }).invoke = async (
+        input,
+        config,
+      ) => {
+        callCount += 1;
+        if (callCount === 1) {
+          return "Path not found: .";
+        }
+
+        return await originalInvoke(input, config);
+      };
+
+      try {
+        const metadata = await (
+          agent as unknown as {
+            loadRootMetadata: () => Promise<{
+              topLevelEntries: Array<{ name: string }>;
+              outline: string;
+            }>;
+          }
+        ).loadRootMetadata();
+
+        expect(metadata.topLevelEntries).toEqual([]);
+        expect(metadata.outline).toBe("(outline unavailable)");
+      } finally {
+        (listTool as { invoke: typeof listTool.invoke }).invoke = originalInvoke;
+      }
+    });
+
+    it("should fall back to empty top-level entries when the listing payload has no entries", async () => {
+      const agent = new ReactAgent({
+        aiProvider: { type: "openai", apiKey: "test-key" },
+        workingDir: "/test/repo",
+      });
+
+      const originalInvoke = listTool.invoke;
+      let callCount = 0;
+      (listTool as { invoke: typeof listTool.invoke }).invoke = async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          return JSON.stringify({
+            error: true,
+            message: "listing unavailable",
+          });
+        }
+
+        return JSON.stringify({
+          directory: ".",
+          totalEntries: 1,
+          entries: [
+            {
+              name: "src",
+              path: "/test/repo/src",
+              isDirectory: true,
+              depth: 0,
+            },
+          ],
+        });
+      };
+
+      try {
+        const metadata = await (
+          agent as unknown as {
+            loadRootMetadata: () => Promise<{
+              topLevelEntries: Array<{ name: string }>;
+              outline: string;
+            }>;
+          }
+        ).loadRootMetadata();
+
+        expect(metadata.topLevelEntries).toEqual([]);
+        expect(metadata.outline).toBe("[DIR] src");
+      } finally {
+        (listTool as { invoke: typeof listTool.invoke }).invoke = originalInvoke;
+      }
     });
   });
 });
