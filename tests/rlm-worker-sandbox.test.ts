@@ -498,6 +498,25 @@ describe("BunWorkerSandbox", () => {
       `);
       expect(result.returnValue).toContain("blocked");
     });
+
+    for (const globalName of [
+      "setImmediate",
+      "setInterval",
+      "clearImmediate",
+      "clearInterval",
+      "queueMicrotask",
+    ]) {
+      it(`should block ${globalName}`, async () => {
+        sandbox = new BunWorkerSandbox({
+          repo,
+          llmQuery: mockLlmQuery,
+          timeout: 5000,
+        });
+
+        const result = await sandbox.execute(`return typeof ${globalName};`);
+        expect(result.returnValue).toBe("undefined");
+      });
+    }
   });
 
   describe("Safe globals availability", () => {
