@@ -3,7 +3,9 @@ import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import {
+  createRootModelQuery,
   createRepoApi,
+  createSubModelQuery,
   executeRlmScript,
   type RepoApi,
   type RlmExecutionResult,
@@ -81,6 +83,47 @@ describe("RLM sandbox", () => {
     if (fs.existsSync(testDir)) {
       await rm(testDir, { recursive: true, force: true });
     }
+  });
+
+  describe("language model configuration", () => {
+    it("should require a baseURL for openai-compatible providers", async () => {
+      const query = createRootModelQuery(
+        {
+          type: "openai-compatible",
+          apiKey: "test-key",
+          model: "gpt-5",
+        },
+        "system prompt",
+      );
+
+      await expect(query("history")).rejects.toThrow(
+        "baseURL is required for openai-compatible provider",
+      );
+    });
+
+    it("should require a baseURL for anthropic-compatible providers", async () => {
+      const query = createSubModelQuery({
+        type: "anthropic-compatible",
+        apiKey: "test-key",
+        model: "claude-sonnet-4-5",
+      });
+
+      await expect(query("instruction", "data")).rejects.toThrow(
+        "baseURL is required for anthropic-compatible provider",
+      );
+    });
+
+    it("should require a model for anthropic-compatible providers", async () => {
+      const query = createSubModelQuery({
+        type: "anthropic-compatible",
+        apiKey: "test-key",
+        baseURL: "https://example.test/v1",
+      });
+
+      await expect(query("instruction", "data")).rejects.toThrow(
+        "model is required for anthropic-compatible provider",
+      );
+    });
   });
 
   describe("createRepoApi", () => {

@@ -71,7 +71,24 @@ function getDefaultModel(config: LlmConfig): string {
   }
 }
 
+function validateLanguageModelConfig(config: LlmConfig): void {
+  if (config.type === "openai-compatible" && !config.baseURL) {
+    throw new Error("baseURL is required for openai-compatible provider");
+  }
+
+  if (config.type === "anthropic-compatible") {
+    if (!config.baseURL) {
+      throw new Error("baseURL is required for anthropic-compatible provider");
+    }
+
+    if (!config.model) {
+      throw new Error("model is required for anthropic-compatible provider");
+    }
+  }
+}
+
 function createLanguageModel(config: LlmConfig) {
+  validateLanguageModelConfig(config);
   const modelId = config.model || getDefaultModel(config);
 
   switch (config.type) {
@@ -83,18 +100,32 @@ function createLanguageModel(config: LlmConfig) {
       return provider(modelId);
     }
     case "openai-compatible": {
+      const baseURL = config.baseURL;
+      if (!baseURL) {
+        throw new Error("baseURL is required for openai-compatible provider");
+      }
       const provider = createOpenAICompatible({
         name: "openai-compatible",
         apiKey: config.apiKey,
-        baseURL: config.baseURL || "https://api.openai.com/v1",
+        baseURL,
       });
       return provider(modelId);
     }
-    case "anthropic":
-    case "anthropic-compatible": {
+    case "anthropic": {
       const provider = createAnthropic({
         apiKey: config.apiKey,
         ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+      });
+      return provider(modelId);
+    }
+    case "anthropic-compatible": {
+      const baseURL = config.baseURL;
+      if (!baseURL) {
+        throw new Error("baseURL is required for anthropic-compatible provider");
+      }
+      const provider = createAnthropic({
+        apiKey: config.apiKey,
+        baseURL,
       });
       return provider(modelId);
     }
