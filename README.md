@@ -11,16 +11,17 @@ A powerful CLI tool that enables AI coding agents to query specific technology r
 Librarian CLI allows AI coding agents to:
 
 - Query specific technology repositories with detailed technical questions
-- Receive autonomous exploration through a ReAct agent that reads and analyzes the codebase
+- Receive autonomous exploration through a direct recursive runtime that reads and analyzes the codebase
 - Get streaming markdown responses with technical insights and explanations
 - Works out-of-the-box with OpenCode Zen (no LLM configuration required by default)
-- Supports multiple LLM providers through LangChain's unified interface
+- Supports multiple API and CLI providers through a split execution model
 
 ## Features
 
 - **Repository Management**: Auto-clone and sync from Git before each query
-- **LangChain-Powered Agent**: Advanced AI agent using LangChain's createAgent for intelligent exploration
-- **Unified Model Abstraction**: Support for OpenAI, Anthropic, Google, OpenAI-compatible, Anthropic-compatible, Claude CLI, Gemini CLI, and Codex CLI APIs through LangChain (OpenCode Zen integration - no LLM required by default)
+- **Direct RLM Orchestrator**: API-backed providers run through a metadata-first recursive controller with persistent REPL state
+- **AI SDK Provider Adapters**: Support for OpenAI, Anthropic, Google, and OpenAI-compatible APIs through AI SDK adapters
+- **CLI Provider Routing**: Claude CLI, Gemini CLI, and Codex CLI stay on their native subprocess path
 - **Dynamic Prompt Construction**: Context-aware system prompts based on technology/group selection
 - **Sandboxed Tool Execution**: Secure file operations within isolated working directories
 - **Integrated Toolset**: Built-in tools for file listing, reading, grep, and glob search
@@ -290,7 +291,7 @@ librarian list --group langchain
 
 ### `explore <query> --tech <technology>`
 
-Execute agentic research on specified technology using a LangChain-powered agent. The agent operates in a sandboxed environment at `{repos_path}/{group}/{technology}` and streams the response to stdout.
+Execute agentic research on a specified technology. API-backed providers run through the direct RLM orchestrator, while CLI-backed providers stream through their native tools. The agent operates in a sandboxed environment at `{repos_path}/{group}/{technology}` and streams the response to stdout.
 
 **Options:**
 
@@ -305,7 +306,7 @@ librarian explore "How are errors handled in this codebase?" --tech default:node
 
 ### `explore <query> --group <group>`
 
-Execute agentic research on whole group using a LangChain-powered agent. The agent operates in a sandboxed environment at `{repos_path}/{group}` with access to all technologies in the group.
+Execute agentic research on a whole group. API-backed providers run through the direct RLM orchestrator, while CLI-backed providers stream through their native tools. The agent operates in a sandboxed environment at `{repos_path}/{group}` with access to all technologies in the group.
 
 **Options:**
 
@@ -372,7 +373,7 @@ technologies:
 #   baseURL: # Optional for openai-compatible providers
 ```
 
-**Note**: The system works out-of-the-box with OpenCode Zen integration (no LLM configuration required by default). When configured, the system supports multiple providers through LangChain's unified interface.
+**Note**: The system works out-of-the-box with OpenCode Zen integration (no LLM configuration required by default). When configured, API-backed providers use AI SDK adapters and CLI-backed providers use their native subprocess integrations.
 
 ### Repository Path Structure
 
@@ -409,17 +410,16 @@ Example:
    - Repository synchronization
    - Local path management
 
-4. **Agent Orchestrator** (`src/agent/`)
-   - LangChain createAgent-based implementation
+4. **Agent Orchestrator** (`src/agents/`)
+   - Direct RLM orchestration for API-backed providers
+   - CLI subprocess routing for Claude CLI, Gemini CLI, and Codex CLI
    - Dynamic system prompt construction based on group/tech context
-   - Tool integration with sandboxed execution environment
-   - Memory management with LangGraph
+   - Structured run accounting and logging
 
-5. **LLM Provider** (`src/llm/`)
-   - LangChain unified model abstraction through `initChatModel`
-   - Multi-provider support via LangChain integrations
-   - Dynamic model switching without code changes
-   - Response streaming and structured output handling
+5. **Reasoning Adapter** (`src/agents/rlm-sandbox.ts`)
+   - AI SDK-backed root-model and sub-model query factories
+   - Structured repository adapters for `repo.list`, `repo.view`, `repo.find`, and `repo.grep`
+   - Provider selection for OpenAI, Anthropic, Google, and OpenAI-compatible endpoints
 
 ### Agent Tools
 
@@ -432,15 +432,16 @@ The Librarian agent includes four core tools for repository exploration:
 
 All tools operate within the agent's isolated working directory, ensuring secure and context-aware file operations.
 
-### RLM Script Sandbox
+### RLM Runtime
 
-For LangChain-powered agents, Librarian uses the **Recursive Language Model (RLM)** paradigm where the agent generates TypeScript exploration scripts executed in a sandboxed environment.
+For API-backed providers, Librarian uses the **Recursive Language Model (RLM)** paradigm where the root controller generates exploration code executed in a persistent sandboxed environment.
 
 **Sandbox Implementation:**
 
-- Uses Node.js `vm.runInNewContext()` for script isolation
-- Comprehensive safe globals allow standard JavaScript operations (Array, Object, Map, Set, Promise, JSON, Math, RegExp, etc.)
-- 30-second timeout prevents infinite loops and DoS attacks
+- Uses a long-lived Bun worker session for persistent REPL execution
+- Exposes structured `repo.*` helpers, `llm_query()`, and `sub_rlm({ prompt, context, rootHint? })`
+- Preserves locals, helper functions, buffers, and final-answer bindings across root iterations
+- Enforces timeout handling and typed environment errors across the worker boundary
 
 **Blocked Dangerous Globals:**
 
@@ -452,7 +453,7 @@ The following Node.js/Bun built-ins are not accessible from sandbox scripts:
 
 **Security Limitations:**
 
-The `vm.runInNewContext()` module is NOT a true security boundary against sophisticated attacks. For production deployments with untrusted user input, consider:
+The worker sandbox is NOT a perfect security boundary against sophisticated attacks. For production deployments with untrusted user input, consider:
 - Container-based isolation (Docker, Riza)
 - Network segmentation
 - Input validation and rate limiting
@@ -480,7 +481,7 @@ This sandbox is suitable for:
 
 ## LLM Provider Configuration
 
-Librarian uses LangChain's unified model abstraction and works out-of-the-box with OpenCode Zen (no LLM configuration required by default). Seamless switching between providers is possible through configuration. No code changes required when changing models.
+Librarian uses AI SDK adapters for API-backed providers and subprocess routing for CLI-backed providers. It works out-of-the-box with OpenCode Zen (no LLM configuration required by default), and provider switching remains configuration-driven.
 
 By default, the system uses OpenCode Zen:
 
@@ -568,7 +569,7 @@ aiProvider:
 
 **Note**: For Codex CLI provider, ensure the `codex` CLI is installed and available in your PATH.
 
-**Note**: The same configuration interface works across all providers thanks to LangChain's `initChatModel` abstraction and OpenCode Zen integration.
+**Note**: The same configuration interface works across all providers thanks to the internal adapter layer and OpenCode Zen integration.
 
 ## Error Handling
 
@@ -616,11 +617,11 @@ npm run test
 
 #### Agent System
 
-- `langchain`: Core LangChain framework (createAgent, initChatModel, tool)
-- `@langchain/langgraph`: Memory management with MemorySaver
-- `@langchain/openai`: OpenAI provider integration
-- `@langchain/anthropic`: Anthropic provider integration
-- `@langchain/google-genai`: Google provider integration
+- `ai`: AI SDK Core text generation primitives
+- `@ai-sdk/openai`: OpenAI provider integration
+- `@ai-sdk/anthropic`: Anthropic provider integration
+- `@ai-sdk/google`: Google provider integration
+- `@ai-sdk/openai-compatible`: OpenAI-compatible provider integration
 - `zod`: Tool schema validation and structured responses
 
 ## Contributing

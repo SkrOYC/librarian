@@ -1,6 +1,6 @@
 import path from "node:path";
-import { tool } from "langchain";
 import { z } from "zod";
+import { createTool } from "./tool.js";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { isTextFile } from "../utils/file-utils.js";
 import { formatViewAsJson } from "../utils/format-utils.js";
@@ -136,8 +136,7 @@ async function readLinesInRange(
   return { lines, totalLines };
 }
 
-// Create the modernized tool using the tool() function
-export const viewTool = tool(
+export const viewTool = createTool(
   async ({ filePath, viewRange }, config) => {
     const timingId = logger.timingStart("view");
 
@@ -262,5 +261,5 @@ export const viewTool = tool(
           "Optional tuple of [start, end] line numbers to display. Use -1 for end of file."
         ),
     }),
-  }
+  },
 );

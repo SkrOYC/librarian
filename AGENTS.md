@@ -9,7 +9,7 @@ This document provides essential guidance for AI agents working with the Librari
 
 ## Project Overview
 
-Librarian CLI is a technology research agent that enables AI coding agents to query specific technology repositories and receive detailed technical responses through autonomous exploration. It uses a LangChain-powered ReAct agent with sandboxed tools for file operations.
+Librarian CLI is a technology research agent that enables AI coding agents to query specific technology repositories and receive detailed technical responses through autonomous exploration. API-backed providers use a direct Recursive Language Model (RLM) orchestrator backed by AI SDK adapters, while CLI-backed providers stay on their native subprocess path.
 
 ## Development Commands
 
@@ -71,8 +71,8 @@ bun dist/cli.js [arguments]
 1. **CLI Entry Point** (`src/cli.ts`) - Command parsing with Commander.js and configuration loading
 2. **Core Librarian** (`src/index.ts`) - Main orchestrator for operations and repository synchronization
 3. **Repository Manager** (`src/repo/`) - Git operations and repository management
-4. **Agent Orchestrator** (`src/agent/`) - LangChain createAgent implementation with dynamic prompts
-5. **LLM Provider** (`src/llm/`) - LangChain unified model abstraction via `initChatModel`
+4. **Agent Orchestrator** (`src/agents/`) - Direct RLM orchestration, prompt construction, and CLI subprocess routing
+5. **Reasoning Adapter** (`src/agents/rlm-sandbox.ts`) - AI SDK-backed root/sub model query factories and structured repo adapters
 6. **Agent Tools** (`src/tools/`) - Sandboxed file operations (listing, reading, grep, glob)
 
 ### Agent Tools Architecture
@@ -163,12 +163,13 @@ aiProvider: # or llm_provider for backward compatibility
 ```
 
 ### Supported LLM Providers
-- OpenAI (via @langchain/openai)
-- Anthropic (via @langchain/anthropic) 
-- Google (via @langchain/google-genai)
-- OpenAI-compatible providers (via LangChain's unified interface)
+- OpenAI (via `@ai-sdk/openai`)
+- Anthropic (via `@ai-sdk/anthropic`)
+- Google (via `@ai-sdk/google`)
+- OpenAI-compatible providers (via `@ai-sdk/openai-compatible`)
 - Claude CLI (requires `claude` command in PATH)
 - Gemini CLI (requires `gemini` command in PATH)
+- Codex CLI (requires `codex` command in PATH)
 
 ## Testing Strategy
 
@@ -186,8 +187,10 @@ The codebase includes comprehensive tests covering:
 - `default.nix` - Nix derivation for building the standalone executable
 - `package.json` - Dependencies and scripts (managed via bun2nix)
 - `bun.nix` - Auto-generated reproducible dependency configuration
-- `src/agents/react-agent.ts` - Core LangChain agent implementation
+- `src/agents/react-agent.ts` - Core agent runtime with direct RLM and CLI routing
 - `src/agents/context-schema.ts` - Zod schemas for agent context validation
+- `src/agents/rlm-orchestrator.ts` - Metadata-first recursive controller for API-backed providers
+- `src/agents/rlm-worker-sandbox.ts` - Persistent worker session implementation
 - `verify-sandboxing.ts` - Security verification script
 - `src/utils/logger.ts` - Comprehensive logging system with redaction
 - `src/config.ts` - Configuration loading with validation and environment support

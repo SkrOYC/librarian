@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { tool } from "langchain";
 import { z } from "zod";
+import { createTool } from "./tool.js";
 import { formatToolError, getToolSuggestion } from "../utils/error-utils.js";
 import { getFileLineCount } from "../utils/file-utils.js";
 import {
@@ -143,8 +143,7 @@ async function listDirectoryDFS(
   return resultEntries;
 }
 
-// Create the modernized tool using the tool() function
-export const listTool = tool(
+export const listTool = createTool(
   async (
     {
       directoryPath = ".",
@@ -254,5 +253,5 @@ export const listTool = tool(
         .default(1)
         .describe("Maximum depth for recursive listing. Defaults to 1"),
     }),
-  }
+  },
 );

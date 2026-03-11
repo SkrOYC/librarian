@@ -1,14 +1,8 @@
 /**
  * RLM Orchestrator Tests
  *
- * Tests for the Multi-turn REPL Orchestrator implementing Algorithm 1 from the paper.
- * Key features tested:
- * - Multi-turn execution with configurable max iterations
- * - Metadata passed to LLM (not full context)
- * - FINAL(answer) stops loop and returns answer
- * - FINAL_VAR(bufferName) returns buffer value
- * - sub_rlm() creates fresh worker per call
- * - Worker reuse across iterations (buffers persist)
+ * These tests cover the metadata-first root loop, persistent REPL behavior,
+ * structured child recursion, and recovery-only fallback semantics.
  */
 
 import { beforeEach, describe, expect, it, jest } from "bun:test";
@@ -16,17 +10,15 @@ import {
   RlmOrchestrator,
   type RlmOrchestratorConfig,
 } from "../src/agents/rlm-orchestrator.js";
+import type { RootRepoMetadata } from "../src/agents/rlm-types.js";
 
-// Mock dependencies
-const mockLlmQuery = jest.fn(async (instruction: string, data: string) => {
-  return "mock LLM response";
-});
-
-const mockRepoApi = {
-  list: async () => "mock list",
-  view: async () => "mock view",
-  find: async () => "mock find",
-  grep: async () => "mock grep",
+const rootMetadata: RootRepoMetadata = {
+  workingDir: "/test/repo",
+  targetLabel: "/test/repo",
+  repository: "https://github.com/test/repo",
+  branch: "main",
+  outline: "[FILE] package.json\n[DIR] src\n  [FILE] src/index.ts",
+  topLevelEntries: [],
 };
 
 describe("RlmOrchestrator", () => {
@@ -35,13 +27,9 @@ describe("RlmOrchestrator", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     config = {
-      llmConfig: {
-        type: "openai",
-        apiKey: "test-key",
-        model: "gpt-4",
-      },
       workingDir: "/test/repo",
-      repoContentLoader: async () => "mock repository content",
+      rootMetadataLoader: async () => rootMetadata,
+      systemPrompt: "test system prompt",
       maxIterations: 5,
     };
   });
@@ -52,6 +40,7 @@ describe("RlmOrchestrator", () => {
         ...config,
         maxIterations: undefined,
       });
+
       expect(orchestrator).toBeDefined();
     });
 
@@ -60,15 +49,16 @@ describe("RlmOrchestrator", () => {
         ...config,
         maxIterations: 3,
       });
+
       expect(orchestrator).toBeDefined();
     });
   });
 
-  describe("run() - Multi-turn execution", () => {
-    it("should execute multi-turn loop multiple times", async () => {
+  describe("run()", () => {
+    it("should execute the root loop across multiple iterations", async () => {
       let callCount = 0;
-      const mockLlm = jest.fn(async (_instruction: string, _data: string) => {
-        callCount++;
+      const mockLlm = jest.fn(async () => {
+        callCount += 1;
         if (callCount < 3) {
           return "print('iteration ' + __iteration__)";
         }
@@ -81,46 +71,44 @@ describe("RlmOrchestrator", () => {
       });
 
       const result = await orchestrator.run("test query");
-      expect(callCount).toBeGreaterThanOrEqual(2);
+
+      expect(result).toBe("done");
+      expect(callCount).toBe(3);
     });
 
-    it("should stop iteration when FINAL signal is detected", async () => {
-      const mockLlm = jest.fn(async () => {
-        return "FINAL('the answer')";
-      });
-
+    it("should stop iteration when FINAL() is set", async () => {
+      const mockLlm = jest.fn(async () => "FINAL('the answer')");
       const orchestrator = new RlmOrchestrator({
         ...config,
         llmQuery: mockLlm,
       });
 
       const result = await orchestrator.run("test query");
+
       expect(result).toBe("the answer");
-      // Should only call LLM once since FINAL stops immediately
       expect(mockLlm).toHaveBeenCalledTimes(1);
     });
 
-    it("should stop iteration when FINAL_VAR signal is detected", async () => {
-      const mockLlm = jest.fn(async (_instruction: string, _data: string) => {
-        return "buffers.myAnswer = 'buffer value'; FINAL_VAR('myAnswer')";
-      });
-
+    it("should resolve FINAL_VAR() from active session bindings", async () => {
+      const mockLlm = jest.fn(
+        async () => "const answer = 'local binding'; FINAL_VAR('answer')",
+      );
       const orchestrator = new RlmOrchestrator({
         ...config,
         llmQuery: mockLlm,
       });
 
       const result = await orchestrator.run("test query");
-      expect(result).toBe("buffer value");
+
+      expect(result).toBe("local binding");
     });
   });
 
-  describe("Metadata handling", () => {
-    it("should pass metadata (not full context) to LLM", async () => {
+  describe("metadata-first history", () => {
+    it("should send repository metadata without a repo body preload", async () => {
       const receivedHistories: string[] = [];
-      // Mock receives (instruction, data) - data is the history
-      const mockLlm = jest.fn(async (_instruction: string, data: string) => {
-        receivedHistories.push(data);
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        receivedHistories.push(history);
         return "FINAL('done')";
       });
 
@@ -131,28 +119,21 @@ describe("RlmOrchestrator", () => {
 
       await orchestrator.run("test query");
 
-      // First history should contain task (no metadata yet - that's added after first execution)
-      expect(receivedHistories[0]).toContain("Task");
+      expect(receivedHistories).toHaveLength(1);
+      expect(receivedHistories[0]).toContain("Task:");
       expect(receivedHistories[0]).toContain("test query");
-
-      // Metadata should not contain the full repository content
-      for (const history of receivedHistories) {
-        // Metadata should not contain the full repository content
-        expect(history).not.toContain("mock repository content");
-      }
-
-      // Second history onwards should contain iteration info (after first execution)
-      if (receivedHistories.length > 1) {
-        expect(receivedHistories[1]).toMatch(/iteration|Iteration/i);
-      }
+      expect(receivedHistories[0]).toContain("Repository metadata:");
+      expect(receivedHistories[0]).toContain("https://github.com/test/repo");
+      expect(receivedHistories[0]).toContain("[FILE] package.json");
+      expect(receivedHistories[0]).not.toContain("mock repository content");
     });
 
-    it("should accumulate metadata history across iterations", async () => {
+    it("should accumulate bounded environment metadata across iterations", async () => {
       let callCount = 0;
       const receivedHistories: string[] = [];
-      const mockLlm = jest.fn(async (_instruction: string, data: string) => {
-        callCount++;
-        receivedHistories.push(data);
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        callCount += 1;
+        receivedHistories.push(history);
         if (callCount < 3) {
           return "print('iteration ' + __iteration__)";
         }
@@ -166,27 +147,22 @@ describe("RlmOrchestrator", () => {
 
       await orchestrator.run("test query");
 
-      // History should accumulate across iterations
       expect(callCount).toBe(3);
-      // Second history should contain first history's content
-      expect(receivedHistories[1]).toContain("Iteration: 0");
+      expect(receivedHistories[1]).toContain("Iteration 1");
+      expect(receivedHistories[1]).toContain("stdout: iteration 1");
+      expect(receivedHistories[2]).toContain("Iteration 2");
     });
   });
 
-  describe("Worker reuse across iterations", () => {
-    it("should reuse worker across iterations (buffers persist)", async () => {
+  describe("persistent worker session", () => {
+    it("should preserve locals and helper functions across iterations", async () => {
       let executionCount = 0;
-      const buffers: Record<string, unknown> = {};
-
-      const mockLlm = jest.fn(async (_instruction: string, _data: string) => {
-        executionCount++;
+      const mockLlm = jest.fn(async () => {
+        executionCount += 1;
         if (executionCount === 1) {
-          return "buffers.counter = 1; print('first')";
+          return "function double(x) { return x * 2; } let counter = 1;";
         }
-        if (executionCount === 2) {
-          return "buffers.counter = buffers.counter + 1; print('second')";
-        }
-        return "FINAL(buffers.counter)";
+        return "counter = double(counter); FINAL(String(counter))";
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -196,21 +172,25 @@ describe("RlmOrchestrator", () => {
 
       const result = await orchestrator.run("test query");
 
-      // Buffer should persist across iterations
       expect(result).toBe("2");
     });
   });
 
-  describe("sub_rlm() - Fresh worker per call", () => {
-    it("should execute sub_rlm code and return result", async () => {
-      // The LLM returns code that calls sub_rlm, which should execute in a fresh worker
-      const mockLlm = jest.fn(async (_instruction: string, data: string) => {
-        if (data.includes("sub_rlm")) {
-          // This code runs in the fresh worker - it should have isolated buffers
-          return "buffers.subResult = 'from-sub-rlm'; FINAL(buffers.subResult)";
+  describe("structured sub_rlm()", () => {
+    it("should launch a child recursive run and inject its structured result", async () => {
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        if (history.includes("Task:\nchild task")) {
+          return "FINAL(context.toUpperCase())";
         }
-        // This code runs in the main worker - it calls sub_rlm
-        return "sub_rlm('nested query'); FINAL('main done')";
+
+        return `
+          const child = await sub_rlm({
+            prompt: "child task",
+            context: "from child",
+            rootHint: "uppercase the context"
+          });
+          FINAL(child.finalAnswer);
+        `;
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -218,21 +198,26 @@ describe("RlmOrchestrator", () => {
         llmQuery: mockLlm,
       });
 
-      const result = await orchestrator.run("test query");
-      // Should complete without error
-      expect(result).toBeDefined();
+      const result = await orchestrator.run("parent task");
+
+      expect(result).toBe("FROM CHILD");
     });
 
-    it("should have isolated buffers in sub_rlm vs main worker", async () => {
-      const mockLlm = jest.fn(async (_instruction: string, data: string) => {
-        if (data.includes("sub_rlm")) {
-          // This runs in fresh worker - should have empty initial buffers
-          // Return the value of parentBuffer (should be undefined in fresh worker)
+    it("should isolate child buffers from the parent session", async () => {
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        if (history.includes("Task:\ninspect child isolation")) {
           return "FINAL(String(buffers.parentBuffer))";
         }
-        // This runs in main worker - set a buffer before calling sub_rlm
-        // Then call sub_rlm with code that checks if it can see parent's buffer
-        return "buffers.parentBuffer = 'from-parent'; const r = await sub_rlm(\"FINAL(String(buffers.parentBuffer))\"); FINAL(r)";
+
+        return `
+          buffers.parentBuffer = "from-parent";
+          const child = await sub_rlm({
+            prompt: "inspect child isolation",
+            context: "child context",
+            rootHint: "check buffer visibility"
+          });
+          FINAL(child.finalAnswer);
+        `;
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -240,21 +225,24 @@ describe("RlmOrchestrator", () => {
         llmQuery: mockLlm,
       });
 
-      const result = await orchestrator.run("test query");
+      const result = await orchestrator.run("parent task");
 
-      // The sub_rlm should have isolated buffers - it should NOT see parent's buffer
-      // So it should return 'undefined', not 'from-parent'
       expect(result).toBe("undefined");
     });
 
-    it("should propagate FINAL from sub_rlm result to main", async () => {
-      const mockLlm = jest.fn(async (_instruction: string, data: string) => {
-        if (data.includes("sub_rlm")) {
-          // sub_rlm returns this - runs in fresh worker with isolated buffers
-          return "FINAL('from-sub-rlm')";
+    it("should expose child stats as part of the structured result", async () => {
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        if (history.includes("Task:\nchild stats task")) {
+          return "FINAL(context)";
         }
-        // Main worker calls sub_rlm with JavaScript CODE to execute in fresh worker
-        return "const r = await sub_rlm(\"FINAL('from-sub-rlm')\"); FINAL(r)";
+
+        return `
+          const child = await sub_rlm({
+            prompt: "child stats task",
+            context: "child answer"
+          });
+          FINAL(String(child.stats.rootIterations) + ":" + child.finalAnswer);
+        `;
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -262,65 +250,32 @@ describe("RlmOrchestrator", () => {
         llmQuery: mockLlm,
       });
 
-      const result = await orchestrator.run("test query");
-      // The FINAL from sub_rlm should propagate
-      expect(result).toBe("from-sub-rlm");
+      const result = await orchestrator.runDetailed("parent task");
+
+      expect(result.answer).toBe("1:child answer");
+      expect(result.stats.subRlmCalls).toBe(1);
     });
   });
 
-  describe("Signal detection", () => {
-    it("should parse FINAL(answer) correctly", async () => {
-      // LLM returns JavaScript code that calls FINAL() - this gets executed in the worker
-      const mockLlm = jest.fn(async () => {
-        return "FINAL('The final answer is here')";
-      });
-
+  describe("completion and recovery", () => {
+    it("should support FINAL() with multiline content", async () => {
+      const mockLlm = jest.fn(
+        async () => "FINAL('Line 1\\nLine 2\\nLine 3')",
+      );
       const orchestrator = new RlmOrchestrator({
         ...config,
         llmQuery: mockLlm,
       });
 
       const result = await orchestrator.run("test query");
-      expect(result).toBe("The final answer is here");
-    });
 
-    it("should parse FINAL_VAR(bufferName) correctly", async () => {
-      // LLM returns JavaScript code that sets a buffer and calls FINAL_VAR
-      const mockLlm = jest.fn(async () => {
-        return 'buffers.answer = "from buffer"; FINAL_VAR("answer")';
-      });
-
-      const orchestrator = new RlmOrchestrator({
-        ...config,
-        llmQuery: mockLlm,
-      });
-
-      const result = await orchestrator.run("test query");
-      expect(result).toBe("from buffer");
-    });
-
-    it("should handle FINAL with multiline content", async () => {
-      // LLM returns JavaScript code with multiline FINAL
-      const mockLlm = jest.fn(async () => {
-        return "FINAL('Line 1\\nLine 2\\nLine 3')";
-      });
-
-      const orchestrator = new RlmOrchestrator({
-        ...config,
-        llmQuery: mockLlm,
-      });
-
-      const result = await orchestrator.run("test query");
       expect(result).toBe("Line 1\nLine 2\nLine 3");
     });
-  });
 
-  describe("Max iterations", () => {
-    it("should stop at max iterations", async () => {
+    it("should fall back only after max iterations without FINAL()", async () => {
       let callCount = 0;
       const mockLlm = jest.fn(async () => {
-        callCount++;
-        // Always return non-FINAL code to force max iterations
+        callCount += 1;
         return "print('still running')";
       });
 
@@ -330,17 +285,17 @@ describe("RlmOrchestrator", () => {
         maxIterations: 3,
       });
 
-      const result = await orchestrator.run("test query");
+      const result = await orchestrator.runDetailed("test query");
 
-      // Should stop at max iterations (3)
       expect(callCount).toBe(3);
-      // Result should indicate max iterations reached
-      expect(result).toContain("Max iterations");
+      expect(result.answer).toContain("RLM reached max iterations without FINAL()");
+      expect(result.stats.fallbackRecoveryUsed).toBe(true);
+      expect(result.stats.finalSet).toBe(false);
     });
   });
 
-  describe("Error handling", () => {
-    it("should handle LLM errors gracefully", async () => {
+  describe("error handling", () => {
+    it("should surface typed root-model failures in metadata history", async () => {
       const mockLlm = jest.fn(async () => {
         throw new Error("LLM API error");
       });
@@ -348,15 +303,27 @@ describe("RlmOrchestrator", () => {
       const orchestrator = new RlmOrchestrator({
         ...config,
         llmQuery: mockLlm,
+        maxIterations: 2,
       });
 
-      const result = await orchestrator.run("test query");
-      expect(result).toContain("Error");
+      const result = await orchestrator.runDetailed("test query");
+
+      expect(result.answer).toContain("RLM reached max iterations without FINAL()");
+      expect(result.metadataHistory).toHaveLength(2);
+      expect(result.metadataHistory[0].environment.error?.kind).toBe("llm");
+      expect(result.metadataHistory[0].environment.error?.code).toBe(
+        "ROOT_MODEL_QUERY_FAILED",
+      );
     });
 
-    it("should handle script execution errors", async () => {
+    it("should continue after script errors and allow later recovery", async () => {
+      let callCount = 0;
       const mockLlm = jest.fn(async () => {
-        return "throw new Error('script error')";
+        callCount += 1;
+        if (callCount === 1) {
+          return "throw new Error('script error')";
+        }
+        return "FINAL('recovered')";
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -364,9 +331,13 @@ describe("RlmOrchestrator", () => {
         llmQuery: mockLlm,
       });
 
-      const result = await orchestrator.run("test query");
-      // Should continue to next iteration with error feedback
-      expect(result).toBeDefined();
+      const result = await orchestrator.runDetailed("test query");
+
+      expect(result.answer).toBe("recovered");
+      expect(result.metadataHistory[0].environment.error?.kind).toBe("runtime");
+      expect(result.metadataHistory[0].environment.error?.code).toBe(
+        "SCRIPT_EXECUTION_FAILED",
+      );
     });
   });
 });

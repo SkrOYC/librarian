@@ -11,12 +11,16 @@ import {
   createStandardMockRepos,
   TestCLIHelper,
 } from "./helpers/cli-test-helpers.js";
-import { createReadmeAlignedConfig } from "./helpers/test-config.js";
+import {
+  createReadmeAlignedConfig,
+  type ReadmeConfig,
+} from "./helpers/test-config.js";
 
 describe("CLI Integration", () => {
   let testDir: string;
   let helper: TestCLIHelper;
   let mockConfig: any;
+  let fastFailExploreConfig: ReadmeConfig;
 
   beforeEach(() => {
     testDir = path.resolve(fsSync.mkdtempSync("cli-integration-test-"));
@@ -46,6 +50,11 @@ describe("CLI Integration", () => {
         description:
           "LangChain is a framework for building LLM-powered applications",
       },
+    };
+
+    fastFailExploreConfig = {
+      ...mockConfig,
+      llm_provider: "openai-compatible",
     };
   });
 
@@ -132,7 +141,7 @@ describe("CLI Integration", () => {
           "--tech",
           "react-mock",
         ],
-        mockConfig
+        fastFailExploreConfig
       );
 
       // Should attempt to initialize and may start cloning
@@ -156,7 +165,7 @@ describe("CLI Integration", () => {
           "--group",
           "langchain",
         ],
-        mockConfig
+        fastFailExploreConfig
       );
 
       // Should fail gracefully due to missing API key, but not crash
@@ -286,7 +295,7 @@ describe("CLI Integration", () => {
 
       const result = await helper.runCommand(
         ["explore", longQuery, "--tech", "react-mock"],
-        mockConfig
+        fastFailExploreConfig
       );
 
       // Should not crash on long queries
@@ -319,7 +328,7 @@ describe("CLI Integration", () => {
       // This tests the actual integration path
       const result = await helper.runCommand(
         ["explore", "How do React hooks work?", "--tech", "react-mock"],
-        mockConfig
+        fastFailExploreConfig
       );
 
       // Should attempt to use ReactAgent
@@ -330,7 +339,7 @@ describe("CLI Integration", () => {
       // Test that the CLI properly handles streaming from ReactAgent
       const result = await helper.runCommand(
         ["explore", "Explain component lifecycle", "--tech", "react-mock"],
-        mockConfig
+        fastFailExploreConfig
       );
 
       expect([0, 1]).toContain(result.exitCode);

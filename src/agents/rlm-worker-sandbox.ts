@@ -1,111 +1,88 @@
-/**
- * RLM Worker Sandbox - Bun Worker-based execution environment
- *
- * Provides true process isolation for RLM script execution using Bun Workers.
- * - Inline worker code as template string (no file I/O)
- * - IPC-based communication for stdout/buffers
- * - Timeout enforcement
- * - smol: true for memory efficiency
- */
+import { logger } from "../utils/logger.js";
+import { transformReplScript } from "./repl-script-transform.js";
+import type {
+  EnvironmentErrorPayload,
+  EnvironmentMetadata,
+  RepoApi,
+  SubRlmRequest,
+  SubRlmResult,
+  WorkerSessionExecuteResult,
+} from "./rlm-types.js";
 
-import type { RepoApi } from "./rlm-sandbox.js";
-
-/**
- * Result of worker script execution
- */
-export interface WorkerExecutionResult {
-  /** Return value from the script */
-  returnValue?: unknown;
-  /** Captured stdout from print() calls */
-  stdout: string;
-  /** Final buffers state */
-  buffers: Record<string, unknown>;
-  /** Final answer if FINAL/FINAL_VAR was called */
-  finalAnswer?: string;
-  /** Error message if execution failed */
-  error?: string;
-}
-
-/**
- * Configuration for BunWorkerSandbox
- */
-export interface BunWorkerSandboxConfig {
-  /** Repository API for file operations */
+export interface PersistentWorkerSessionConfig {
   repo: RepoApi;
-  /** LLM query function for semantic analysis */
   llmQuery: (instruction: string, data: string) => Promise<string>;
-  /** Timeout in milliseconds (default: 30000) */
   timeout?: number;
-  /** Initial buffers for stateful iterations */
-  initialBuffers?: Record<string, unknown>;
-  /** Context content from repository (for RLM engine) */
-  context?: string;
-  /** Callback for sub_rlm - creates fresh worker with isolated state */
-  subRlmExecutor?: (
-    query: string
-  ) => Promise<{
-    stdout: string;
-    buffers: Record<string, unknown>;
-    finalAnswer?: string;
-  }>;
+  initialBuffers?: Record<string, unknown> | undefined;
+  context?: string | undefined;
+  subRlmExecutor?: ((task: SubRlmRequest) => Promise<SubRlmResult>) | undefined;
 }
 
-/**
- * IPC message types for worker communication
- */
-type IpcMessage =
+type WorkerMessage =
   | {
       type: "execute";
+      requestId: string;
       script: string;
       buffers: Record<string, unknown>;
       context?: string;
+      iteration: number;
     }
+  | { type: "ready" }
   | {
       type: "result";
+      requestId: string;
       returnValue?: unknown;
       stdout: string;
       buffers: Record<string, unknown>;
+      variables: Record<string, unknown>;
       finalAnswer?: string;
+      error?: EnvironmentErrorPayload;
+      metadata: EnvironmentMetadata;
     }
-  | { type: "error"; error: string }
-  | { type: "ready" }
-  | { type: "print"; output: string }
-  | { type: "final"; answer: string }
-  | { type: "repo_call"; method: string; args: unknown; requestId: string }
-  | { type: "repo_result"; requestId: string; result: string }
-  | { type: "repo_error"; requestId: string; error: string }
+  | {
+      type: "repo_call";
+      requestId: string;
+      method: keyof RepoApi;
+      args: unknown;
+    }
+  | { type: "repo_result"; requestId: string; result: unknown }
+  | {
+      type: "repo_error";
+      requestId: string;
+      error: EnvironmentErrorPayload;
+    }
   | {
       type: "llm_query_call";
+      requestId: string;
       instruction: string;
       data: string;
-      requestId: string;
     }
   | { type: "llm_query_result"; requestId: string; result: string }
-  | { type: "llm_query_error"; requestId: string; error: string }
-  | { type: "sub_rlm_call"; query: string; requestId: string }
+  | {
+      type: "llm_query_error";
+      requestId: string;
+      error: EnvironmentErrorPayload;
+    }
+  | {
+      type: "sub_rlm_call";
+      requestId: string;
+      task: SubRlmRequest;
+    }
   | {
       type: "sub_rlm_result";
       requestId: string;
-      result: string;
-      error?: string;
+      result?: SubRlmResult;
+      error?: EnvironmentErrorPayload;
     };
 
-/**
- * Inline worker code template
- * This runs in an isolated JavaScriptCore context
- */
 const WORKER_CODE = `
-// Safe globals for worker - intentionally minimal
 const safeGlobals = {
-  // Core data structures
   JSON,
   Math,
   Map,
   Set,
   WeakMap,
   WeakSet,
-
-  // Primitive wrappers and utilities
   Array,
   Object,
   String,
@@ -121,8 +98,6 @@ const safeGlobals = {
   Promise,
   Symbol,
   BigInt,
-
-  // Functions
   parseInt,
   parseFloat,
   isNaN,
@@ -133,8 +108,6 @@ const safeGlobals = {
   decodeURIComponent,
   atob,
   btoa,
-
-  // chunk and batch utilities
   chunk: (data, size) => {
     const str = String(data);
     const chunks = [];
@@ -152,7 +125,6 @@ const safeGlobals = {
   },
 };
 
-// Block dangerous globals by not including them
 const process = undefined;
 const require = undefined;
 const Buffer = undefined;
@@ -164,574 +136,764 @@ const http = undefined;
 const https = undefined;
 const net = undefined;
 const tls = undefined;
-// Note: We don't explicitly block dangerous globals because the worker
-// runs in an isolated context with its own global scope.
-// The parent process globals are not accessible from the worker.
-// Also note: can't use "const eval" or "const Function" in strict mode
 const setImmediate = undefined;
 const setInterval = undefined;
 const clearImmediate = undefined;
 const clearInterval = undefined;
 const queueMicrotask = undefined;
 
-// Expose safe globals to global scope
-// We also need to expose buffers, print, FINAL, FINAL_VAR as globals
-let currentBuffers = {};
-let currentFinalAnswer = undefined;
-let currentStdout = [];
-
-// Expose buffers as global immediately so sub_rlm can access it
-globalThis.buffers = currentBuffers;
-
-// Override console to capture output
-const console = {
-  log: (...args) => {
-    const output = args.map(a => String(a)).join(" ");
-    currentStdout.push(output);
-    postMessage({ type: "print", output });
-  },
-  error: (...args) => {
-    const output = "ERROR: " + args.map(a => String(a)).join(" ");
-    currentStdout.push(output);
-    postMessage({ type: "print", output });
-  },
-  warn: (...args) => {
-    const output = "WARN: " + args.map(a => String(a)).join(" ");
-    currentStdout.push(output);
-    postMessage({ type: "print", output });
-  },
-  info: (...args) => {
-    const output = "INFO: " + args.map(a => String(a)).join(" ");
-    currentStdout.push(output);
-    postMessage({ type: "print", output });
-  },
-};
-
-// Expose safe globals to global scope (including chunk and batch utilities)
 Object.assign(globalThis, safeGlobals);
 
-// Pending IPC call resolvers
+const blockedGlobalKeys = [
+  "process",
+  "require",
+  "Buffer",
+  "fetch",
+  "XMLHttpRequest",
+  "child_process",
+  "fs",
+  "http",
+  "https",
+  "net",
+  "tls",
+  "module",
+  "__dirname",
+  "__filename",
+];
+
+for (const key of blockedGlobalKeys) {
+  try {
+    globalThis[key] = undefined;
+  } catch {
+    // Ignore read-only globals and rely on scope shadowing below.
+  }
+}
+
 const pendingCalls = new Map();
+const replBindings = Object.create(null);
+const reservedBindingKeys = new Set([
+  "buffers",
+  "context",
+  "__iteration__",
+  "print",
+  "FINAL",
+  "FINAL_VAR",
+  "repo",
+  "llm_query",
+  "sub_rlm",
+]);
+
+let currentBuffers = {};
+let currentContext = "";
+let currentFinalAnswer = undefined;
+let currentStdout = [];
+let currentError = undefined;
+
+const console = {
+  log: (...args) => {
+    const output = args.map((arg) => String(arg)).join(" ");
+    currentStdout.push(output);
+  },
+  info: (...args) => {
+    const output = args.map((arg) => String(arg)).join(" ");
+    currentStdout.push(output);
+  },
+  warn: (...args) => {
+    const output = args.map((arg) => String(arg)).join(" ");
+    currentStdout.push(output);
+  },
+  error: (...args) => {
+    const output = args.map((arg) => String(arg)).join(" ");
+    currentStdout.push(output);
+  },
+};
+globalThis.console = console;
+
+const scopeProxy = new Proxy(replBindings, {
+  has(_target, key) {
+    return key !== Symbol.unscopables;
+  },
+  get(target, key) {
+    if (key === Symbol.unscopables) {
+      return undefined;
+    }
+    if (key in target) {
+      return target[key];
+    }
+    return globalThis[key];
+  },
+  set(target, key, value) {
+    target[key] = value;
+    return true;
+  },
+  deleteProperty(target, key) {
+    delete target[key];
+    return true;
+  },
+});
 
 function generateRequestId() {
-  return Math.random().toString(36).substring(2, 15);
+  return Math.random().toString(36).slice(2, 15);
 }
 
-async function handlePromiseResult(promiseOrValue) {
-  if (promiseOrValue instanceof Promise) {
-    return await promiseOrValue;
+function createErrorPayload(kind, code, message, details) {
+  return {
+    kind,
+    code,
+    message,
+    ...(details ? { details } : {}),
+  };
+}
+
+function sanitizeValue(value) {
+  if (typeof value === "function") {
+    return "[Function]";
   }
-  return promiseOrValue;
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (value === undefined) {
+    return "[Undefined]";
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return String(value);
+  }
 }
 
-// Send message and wait for response
+function summarizeValue(name, value) {
+  const serialized = sanitizeValue(value);
+  const preview = typeof serialized === "string"
+    ? serialized.slice(0, 200)
+    : JSON.stringify(serialized).slice(0, 200);
+
+  return {
+    name,
+    type: Array.isArray(value) ? "array" : typeof value,
+    preview,
+    size: typeof serialized === "string"
+      ? serialized.length
+      : JSON.stringify(serialized).length,
+  };
+}
+
+function getSerializableBindings() {
+  const result = {};
+  for (const [key, value] of Object.entries(replBindings)) {
+    if (reservedBindingKeys.has(key)) {
+      continue;
+    }
+    result[key] = sanitizeValue(value);
+  }
+  return result;
+}
+
+function getEnvironmentMetadata() {
+  const variableEntries = Object.entries(replBindings)
+    .filter(([key]) => !reservedBindingKeys.has(key))
+    .map(([key, value]) => summarizeValue(key, value));
+
+  return {
+    stdoutPreview: currentStdout.join("\\n").slice(-2000),
+    stdoutLength: currentStdout.join("\\n").length,
+    variableCount: variableEntries.length,
+    variables: variableEntries,
+    bufferKeys: Object.keys(currentBuffers),
+    finalSet: currentFinalAnswer !== undefined,
+    ...(currentFinalAnswer !== undefined ? { finalSource: "environment" } : {}),
+    ...(currentError ? { error: currentError } : {}),
+  };
+}
+
 async function callMain(message) {
   const requestId = generateRequestId();
   postMessage({ ...message, requestId });
-  
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      pendingCalls.delete(requestId);
-      reject(new Error("Call timeout"));
-    }, 30000);
-    
-    pendingCalls.set(requestId, { resolve, reject, timeout });
+
+  return await new Promise((resolve, reject) => {
+    pendingCalls.set(requestId, { resolve, reject });
   });
 }
 
-// Handle IPC responses from main thread - set up once at startup
+function wireEnvironment(iteration) {
+  replBindings.buffers = currentBuffers;
+  replBindings.context = currentContext;
+  replBindings.__iteration__ = iteration;
+  for (const key of blockedGlobalKeys) {
+    replBindings[key] = undefined;
+  }
+
+  replBindings.print = (...args) => {
+    const output = args.map((arg) => String(arg)).join(" ");
+    currentStdout.push(output);
+    return undefined;
+  };
+
+  replBindings.FINAL = (answer) => {
+    currentFinalAnswer = String(answer);
+    return currentFinalAnswer;
+  };
+
+  replBindings.FINAL_VAR = (name) => {
+    if (Object.prototype.hasOwnProperty.call(replBindings, name)) {
+      currentFinalAnswer = String(replBindings[name]);
+      return currentFinalAnswer;
+    }
+    if (Object.prototype.hasOwnProperty.call(currentBuffers, name)) {
+      currentFinalAnswer = String(currentBuffers[name]);
+      return currentFinalAnswer;
+    }
+    throw new Error("Variable '" + name + "' not found in active session");
+  };
+
+  replBindings.repo = {
+    list: async (args) =>
+      await callMain({ type: "repo_call", method: "list", args }),
+    view: async (args) =>
+      await callMain({ type: "repo_call", method: "view", args }),
+    find: async (args) =>
+      await callMain({ type: "repo_call", method: "find", args }),
+    grep: async (args) =>
+      await callMain({ type: "repo_call", method: "grep", args }),
+  };
+
+  replBindings.llm_query = async (instruction, data) =>
+    await callMain({ type: "llm_query_call", instruction, data });
+
+  replBindings.sub_rlm = async (task) =>
+    await callMain({ type: "sub_rlm_call", task });
+}
+
 self.onmessage = async (event) => {
   const message = event.data;
-  
-  if (message.type === "repo_result" || message.type === "repo_error") {
-    if (message.requestId && pendingCalls.has(message.requestId)) {
-      const { resolve, reject, timeout } = pendingCalls.get(message.requestId);
-      clearTimeout(timeout);
+
+  if (message.type === "sub_rlm_result" && message.error) {
+    const pending = pendingCalls.get(message.requestId);
+    if (pending) {
       pendingCalls.delete(message.requestId);
-      
-      if (message.type === "repo_result") {
-        resolve(message.result);
-      } else {
-        reject(new Error(message.error));
-      }
-    }
-    return;
-  }
-  
-  if (message.type === "llm_query_result" || message.type === "llm_query_error") {
-    if (message.requestId && pendingCalls.has(message.requestId)) {
-      const { resolve, reject, timeout } = pendingCalls.get(message.requestId);
-      clearTimeout(timeout);
-      pendingCalls.delete(message.requestId);
-      
-      if (message.type === "llm_query_result") {
-        resolve(message.result);
-      } else {
-        reject(new Error(message.error));
-      }
+      const error = new Error(message.error.message);
+      Object.assign(error, message.error);
+      pending.reject(error);
     }
     return;
   }
 
-  // Handle sub_rlm responses from main thread
-  if (message.type === "sub_rlm_result") {
-    if (message.requestId && pendingCalls.has(message.requestId)) {
-      const { resolve, reject, timeout } = pendingCalls.get(message.requestId);
-      clearTimeout(timeout);
+  if (
+    message.type === "repo_result" ||
+    message.type === "llm_query_result" ||
+    message.type === "sub_rlm_result"
+  ) {
+    const pending = pendingCalls.get(message.requestId);
+    if (pending) {
       pendingCalls.delete(message.requestId);
-      
-      if (message.error) {
-        reject(new Error(message.error));
-      } else {
-        // Result is JSON stringified
-        resolve(message.result ? JSON.parse(message.result) : { stdout: "", buffers: {} });
-      }
+      pending.resolve(message.result);
     }
     return;
   }
 
-  if (message.type === "execute") {
-    currentBuffers = message.buffers || {};
-    // Update global buffers reference
-    globalThis.buffers = currentBuffers;
-    
-    // Expose context to scripts if provided
-    if (message.context !== undefined) {
-      globalThis.context = message.context;
+  if (
+    message.type === "repo_error" ||
+    message.type === "llm_query_error"
+  ) {
+    const pending = pendingCalls.get(message.requestId);
+    if (pending) {
+      pendingCalls.delete(message.requestId);
+      const error = new Error(message.error.message);
+      Object.assign(error, message.error);
+      pending.reject(error);
     }
-    
-    currentFinalAnswer = undefined;
-    currentStdout = [];
+    return;
+  }
 
-    // Create print function that captures to stdout
-    const print = (...args) => {
-      const output = args.map(a => String(a)).join(" ");
-      currentStdout.push(output);
-      postMessage({ type: "print", output });
-    };
+  if (message.type !== "execute") {
+    return;
+  }
 
-    // Create FINAL function
-    const FINAL = (answer) => {
-      currentFinalAnswer = String(answer);
-      postMessage({ type: "final", answer: currentFinalAnswer });
-    };
+  currentBuffers = message.buffers || {};
+  currentContext = message.context || "";
+  currentFinalAnswer = undefined;
+  currentStdout = [];
+  currentError = undefined;
+  wireEnvironment(message.iteration);
 
-    // Create FINAL_VAR function
-    const FINAL_VAR = (name) => {
-      if (currentBuffers.hasOwnProperty(name)) {
-        currentFinalAnswer = String(currentBuffers[name]);
-        postMessage({ type: "final", answer: currentFinalAnswer });
-      } else {
-        throw new Error("Buffer '" + name + "' not found");
-      }
-    };
+  try {
+    const executor = new Function(
+      "__scope",
+      "return (async () => { with (__scope) { " + message.script + " } })();",
+    );
+    const returnValue = await executor(scopeProxy);
 
-    // Create repo API wrapper that uses IPC
-    const repo = {
-      list: async (args) => {
-        return await callMain({ type: "repo_call", method: "list", args });
-      },
-      view: async (args) => {
-        return await callMain({ type: "repo_call", method: "view", args });
-      },
-      find: async (args) => {
-        return await callMain({ type: "repo_call", method: "find", args });
-      },
-      grep: async (args) => {
-        return await callMain({ type: "repo_call", method: "grep", args });
-      },
-    };
-
-    // Create llm_query function that uses IPC
-    const llm_query = async (instruction, data) => {
-      return await callMain({ type: "llm_query_call", instruction, data });
-    };
-
-    // Create sub_rlm function that spawns fresh worker via IPC
-    // This allows nested RLM calls with isolated state
-    // Returns the finalAnswer if set, otherwise returns the result object
-    const sub_rlm = async (scriptCode) => {
-      const result = await callMain({ type: "sub_rlm_call", query: scriptCode });
-      // If the result has a finalAnswer, return that (like calling FINAL in sub_rlm)
-      // Otherwise return the full result object
-      if (result && result.finalAnswer) {
-        return result.finalAnswer;
-      }
-      return result;
-    };
-
-    // Execute the script using async IIFE with eval
-    try {
-      // Wrap script in async IIFE and execute with eval
-      const wrappedScript = "(async () => { " + message.script + " })();";
-      const asyncResult = eval(wrappedScript);
-      
-      // Handle promise result
-      const result = await handlePromiseResult(asyncResult);
-      
-      // Send result back
-      postMessage({
-        type: "result",
-        returnValue: result,
-        stdout: currentStdout.join("\\n"),
-        buffers: currentBuffers,
-        finalAnswer: currentFinalAnswer,
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      postMessage({
-        type: "error",
-        error: errorMessage,
-      });
-    }
+    postMessage({
+      type: "result",
+      requestId: message.requestId,
+      returnValue,
+      stdout: currentStdout.join("\\n"),
+      buffers: currentBuffers,
+      variables: getSerializableBindings(),
+      finalAnswer: currentFinalAnswer,
+      metadata: getEnvironmentMetadata(),
+    });
+  } catch (error) {
+    currentError = createErrorPayload(
+      "runtime",
+      "SCRIPT_EXECUTION_FAILED",
+      error instanceof Error ? error.message : String(error),
+    );
+    postMessage({
+      type: "result",
+      requestId: message.requestId,
+      stdout: currentStdout.join("\\n"),
+      buffers: currentBuffers,
+      variables: getSerializableBindings(),
+      finalAnswer: currentFinalAnswer,
+      error: currentError,
+      metadata: getEnvironmentMetadata(),
+    });
   }
 };
 
-// Signal that worker is ready
 postMessage({ type: "ready" });
 `;
 
-/**
- * Bun Worker-based sandbox for RLM script execution
- *
- * Provides true process isolation by running scripts in a separate
- * JavaScriptCore context (Bun worker thread).
- */
-export class BunWorkerSandbox {
-  private repo: RepoApi;
-  private llmQuery: (instruction: string, data: string) => Promise<string>;
-  private timeout: number;
-  private buffers: Record<string, unknown>;
-  private context?: string;
-  private worker: Worker | null = null;
-  private subRlmExecutor?: (
-    query: string
-  ) => Promise<{
-    stdout: string;
-    buffers: Record<string, unknown>;
-    finalAnswer?: string;
-  }>;
+function createErrorPayload(
+  kind: EnvironmentErrorPayload["kind"],
+  code: string,
+  message: string,
+  details?: Record<string, unknown>,
+): EnvironmentErrorPayload {
+  return {
+    kind,
+    code,
+    message,
+    ...(details ? { details } : {}),
+  };
+}
 
-  constructor(config: BunWorkerSandboxConfig) {
+function toEnvironmentErrorPayload(
+  error: unknown,
+  fallbackKind: EnvironmentErrorPayload["kind"],
+  fallbackCode: string,
+  details?: Record<string, unknown>,
+): EnvironmentErrorPayload {
+  if (
+    error &&
+    typeof error === "object" &&
+    "kind" in error &&
+    "code" in error &&
+    "message" in error &&
+    typeof (error as { kind?: unknown }).kind === "string" &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    typeof (error as { message?: unknown }).message === "string"
+  ) {
+    const payload = error as EnvironmentErrorPayload;
+    return {
+      ...payload,
+      ...(details || payload.details
+        ? {
+            details: {
+              ...(payload.details ?? {}),
+              ...(details ?? {}),
+            },
+          }
+        : {}),
+    };
+  }
+
+  const message =
+    error instanceof Error
+      ? error.message
+      : error &&
+          typeof error === "object" &&
+          "message" in error &&
+          typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : String(error);
+
+  return createErrorPayload(fallbackKind, fallbackCode, message, details);
+}
+
+export class PersistentWorkerSession {
+  private readonly repo: RepoApi;
+  private readonly llmQuery: (instruction: string, data: string) => Promise<string>;
+  private readonly timeout: number;
+  private readonly subRlmExecutor:
+    | ((
+    task: SubRlmRequest,
+  ) => Promise<SubRlmResult>)
+    | undefined;
+  private readonly initialBuffers: Record<string, unknown>;
+  private worker: Worker | null = null;
+  private blobUrl: string | null = null;
+  private readyPromise: Promise<void> | null = null;
+  private pendingExecutions = new Map<
+    string,
+    {
+      resolve: (value: WorkerSessionExecuteResult) => void;
+      timeoutId: Timer;
+    }
+  >();
+  private buffers: Record<string, unknown>;
+  private context: string | undefined;
+  private lastMetadata: EnvironmentMetadata = {
+    stdoutPreview: "",
+    stdoutLength: 0,
+    variableCount: 0,
+    variables: [],
+    bufferKeys: [],
+    finalSet: false,
+  };
+  private executionCounter = 0;
+
+  constructor(config: PersistentWorkerSessionConfig) {
     this.repo = config.repo;
     this.llmQuery = config.llmQuery;
     this.timeout = config.timeout ?? 30_000;
-    this.buffers = { ...(config.initialBuffers ?? {}) };
+    this.initialBuffers = { ...(config.initialBuffers ?? {}) };
+    this.buffers = { ...this.initialBuffers };
     this.context = config.context;
     this.subRlmExecutor = config.subRlmExecutor;
   }
 
-  /**
-   * Execute a script in the worker sandbox
-   */
-  async execute(script: string): Promise<WorkerExecutionResult> {
-    // Create a new worker for each execution to ensure clean state
-    // We need to set up handlers BEFORE waiting for ready
-    const worker = await this.createWorkerWithHandlers(script);
-    this.worker = worker;
+  private async ensureStarted(): Promise<void> {
+    if (this.readyPromise) {
+      await this.readyPromise;
+      return;
+    }
 
-    return new Promise((resolve) => {
-      // The worker is already running with handlers set up
-      // Just set up the timeout
-      const timeoutId = setTimeout(() => {
-        this._currentResolve = null;
-        this._currentTimeoutId = null;
-        this.cleanup();
-        resolve({
-          stdout: "",
-          buffers: this.buffers,
-          error: "Script timed out after " + this.timeout + "ms (timeout)",
-        });
-      }, this.timeout);
-
-      // Store cleanup and resolve for the handlers to use
-      this._currentResolve = resolve;
-      this._currentTimeoutId = timeoutId;
-      this._currentWorker = worker;
-      this._currentScript = script;
-    });
-  }
-
-  // Temporary storage for execute state
-  private _currentResolve: ((value: WorkerExecutionResult) => void) | null =
-    null;
-  private _currentTimeoutId: Timer | null = null;
-  private _currentWorker: Worker | null = null;
-  private _currentScript = "";
-  private _currentBlobUrl: string | null = null;
-
-  /**
-   * Create worker and set up handlers before waiting for ready
-   */
-  private async createWorkerWithHandlers(script: string): Promise<Worker> {
-    // Create blob from worker code
     const blob = new Blob([WORKER_CODE], { type: "application/javascript" });
-    const url = URL.createObjectURL(blob);
-    this._currentBlobUrl = url;
+    this.blobUrl = URL.createObjectURL(blob);
+    this.worker = new Worker(this.blobUrl, { smol: true });
 
-    // Create worker with smol: true for memory efficiency
-    const worker = new Worker(url, { smol: true });
-
-    // Set up message handler BEFORE waiting for ready
-    worker.onmessage = (event) => {
-      const msg = event.data as IpcMessage;
-      this.handleWorkerMessage(msg, worker);
-    };
-
-    worker.onerror = (error) => {
-      if (this._currentResolve) {
-        const resolve = this._currentResolve;
-        clearTimeout(this._currentTimeoutId!);
-        this._currentResolve = null;
-        this._currentTimeoutId = null;
-        resolve({
-          stdout: "",
-          buffers: this.buffers,
-          error: error.message,
-        });
-        this.cleanup();
+    this.readyPromise = new Promise<void>((resolve, reject) => {
+      if (!this.worker) {
+        reject(new Error("Worker failed to initialize"));
+        return;
       }
-    };
 
-    // Wait for worker to signal ready
-    await new Promise<void>((resolve) => {
-      let executeSent = false;
-      let timeoutHandle: Timer | undefined;
-
-      const sendExecute = () => {
-        if (executeSent) return;
-        executeSent = true;
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        worker.postMessage({
-          type: "execute",
-          script,
-          buffers: this.buffers,
-          context: this.context,
-        });
+      this.worker.onmessage = (event) => {
+        const message = event.data as WorkerMessage;
+        this.handleWorkerMessage(message, resolve);
       };
 
-      const readyHandler = (event: MessageEvent) => {
-        const msg = event.data as IpcMessage;
-        if (msg.type === "ready") {
-          worker.removeEventListener("message", readyHandler);
-          sendExecute();
-          resolve();
-        }
+      this.worker.onerror = (event) => {
+        reject(new Error(event.message));
       };
-      worker.addEventListener("message", readyHandler);
-
-      // Timeout - send execute message to ensure worker processes it
-      timeoutHandle = setTimeout(() => {
-        worker.removeEventListener("message", readyHandler);
-        sendExecute();
-        resolve();
-      }, 5000);
     });
 
-    return worker;
+    await this.readyPromise;
   }
 
-  /**
-   * Handle messages from worker
-   */
-  private handleWorkerMessage(msg: IpcMessage, worker: Worker): void {
-    const resolve = this._currentResolve;
-    const timeoutId = this._currentTimeoutId;
+  private handleWorkerMessage(
+    message: WorkerMessage,
+    readyResolve: (() => void) | null,
+  ): void {
+    if (message.type === "ready") {
+      readyResolve?.();
+      return;
+    }
 
-    switch (msg.type) {
-      case "ready":
-        // Already handled in createWorkerWithHandlers
-        break;
-
-      case "print":
-        // Print is handled via final result
-        break;
-
-      case "final":
-        // Final answer set during execution
-        break;
-
-      case "result": {
-        if (resolve) {
-          clearTimeout(timeoutId!);
-          this.buffers = msg.buffers;
-          this._currentResolve = null;
-          this._currentTimeoutId = null;
-          this.cleanup();
-          resolve({
-            returnValue: msg.returnValue,
-            stdout: msg.stdout,
-            buffers: msg.buffers,
-            finalAnswer: msg.finalAnswer,
-          });
-        }
-        break;
+    if (message.type === "result") {
+      const pending = this.pendingExecutions.get(message.requestId);
+      if (!pending) {
+        return;
       }
 
-      case "error": {
-        if (resolve) {
-          clearTimeout(timeoutId!);
-          this._currentResolve = null;
-          this._currentTimeoutId = null;
-          this.cleanup();
-          resolve({
-            stdout: "",
-            buffers: this.buffers,
-            error: msg.error,
-          });
-        }
-        break;
-      }
+      clearTimeout(pending.timeoutId);
+      this.pendingExecutions.delete(message.requestId);
+      this.buffers = { ...message.buffers };
+      this.lastMetadata = message.metadata;
 
-      case "repo_call": {
-        this.handleRepoCall(msg);
-        break;
-      }
+      pending.resolve({
+        ...(message.returnValue !== undefined
+          ? { returnValue: message.returnValue }
+          : {}),
+        stdout: message.stdout,
+        ...(message.finalAnswer !== undefined
+          ? { finalAnswer: message.finalAnswer }
+          : {}),
+        ...(message.error !== undefined ? { error: message.error } : {}),
+        metadata: message.metadata,
+        variables: message.variables,
+        buffers: message.buffers,
+      });
+      return;
+    }
 
-      case "llm_query_call": {
-        this.handleLlmQueryCall(msg);
-        break;
-      }
+    if (message.type === "repo_call") {
+      void this.handleRepoCall(message);
+      return;
+    }
 
-      case "sub_rlm_call": {
-        this.handleSubRlmCall(msg);
-        break;
-      }
-      // Note: repo_result, repo_error, llm_query_result, llm_query_error
-      // are sent FROM main TO worker, not received by main.
-      // These cases are handled in the worker's onmessage, not here.
+    if (message.type === "llm_query_call") {
+      void this.handleLlmQueryCall(message);
+      return;
+    }
+
+    if (message.type === "sub_rlm_call") {
+      void this.handleSubRlmCall(message);
     }
   }
 
-  /**
-   * Handle repo API calls from worker via IPC
-   */
   private async handleRepoCall(
-    msg: Extract<IpcMessage, { type: "repo_call" }>
+    message: Extract<WorkerMessage, { type: "repo_call" }>,
   ): Promise<void> {
-    if (!this.worker) return;
+    if (!this.worker) {
+      return;
+    }
 
     try {
-      const { method, args, requestId } = msg;
-
-      // Validate method is one of the allowed repo API methods
-      const allowedMethods = ["list", "view", "find", "grep"];
-      if (!allowedMethods.includes(method)) {
-        throw new Error(`Invalid repo method: ${method}`);
-      }
-
-      const result = await this.repo[method](args);
-      this.worker.postMessage({ type: "repo_result", requestId, result });
+      const result = await this.repo[message.method](message.args as never);
+      this.worker.postMessage({
+        type: "repo_result",
+        requestId: message.requestId,
+        result,
+      });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const payload = toEnvironmentErrorPayload(
+        error,
+        "repo",
+        "REPO_OPERATION_FAILED",
+        {
+          method: message.method,
+        },
+      );
+
       this.worker.postMessage({
         type: "repo_error",
-        requestId: msg.requestId,
-        error: errorMessage,
+        requestId: message.requestId,
+        error: payload,
       });
     }
   }
 
-  /**
-   * Handle llm_query calls from worker via IPC
-   */
   private async handleLlmQueryCall(
-    msg: Extract<IpcMessage, { type: "llm_query_call" }>
+    message: Extract<WorkerMessage, { type: "llm_query_call" }>,
   ): Promise<void> {
-    if (!this.worker) return;
+    if (!this.worker) {
+      return;
+    }
 
     try {
-      const { instruction, data, requestId } = msg;
-      const result = await this.llmQuery(instruction, data);
-      this.worker.postMessage({ type: "llm_query_result", requestId, result });
+      const result = await this.llmQuery(message.instruction, message.data);
+      this.worker.postMessage({
+        type: "llm_query_result",
+        requestId: message.requestId,
+        result,
+      });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
       this.worker.postMessage({
         type: "llm_query_error",
-        requestId: msg.requestId,
-        error: errorMessage,
+        requestId: message.requestId,
+        error: toEnvironmentErrorPayload(
+          error,
+          "llm",
+          "SUB_MODEL_QUERY_FAILED",
+        ),
       });
     }
   }
 
-  /**
-   * Handle sub_rlm calls from worker via IPC
-   * Spawns a fresh worker with isolated state
-   */
   private async handleSubRlmCall(
-    msg: Extract<IpcMessage, { type: "sub_rlm_call" }>
+    message: Extract<WorkerMessage, { type: "sub_rlm_call" }>,
   ): Promise<void> {
     const worker = this.worker;
-    if (!worker) return;
+    if (!worker) {
+      return;
+    }
 
-    const { query, requestId } = msg;
+    if (!this.subRlmExecutor) {
+      try {
+        worker.postMessage({
+          type: "sub_rlm_result",
+          requestId: message.requestId,
+          error: createErrorPayload(
+            "sub_rlm",
+            "SUB_RLM_NOT_CONFIGURED",
+            "sub_rlm is not configured for this session",
+          ),
+        });
+      } catch {
+        // Ignore if the worker was terminated while the child request was in flight.
+      }
+      return;
+    }
 
     try {
-      if (!this.subRlmExecutor) {
-        throw new Error("sub_rlm is not configured - no executor provided");
-      }
-
-      // Call the executor to spawn fresh worker and execute
-      const result = await this.subRlmExecutor(query);
-
-      // Send result back to worker (check worker still exists)
-      if (this.worker) {
-        this.worker.postMessage({
+      const result = await this.subRlmExecutor(message.task);
+      try {
+        worker.postMessage({
           type: "sub_rlm_result",
-          requestId,
-          result: JSON.stringify(result),
+          requestId: message.requestId,
+          result,
         });
+      } catch {
+        // Ignore if the worker was terminated while the child request was in flight.
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      if (this.worker) {
-        this.worker.postMessage({
+      try {
+        worker.postMessage({
           type: "sub_rlm_result",
-          requestId,
-          error: errorMessage,
+          requestId: message.requestId,
+          error: toEnvironmentErrorPayload(
+            error,
+            "sub_rlm",
+            "SUB_RLM_FAILED",
+          ),
         });
+      } catch {
+        // Ignore if the worker was terminated while the child request was in flight.
       }
     }
   }
 
-  /**
-   * Cleanup worker and blob URL
-   */
-  private cleanup(): void {
-    // Revoke blob URL to prevent memory leak
-    if (this._currentBlobUrl) {
-      URL.revokeObjectURL(this._currentBlobUrl);
-      this._currentBlobUrl = null;
+  async execute(script: string): Promise<WorkerSessionExecuteResult> {
+    await this.ensureStarted();
+
+    if (!this.worker) {
+      throw new Error("Worker session is not available");
     }
 
-    // Terminate worker
+    let compiledScript: string;
+    try {
+      compiledScript = transformReplScript(script);
+    } catch (error) {
+      const payload = createErrorPayload(
+        "runtime",
+        "SCRIPT_TRANSFORM_FAILED",
+        error instanceof Error ? error.message : String(error),
+      );
+      this.lastMetadata = {
+        stdoutPreview: "",
+        stdoutLength: 0,
+        variableCount: 0,
+        variables: [],
+        bufferKeys: Object.keys(this.buffers),
+        finalSet: false,
+        error: payload,
+      };
+      return {
+        stdout: "",
+        buffers: { ...this.buffers },
+        variables: {},
+        metadata: this.lastMetadata,
+        error: payload,
+      };
+    }
+    const requestId = crypto.randomUUID();
+
+    return await new Promise<WorkerSessionExecuteResult>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingExecutions.delete(requestId);
+        this.lastMetadata = {
+          stdoutPreview: "",
+          stdoutLength: 0,
+          variableCount: 0,
+          variables: [],
+          bufferKeys: Object.keys(this.buffers),
+          finalSet: false,
+          error: createErrorPayload(
+            "timeout",
+            "WORKER_TIMEOUT",
+            `timeout after ${this.timeout}ms`,
+          ),
+        };
+        const timedOutResult: WorkerSessionExecuteResult = {
+          stdout: "",
+          buffers: { ...this.buffers },
+          variables: {},
+          metadata: this.lastMetadata,
+          ...(this.lastMetadata.error ? { error: this.lastMetadata.error } : {}),
+        };
+        resolve(timedOutResult);
+      }, this.timeout);
+
+      this.pendingExecutions.set(requestId, { resolve, timeoutId });
+      this.executionCounter += 1;
+      const executeMessage: WorkerMessage = {
+        type: "execute",
+        requestId,
+        script: compiledScript,
+        buffers: { ...this.buffers },
+        iteration: this.executionCounter,
+        ...(this.context !== undefined ? { context: this.context } : {}),
+      };
+      this.worker?.postMessage(executeMessage);
+    });
+  }
+
+  setBuffers(buffers: Record<string, unknown>): void {
+    this.buffers = { ...buffers };
+  }
+
+  getBuffers(): Record<string, unknown> {
+    return { ...this.buffers };
+  }
+
+  setContext(context: string | undefined): void {
+    this.context = context;
+  }
+
+  getEnvironmentMetadata(): EnvironmentMetadata {
+    return this.lastMetadata;
+  }
+
+  terminate(): void {
+    for (const pending of this.pendingExecutions.values()) {
+      clearTimeout(pending.timeoutId);
+    }
+    this.pendingExecutions.clear();
+
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
     }
+
+    if (this.blobUrl) {
+      URL.revokeObjectURL(this.blobUrl);
+      this.blobUrl = null;
+    }
+
+    logger.debug("RLM", "Persistent worker session terminated");
+  }
+}
+
+export class BunWorkerSandbox {
+  private readonly session: PersistentWorkerSession;
+
+  constructor(config: PersistentWorkerSessionConfig) {
+    this.session = new PersistentWorkerSession(config);
   }
 
-  /**
-   * Get current buffers
-   */
-  getBuffers(): Record<string, unknown> {
-    return this.buffers;
+  async execute(script: string): Promise<{
+    returnValue?: unknown;
+    stdout: string;
+    buffers: Record<string, unknown>;
+    finalAnswer?: string;
+    error?: string;
+  }> {
+    const result = await this.session.execute(script);
+    return {
+      ...(result.returnValue !== undefined
+        ? { returnValue: result.returnValue }
+        : {}),
+      stdout: result.stdout,
+      buffers: result.buffers,
+      ...(result.finalAnswer !== undefined
+        ? { finalAnswer: result.finalAnswer }
+        : {}),
+      ...(result.error ? { error: result.error.message } : {}),
+    };
   }
 
-  /**
-   * Set buffers
-   */
   setBuffers(buffers: Record<string, unknown>): void {
-    this.buffers = buffers;
+    this.session.setBuffers(buffers);
   }
 
-  /**
-   * Terminate the worker
-   */
+  getBuffers(): Record<string, unknown> {
+    return this.session.getBuffers();
+  }
+
   terminate(): void {
-    this.cleanup();
+    this.session.terminate();
   }
 }
