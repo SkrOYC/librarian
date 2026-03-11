@@ -156,10 +156,10 @@ technologies:
       branch: "main" # Optional, defaults to main/master
       description: "JavaScript library for building user interfaces"
 aiProvider: # or llm_provider for backward compatibility
-  type: openai # Options: openai, anthropic, google, openai-compatible, claude-code, gemini-cli
+  type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
   model: gpt-5.2
-  baseURL: # Optional for openai-compatible providers
+  baseURL: # Required for openai-compatible and anthropic-compatible providers
 ```
 
 ### Supported LLM Providers
@@ -167,6 +167,7 @@ aiProvider: # or llm_provider for backward compatibility
 - Anthropic (via `@ai-sdk/anthropic`)
 - Google (via `@ai-sdk/google`)
 - OpenAI-compatible providers (via `@ai-sdk/openai-compatible`)
+- Anthropic-compatible providers (via `@ai-sdk/anthropic` with a required compatible `baseURL`)
 - Claude CLI (requires `claude` command in PATH)
 - Gemini CLI (requires `gemini` command in PATH)
 - Codex CLI (requires `codex` command in PATH)

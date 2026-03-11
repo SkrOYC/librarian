@@ -455,7 +455,11 @@ paths:
 
 ## 5. Implementation Guidelines
 
-### Project Structure
+### Project Structure Roadmap
+
+Brownfield note: the tree below is the target incremental layout, not the
+current Phase 1 file layout. The implemented runtime still lives primarily
+under `src/agents`, `src/tools`, `src/repo`, and `src/utils`.
 
 ```text
 src/
@@ -534,12 +538,10 @@ src/
 └── utils/
 ```
 
-### Coding Standards
+### Brownfield Runtime Rules
 
-- All business rules for catalog resolution, exploration targeting, and workspace policy must live in `src/domain` or `src/application`, never inside CLI handlers or provider adapters.
-- `src/domain` must not import Bun APIs, filesystem APIs, Git clients, AI SDK packages, or subprocess utilities.
-- Every external dependency must enter through an application port in `src/application/ports`.
-- Provider-specific behavior and AI SDK package usage must be isolated under `src/infrastructure/reasoning`; no provider switch statements are allowed in domain services.
+- Phase 1 does not yet implement the target `src/domain` / `src/application` / `src/infrastructure` split shown above. Current runtime ownership remains in the existing brownfield modules under `src/agents`, `src/tools`, `src/repo`, and `src/utils`.
+- Provider-specific AI SDK usage for the current implementation is concentrated in `src/agents/rlm-sandbox.ts`, while CLI-backed subprocess routing remains in `src/agents/react-agent.ts`.
 - Non-CLI `explore` must route directly to `RlmOrchestrator.run(query)`; it must not pass through a framework-owned tool-agent loop in the main execution path.
 - Root-model and sub-model inference must use separate factories and separate prompts. The root controller prompt must never be reused for `llm_query()` or child recursive analysis.
 - Root-model and sub-model inference for non-CLI providers must be implemented through AI SDK Core-backed adapters behind those separate factories; AI SDK tool-calling features are not the control plane for RLM execution.
@@ -548,11 +550,11 @@ src/
   It must not receive a prebuilt full repository snapshot as normal operating context.
 - `sub_rlm()` must accept a structured recursive task object such as `{ prompt, context, rootHint? }` and must launch a child recursive run. It must not use raw script evaluation as its primary contract.
 - Persistent REPL state must preserve locals, helper functions, symbolic selections, and final-answer bindings across root iterations. Persisting only exported buffers is insufficient.
-- Workspace path validation must be centralized in one policy module; duplicate traversal checks across adapters are not allowed.
+- Workspace path validation must remain consistent across adapters and tool surfaces, even while the brownfield codebase still performs some checks in more than one module.
 - The repository environment contract must be structured and stable. Core `repo.*` methods must return typed or JSON-serializable values; human-optimized summaries belong in separate helper methods.
 - Environment failures must cross adapter boundaries as typed results or thrown errors, never as opaque success-shaped strings.
 - The optional HTTP automation adapter must be a thin adapter over the same application commands as the CLI. It must not introduce separate orchestration logic.
-- All request/response schemas must be defined once in `src/contracts` and reused across CLI validation, automation adapter validation, and tests.
+- Shared request or response schemas should be consolidated as the brownfield refactor progresses, but Phase 1 does not yet require a single `src/contracts` source tree.
 - Logs must be structured JSON lines or JSON-serializable metadata entries with mandatory fields:
   `session_id`, `component`, `operation`, `status`, `duration_ms`.
 - Non-CLI exploration logs must also carry:

@@ -7,6 +7,7 @@
 import { describe, expect, it } from "bun:test";
 import { ReactAgent } from "../src/agents/react-agent.js";
 import { listTool } from "../src/tools/file-listing.tool.js";
+import { logger } from "../src/utils/logger.js";
 
 describe("ReactAgent RLM integration", () => {
   describe("RLM system prompt", () => {
@@ -259,6 +260,106 @@ describe("ReactAgent RLM integration", () => {
         expect(metadata.outline).toBe("[DIR] src");
       } finally {
         (listTool as { invoke: typeof listTool.invoke }).invoke = originalInvoke;
+      }
+    });
+  });
+
+  describe("run stats logging", () => {
+    it("should emit the full structured RLM stats payload", async () => {
+      const agent = new ReactAgent({
+        aiProvider: { type: "openai", apiKey: "test-key" },
+        workingDir: "/test/repo",
+      });
+
+      const originalInfo = logger.info;
+      const logEntries: Array<{
+        component: string;
+        message: string;
+        metadata?: Record<string, unknown>;
+      }> = [];
+      logger.info = ((component, message, metadata) => {
+        logEntries.push({
+          component,
+          message,
+          metadata: metadata as Record<string, unknown> | undefined,
+        });
+      }) as typeof logger.info;
+
+      const originalExecuteRlmQuery = (
+        agent as unknown as {
+          executeRlmQuery: (query: string) => Promise<{
+            answer: string;
+            stats: {
+              rootIterations: number;
+              subRlmCalls: number;
+              subModelCalls: number;
+              repoCalls: number;
+              totalInputChars: number;
+              totalOutputChars: number;
+              finalSet: boolean;
+              fallbackRecoveryUsed: boolean;
+            };
+            metadataHistory: unknown[];
+          }>;
+        }
+      ).executeRlmQuery;
+
+      (
+        agent as unknown as {
+          executeRlmQuery: (query: string) => Promise<{
+            answer: string;
+            stats: {
+              rootIterations: number;
+              subRlmCalls: number;
+              subModelCalls: number;
+              repoCalls: number;
+              totalInputChars: number;
+              totalOutputChars: number;
+              finalSet: boolean;
+              fallbackRecoveryUsed: boolean;
+            };
+            metadataHistory: unknown[];
+          }>;
+        }
+      ).executeRlmQuery = async () => ({
+        answer: "done",
+        stats: {
+          rootIterations: 3,
+          subRlmCalls: 2,
+          subModelCalls: 5,
+          repoCalls: 7,
+          totalInputChars: 111,
+          totalOutputChars: 222,
+          finalSet: true,
+          fallbackRecoveryUsed: false,
+        },
+        metadataHistory: [],
+      });
+
+      try {
+        const result = await agent.queryRepository("/test/repo", "test query");
+
+        expect(result).toBe("done");
+        expect(
+          logEntries.find((entry) => entry.message === "RLM query result received")
+            ?.metadata,
+        ).toEqual({
+          root_iterations: 3,
+          sub_rlm_calls: 2,
+          sub_model_calls: 5,
+          repo_calls: 7,
+          total_input_chars: 111,
+          total_output_chars: 222,
+          final_set: true,
+          fallback_recovery_used: false,
+        });
+      } finally {
+        logger.info = originalInfo;
+        (
+          agent as unknown as {
+            executeRlmQuery: typeof originalExecuteRlmQuery;
+          }
+        ).executeRlmQuery = originalExecuteRlmQuery;
       }
     });
   });

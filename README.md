@@ -249,7 +249,7 @@ technologies:
 #   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
 #   model: gpt-5.2
-#   baseURL: # Optional for openai-compatible providers
+#   baseURL: # Required for openai-compatible and anthropic-compatible providers
 ```
 
 ### 2. Explore a Technology
@@ -370,7 +370,7 @@ technologies:
 #   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
 #   model: gpt-5.2
-#   baseURL: # Optional for openai-compatible providers
+#   baseURL: # Required for openai-compatible and anthropic-compatible providers
 ```
 
 **Note**: The system works out-of-the-box with OpenCode Zen integration (no LLM configuration required by default). When configured, API-backed providers use AI SDK adapters and CLI-backed providers use their native subprocess integrations.
@@ -526,7 +526,7 @@ aiProvider:
   type: openai-compatible
   model: your-model-name
   baseURL: "https://your-provider.com/v1"
-  apiKey: # Optional API key (loaded from .env as LIBRARIAN_API_KEY if required by provider)
+  apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if required by provider)
 ```
 
 ### Anthropic-Compatible

@@ -996,12 +996,14 @@ notifications = false
 			logger.info("AGENT", "Using RLM mode");
 			const result = await this.executeRlmQuery(query);
 			logger.info("AGENT", "RLM query result received", {
-				rootIterations: result.stats.rootIterations,
-				subRlmCalls: result.stats.subRlmCalls,
-				subModelCalls: result.stats.subModelCalls,
-				repoCalls: result.stats.repoCalls,
-				finalSet: result.stats.finalSet,
-				fallbackRecoveryUsed: result.stats.fallbackRecoveryUsed,
+				root_iterations: result.stats.rootIterations,
+				sub_rlm_calls: result.stats.subRlmCalls,
+				sub_model_calls: result.stats.subModelCalls,
+				repo_calls: result.stats.repoCalls,
+				total_input_chars: result.stats.totalInputChars,
+				total_output_chars: result.stats.totalOutputChars,
+				final_set: result.stats.finalSet,
+				fallback_recovery_used: result.stats.fallbackRecoveryUsed,
 			});
 			return result.answer;
 		}

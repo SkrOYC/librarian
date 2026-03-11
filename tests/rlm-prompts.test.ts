@@ -48,6 +48,14 @@ describe("RLM prompts", () => {
       expect(SUB_AGENT_SYSTEM_PROMPT).toContain("Return plain text only.");
       expect(SUB_AGENT_SYSTEM_PROMPT).not.toContain("repo.list");
     });
+
+    it("should remain distinct from the root controller prompt", () => {
+      const rootPrompt = createRlmSystemPrompt("context block");
+
+      expect(rootPrompt).not.toBe(SUB_AGENT_SYSTEM_PROMPT);
+      expect(rootPrompt).toContain("persistent REPL session");
+      expect(SUB_AGENT_SYSTEM_PROMPT).not.toContain("persistent REPL session");
+    });
   });
 
   describe("formatMetadataForPrompt", () => {
