@@ -26,10 +26,18 @@ jobs:
       - name: Run flake check (includes passthru.tests)
         run: nix flake check --impure
 
-  # Build on Linux (primary platform)
+  # Build on Linux using native runners for each architecture
   build-linux:
-    name: Build (Linux)
-    runs-on: ubuntu-latest
+    name: Build (Linux ${{ matrix.system }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,14 +49,11 @@ jobs:
             flakes = true
             experimental-features = nix-command flakes
 
-      - name: Build for x86_64-linux
-        run: nix build .#default --system x86_64-linux
+      - name: Build for ${{ matrix.system }}
+        run: nix build .#default --system ${{ matrix.system }}
 
       - name: Verify binary
         run: ./result/bin/librarian --help
-
-      - name: Build for aarch64-linux
-        run: nix build .#default --system aarch64-linux
 
   # Build and test on macOS
   build-darwin:
