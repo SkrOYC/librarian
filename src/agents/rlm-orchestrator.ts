@@ -293,6 +293,7 @@ export class RlmOrchestrator {
     });
 
     const childResult = await child.runDetailed(task.prompt);
+    this.stats.subRlmCalls += childResult.stats.subRlmCalls;
     this.stats.subModelCalls += childResult.stats.subModelCalls;
     this.stats.repoCalls += childResult.stats.repoCalls;
     this.stats.totalInputChars += childResult.stats.totalInputChars;

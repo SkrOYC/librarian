@@ -634,20 +634,79 @@ export class PersistentWorkerSession {
     }
   }
 
+  private buildExecutionErrorResult(
+    payload: EnvironmentErrorPayload,
+  ): WorkerSessionExecuteResult {
+    this.lastMetadata = {
+      stdoutPreview: "",
+      stdoutLength: 0,
+      variableCount: 0,
+      variables: [],
+      bufferKeys: Object.keys(this.buffers),
+      finalSet: false,
+      error: payload,
+    };
+
+    return {
+      stdout: "",
+      buffers: { ...this.buffers },
+      variables: {},
+      metadata: this.lastMetadata,
+      error: payload,
+    };
+  }
+
+  private disposeWorker(): void {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+
+    if (this.blobUrl) {
+      URL.revokeObjectURL(this.blobUrl);
+      this.blobUrl = null;
+    }
+
+    this.readyPromise = null;
+  }
+
+  private resolveAllPendingExecutions(
+    payload: EnvironmentErrorPayload,
+  ): void {
+    const result = this.buildExecutionErrorResult(payload);
+
+    for (const pending of this.pendingExecutions.values()) {
+      clearTimeout(pending.timeoutId);
+      pending.resolve({
+        ...result,
+        buffers: { ...result.buffers },
+        variables: { ...result.variables },
+        metadata: { ...result.metadata },
+      });
+    }
+
+    this.pendingExecutions.clear();
+  }
+
   private async handleRepoCall(
     message: Extract<WorkerMessage, { type: "repo_call" }>,
   ): Promise<void> {
-    if (!this.worker) {
+    const worker = this.worker;
+    if (!worker) {
       return;
     }
 
     try {
       const result = await this.repo[message.method](message.args as never);
-      this.worker.postMessage({
-        type: "repo_result",
-        requestId: message.requestId,
-        result,
-      });
+      try {
+        worker.postMessage({
+          type: "repo_result",
+          requestId: message.requestId,
+          result,
+        });
+      } catch {
+        // Ignore if the worker was terminated while the repo call was in flight.
+      }
     } catch (error) {
       const payload = toEnvironmentErrorPayload(
         error,
@@ -658,38 +717,51 @@ export class PersistentWorkerSession {
         },
       );
 
-      this.worker.postMessage({
-        type: "repo_error",
-        requestId: message.requestId,
-        error: payload,
-      });
+      try {
+        worker.postMessage({
+          type: "repo_error",
+          requestId: message.requestId,
+          error: payload,
+        });
+      } catch {
+        // Ignore if the worker was terminated while the repo call was in flight.
+      }
     }
   }
 
   private async handleLlmQueryCall(
     message: Extract<WorkerMessage, { type: "llm_query_call" }>,
   ): Promise<void> {
-    if (!this.worker) {
+    const worker = this.worker;
+    if (!worker) {
       return;
     }
 
     try {
       const result = await this.llmQuery(message.instruction, message.data);
-      this.worker.postMessage({
-        type: "llm_query_result",
-        requestId: message.requestId,
-        result,
-      });
+      try {
+        worker.postMessage({
+          type: "llm_query_result",
+          requestId: message.requestId,
+          result,
+        });
+      } catch {
+        // Ignore if the worker was terminated while the llm_query call was in flight.
+      }
     } catch (error) {
-      this.worker.postMessage({
-        type: "llm_query_error",
-        requestId: message.requestId,
-        error: toEnvironmentErrorPayload(
-          error,
-          "llm",
-          "SUB_MODEL_QUERY_FAILED",
-        ),
-      });
+      try {
+        worker.postMessage({
+          type: "llm_query_error",
+          requestId: message.requestId,
+          error: toEnvironmentErrorPayload(
+            error,
+            "llm",
+            "SUB_MODEL_QUERY_FAILED",
+          ),
+        });
+      } catch {
+        // Ignore if the worker was terminated while the llm_query call was in flight.
+      }
     }
   }
 
@@ -783,28 +855,21 @@ export class PersistentWorkerSession {
 
     return await new Promise<WorkerSessionExecuteResult>((resolve) => {
       const timeoutId = setTimeout(() => {
-        this.pendingExecutions.delete(requestId);
-        this.lastMetadata = {
-          stdoutPreview: "",
-          stdoutLength: 0,
-          variableCount: 0,
-          variables: [],
-          bufferKeys: Object.keys(this.buffers),
-          finalSet: false,
-          error: createErrorPayload(
-            "timeout",
-            "WORKER_TIMEOUT",
-            `timeout after ${this.timeout}ms`,
-          ),
-        };
-        const timedOutResult: WorkerSessionExecuteResult = {
-          stdout: "",
-          buffers: { ...this.buffers },
-          variables: {},
-          metadata: this.lastMetadata,
-          ...(this.lastMetadata.error ? { error: this.lastMetadata.error } : {}),
-        };
-        resolve(timedOutResult);
+        if (!this.pendingExecutions.has(requestId)) {
+          return;
+        }
+
+        const payload = createErrorPayload(
+          "timeout",
+          "WORKER_TIMEOUT",
+          `timeout after ${this.timeout}ms`,
+        );
+
+        // A timed-out execution may still be suspended on an IPC await inside the
+        // worker. Tear down the worker and restart on demand so stale async handlers
+        // cannot resume and corrupt the next iteration's shared environment state.
+        this.disposeWorker();
+        this.resolveAllPendingExecutions(payload);
       }, this.timeout);
 
       this.pendingExecutions.set(requestId, { resolve, timeoutId });
@@ -842,16 +907,7 @@ export class PersistentWorkerSession {
       clearTimeout(pending.timeoutId);
     }
     this.pendingExecutions.clear();
-
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-    }
-
-    if (this.blobUrl) {
-      URL.revokeObjectURL(this.blobUrl);
-      this.blobUrl = null;
-    }
+    this.disposeWorker();
 
     logger.debug("RLM", "Persistent worker session terminated");
   }

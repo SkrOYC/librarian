@@ -269,6 +269,42 @@ describe("RlmOrchestrator", () => {
       expect(result.answer).toBe("1:child answer");
       expect(result.stats.subRlmCalls).toBe(1);
     });
+
+    it("should aggregate nested child sub_rlm calls into root stats", async () => {
+      const mockLlm = jest.fn(async (_instruction: string, history: string) => {
+        if (history.includes("Task:\ngrandchild task")) {
+          return "FINAL('deep answer')";
+        }
+
+        if (history.includes("Task:\nchild task")) {
+          return `
+            const nested = await sub_rlm({
+              prompt: "grandchild task",
+              context: "grandchild context"
+            });
+            FINAL(nested.finalAnswer);
+          `;
+        }
+
+        return `
+          const child = await sub_rlm({
+            prompt: "child task",
+            context: "child context"
+          });
+          FINAL(child.finalAnswer);
+        `;
+      });
+
+      const orchestrator = new RlmOrchestrator({
+        ...config,
+        llmQuery: mockLlm,
+      });
+
+      const result = await orchestrator.runDetailed("root task");
+
+      expect(result.answer).toBe("deep answer");
+      expect(result.stats.subRlmCalls).toBe(2);
+    });
   });
 
   describe("completion and recovery", () => {

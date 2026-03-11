@@ -384,6 +384,38 @@ describe("BunWorkerSandbox", () => {
       expect(result.error).toBeDefined();
       expect(result.error).toContain("timeout");
     }, 10_000); // Test timeout
+
+    it("should restart the worker after timeout to avoid stale IPC corruption", async () => {
+      const delayedRepo: RepoApi = {
+        list: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          return "delayed result";
+        },
+        view: async () => "file content",
+        find: async () => JSON.stringify({ files: [], totalFiles: 0 }),
+        grep: async () => JSON.stringify({ matches: [], totalMatches: 0 }),
+      };
+
+      sandbox = new BunWorkerSandbox({
+        repo: delayedRepo,
+        llmQuery: mockLlmQuery,
+        timeout: 100,
+        initialBuffers: { counter: 0 },
+      });
+
+      const timedOut = await sandbox.execute(`
+        await repo.list({});
+        buffers.counter = 99;
+      `);
+      expect(timedOut.error).toContain("timeout");
+
+      const result = await sandbox.execute(`
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return buffers.counter;
+      `);
+
+      expect(result.returnValue).toBe(0);
+    }, 10_000);
   });
 
   describe("Error handling", () => {
