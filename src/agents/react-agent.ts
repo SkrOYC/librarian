@@ -1081,7 +1081,7 @@ notifications = false
 	private async loadRootMetadata(): Promise<RootRepoMetadata> {
 		const { workingDir, technology } = this.config;
 		const rawListing = await listTool.invoke(
-			{ directoryPath: ".", recursive: false, maxDepth: 2, includeHidden: false },
+			{ directoryPath: ".", recursive: false, maxDepth: 1, includeHidden: false },
 			{ context: { workingDir, group: "", technology: "" } },
 		);
 		const listing = JSON.parse(rawListing) as {
@@ -1129,8 +1129,6 @@ notifications = false
 		logger.timingEnd(timingId, "AGENT", "RLM query completed");
 		return result;
 	}
-
-	/**
 
   /**
    * Stream repository query with optional context

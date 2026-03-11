@@ -89,6 +89,20 @@ describe("RlmOrchestrator", () => {
       expect(mockLlm).toHaveBeenCalledTimes(1);
     });
 
+    it("should extract and execute fenced repl code blocks", async () => {
+      const mockLlm = jest.fn(
+        async () => "```repl\nconst answer = 'from fence'; FINAL(answer)\n```",
+      );
+      const orchestrator = new RlmOrchestrator({
+        ...config,
+        llmQuery: mockLlm,
+      });
+
+      const result = await orchestrator.run("test query");
+
+      expect(result).toBe("from fence");
+    });
+
     it("should resolve FINAL_VAR() from active session bindings", async () => {
       const mockLlm = jest.fn(
         async () => "const answer = 'local binding'; FINAL_VAR('answer')",

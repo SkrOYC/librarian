@@ -258,12 +258,12 @@ export class RlmOrchestrator {
   }
 
   private extractCodeFromResponse(response: string): string {
-    const replMatch = response.match(/```repl\\s*([\\s\\S]*?)```/);
+    const replMatch = response.match(/```repl\s*([\s\S]*?)```/);
     if (replMatch?.[1]) {
       return replMatch[1].trim();
     }
 
-    const jsMatch = response.match(/```(?:javascript|js|ts|typescript)\\s*([\\s\\S]*?)```/);
+    const jsMatch = response.match(/```(?:javascript|js|ts|typescript)\s*([\s\S]*?)```/);
     if (jsMatch?.[1]) {
       return jsMatch[1].trim();
     }
