@@ -33,6 +33,20 @@ interface TimingOperation {
   startTime: number;
 }
 
+export function getLogRuntimeLabel(nodeEnv = process.env.NODE_ENV): "test" | "runtime" {
+  return nodeEnv === "test" ? "test" : "runtime";
+}
+
+export function buildLogFilename(
+  timestamp: string,
+  nodeEnv = process.env.NODE_ENV,
+): string {
+  const runtimeLabel = getLogRuntimeLabel(nodeEnv);
+  return runtimeLabel === "test"
+    ? `${timestamp}-librarian-test.log`
+    : `${timestamp}-librarian.log`;
+}
+
 class Logger {
   private static instance: Logger;
   private writer: FileSink | null = null;
@@ -90,7 +104,7 @@ class Logger {
       }
 
       // Log filename
-      const logFilename = `${timestamp}-librarian.log`;
+      const logFilename = buildLogFilename(timestamp);
       const logPath = path.join(logDir, logFilename);
 
       // Create write stream
@@ -98,7 +112,10 @@ class Logger {
       this.writer = logFile.writer();
 
       // Log initialization
-      this.info("LOGGER", `Logging initialized: ${logPath}`);
+      this.info("LOGGER", `Logging initialized: ${logPath}`, {
+        runtimeLabel: getLogRuntimeLabel(),
+        pid: process.pid,
+      });
     } catch {
       // Silent - do nothing on initialization errors
     }

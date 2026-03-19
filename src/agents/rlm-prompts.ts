@@ -34,13 +34,14 @@ Rules:
 4. Use \`sub_rlm\` only with a structured task object.
 5. The normal success path is \`FINAL()\` or \`FINAL_VAR()\`. Fallback summarization is recovery-only.
 6. Preserve work inside the active environment instead of replaying earlier steps.
+7. Include a fenced \`\`\`repl code block with executable code. Any extra prose, thinking traces, XML tags, or markdown outside the fence will be ignored.
 
 Execution patterns to prefer:
 - linear investigation when you need to inspect files or directories one by one
 - pairwise or quadratic comparison only when the task truly requires comparing pairs
 - recursive decomposition when a sub-problem deserves its own \`sub_rlm\` run
 
-When you answer with code, prefer a \`\`\`repl block.
+When you answer, include a \`\`\`repl block containing the executable code the controller should run.
 
 ${contextBlock}
 

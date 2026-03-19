@@ -37,6 +37,8 @@ describe("RLM prompts", () => {
       expect(prompt).toContain("FINAL(answer)");
       expect(prompt).toContain("FINAL_VAR(name)");
       expect(prompt).toContain("Fallback summarization is recovery-only");
+      expect(prompt).toContain("Include a fenced ```repl code block");
+      expect(prompt).toContain("will be ignored");
       expect(prompt).not.toContain("research_repository");
     });
   });

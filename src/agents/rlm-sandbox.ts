@@ -154,13 +154,32 @@ async function runGenerateText(
   prompt: string,
 ): Promise<string> {
   const model = createLanguageModel(config);
-  const { text } = await generateText({
-    model,
-    system: systemPrompt,
-    prompt,
-  });
+  try {
+    const { text } = await generateText({
+      model,
+      system: systemPrompt,
+      prompt,
+    });
 
-  return text;
+    logger.debug("LLM", "generateText completed", {
+      provider: config.type,
+      model: config.model || getDefaultModel(config),
+      systemPromptLength: systemPrompt.length,
+      promptLength: prompt.length,
+      outputLength: text.length,
+    });
+
+    return text;
+  } catch (error) {
+    logger.warn("LLM", "generateText failed", {
+      provider: config.type,
+      model: config.model || getDefaultModel(config),
+      systemPromptLength: systemPrompt.length,
+      promptLength: prompt.length,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 export function createRootModelQuery(

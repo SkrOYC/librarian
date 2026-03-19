@@ -1004,6 +1004,10 @@ notifications = false
 				total_output_chars: result.stats.totalOutputChars,
 				final_set: result.stats.finalSet,
 				fallback_recovery_used: result.stats.fallbackRecoveryUsed,
+				metadata_history_entries: result.metadataHistory.length,
+				last_error:
+					result.metadataHistory[result.metadataHistory.length - 1]?.environment.error
+						?.message ?? null,
 			});
 			return result.answer;
 		}

@@ -46,6 +46,11 @@ export interface RlmRunResult {
   metadataHistory: RlmMetadata[];
 }
 
+interface ExtractedRootCode {
+  code: string;
+  source: "repl" | "js";
+}
+
 export class RlmOrchestrator {
   private readonly config: Required<
     Pick<
@@ -125,14 +130,16 @@ export class RlmOrchestrator {
       throw new Error("RLM orchestrator requires either llmConfig or rootModelQuery");
     }
 
-    this.rootModelQuery = createRootModelQuery(
+    const query = createRootModelQuery(
       this.config.llmConfig,
       this.config.systemPrompt,
-      (inputChars, outputChars) => {
-        this.stats.totalInputChars += inputChars;
-        this.stats.totalOutputChars += outputChars;
-      },
     );
+    this.rootModelQuery = async (history) => {
+      this.stats.totalInputChars += history.length;
+      const text = await query(history);
+      this.stats.totalOutputChars += text.length;
+      return text;
+    };
     return this.rootModelQuery;
   }
 
@@ -167,15 +174,18 @@ export class RlmOrchestrator {
       throw new Error("RLM orchestrator requires either llmConfig or subModelQuery");
     }
 
-    this.subModelQuery = createSubModelQuery(
+    const query = createSubModelQuery(
       this.config.llmConfig,
       undefined,
-      (inputChars, outputChars) => {
-        this.stats.subModelCalls += 1;
-        this.stats.totalInputChars += inputChars;
-        this.stats.totalOutputChars += outputChars;
-      },
     );
+    this.subModelQuery = async (instruction, data) => {
+      this.stats.subModelCalls += 1;
+      const prompt = `Instruction:\n${instruction}\n\nData:\n${data}`;
+      this.stats.totalInputChars += prompt.length;
+      const text = await query(instruction, data);
+      this.stats.totalOutputChars += text.length;
+      return text;
+    };
     return this.subModelQuery;
   }
 
@@ -236,6 +246,28 @@ export class RlmOrchestrator {
     return parts.join("\n");
   }
 
+  private createEnvironmentError(
+    kind: EnvironmentErrorPayload["kind"],
+    code: string,
+    message: string,
+    details?: Record<string, unknown>,
+  ): EnvironmentErrorPayload {
+    return {
+      kind,
+      code,
+      message,
+      ...(details ? { details } : {}),
+    };
+  }
+
+  private previewText(text: string, maxLength = 500): string {
+    if (text.length <= maxLength) {
+      return text;
+    }
+
+    return `${text.slice(0, maxLength)}...`;
+  }
+
   private buildHistory(query: string): string {
     if (!this.rootMetadata) {
       throw new Error("Root metadata must be loaded before building history");
@@ -284,18 +316,24 @@ export class RlmOrchestrator {
     return parts.join("\n\n---\n\n");
   }
 
-  private extractCodeFromResponse(response: string): string {
+  private extractCodeFromResponse(response: string): ExtractedRootCode | null {
     const replMatch = response.match(/```repl\s*([\s\S]*?)```/);
     if (replMatch?.[1]) {
-      return replMatch[1].trim();
+      return {
+        code: replMatch[1].trim(),
+        source: "repl",
+      };
     }
 
     const jsMatch = response.match(/```(?:javascript|js|ts|typescript)\s*([\s\S]*?)```/);
     if (jsMatch?.[1]) {
-      return jsMatch[1].trim();
+      return {
+        code: jsMatch[1].trim(),
+        source: "js",
+      };
     }
 
-    return response.trim();
+    return null;
   }
 
   private async runChild(task: SubRlmRequest): Promise<SubRlmResult> {
@@ -422,6 +460,13 @@ export class RlmOrchestrator {
       for (let iteration = 1; iterationBudget.remaining > 0; iteration++) {
         const history = this.buildHistory(query);
         iterationBudget.remaining -= 1;
+        logger.debug("RLM", "Root iteration started", {
+          iteration,
+          historyLength: history.length,
+          metadataHistoryLength: this.metadataHistory.length,
+          remainingIterationBudget: iterationBudget.remaining,
+          lastError: this.lastError ?? null,
+        });
         let codeResponse: string;
         try {
           codeResponse = await this.getRootModelQuery()(history);
@@ -429,6 +474,11 @@ export class RlmOrchestrator {
           const message =
             error instanceof Error ? error.message : String(error);
           this.lastError = message;
+          logger.warn("RLM", "Root model query failed", {
+            iteration,
+            historyLength: history.length,
+            error: message,
+          });
           this.metadataHistory.push({
             iteration,
             environment: {
@@ -450,11 +500,74 @@ export class RlmOrchestrator {
           this.stats.rootIterations += 1;
           continue;
         }
-        const code = this.extractCodeFromResponse(codeResponse);
+        logger.debug("RLM", "Root model response received", {
+          iteration,
+          responseLength: codeResponse.length,
+          hasReplFence: codeResponse.includes("```repl"),
+          hasJavaScriptFence: /```(?:javascript|js|ts|typescript)/.test(codeResponse),
+          responsePreview: this.previewText(codeResponse),
+        });
+
+        const extracted = this.extractCodeFromResponse(codeResponse);
+        if (!extracted) {
+          const error = this.createEnvironmentError(
+            "llm",
+            "ROOT_MODEL_RESPONSE_FORMAT_INVALID",
+            "Root model response must include a fenced repl/javascript/typescript code block.",
+            {
+              iteration,
+              responsePreview: this.previewText(codeResponse),
+            },
+          );
+
+          this.lastError = error.message;
+          this.metadataHistory.push({
+            iteration,
+            environment: {
+              stdoutPreview: "",
+              stdoutLength: 0,
+              variableCount: 0,
+              variables: [],
+              bufferKeys: [],
+              finalSet: false,
+              error,
+            },
+            errorFeedback:
+              `${error.message} Include a fenced repl code block with executable code. Extra text outside the fence is ignored.`,
+            hasContext: !!this.config.initialContext,
+          });
+          this.stats.rootIterations += 1;
+          logger.warn("RLM", "Root model response rejected", {
+            iteration,
+            code: error.code,
+            responseLength: codeResponse.length,
+            responsePreview: this.previewText(codeResponse),
+          });
+          continue;
+        }
+
+        logger.debug("RLM", "Root model response extracted", {
+          iteration,
+          source: extracted.source,
+          codeLength: extracted.code.length,
+          codePreview: this.previewText(extracted.code),
+        });
+
         const session = await this.ensureSession();
-        const executionResult = await session.execute(code);
+        const executionResult = await session.execute(extracted.code);
 
         this.stats.rootIterations += 1;
+        logger.debug("RLM", "Iteration execution completed", {
+          iteration,
+          stdoutLength: executionResult.metadata.stdoutLength,
+          stdoutPreview: executionResult.metadata.stdoutPreview || "(empty)",
+          variableCount: executionResult.metadata.variableCount,
+          bufferKeys: executionResult.metadata.bufferKeys,
+          finalSet: executionResult.metadata.finalSet,
+          finalSource: executionResult.metadata.finalSource ?? null,
+          errorCode: executionResult.error?.code ?? null,
+          errorMessage: executionResult.error?.message ?? null,
+        });
         this.metadataHistory.push({
           iteration,
           environment: executionResult.metadata,
@@ -472,6 +585,11 @@ export class RlmOrchestrator {
 
         if (executionResult.finalAnswer) {
           this.stats.finalSet = true;
+          logger.info("RLM", "FINAL() captured", {
+            iteration,
+            finalSource: executionResult.metadata.finalSource ?? null,
+            answerPreview: this.previewText(executionResult.finalAnswer, 200),
+          });
           logger.timingEnd(timingId, "RLM", "Orchestrator completed");
           return {
             answer: executionResult.finalAnswer,
@@ -481,6 +599,12 @@ export class RlmOrchestrator {
         }
       }
 
+      logger.warn("RLM", "Root iteration budget exhausted without FINAL()", {
+        rootIterations: this.stats.rootIterations,
+        subRlmCalls: this.stats.subRlmCalls,
+        repoCalls: this.stats.repoCalls,
+        lastError: this.lastError ?? null,
+      });
       const recovered = await this.recoverFinalAnswer(query);
       logger.timingEnd(timingId, "RLM", "Orchestrator recovered");
 

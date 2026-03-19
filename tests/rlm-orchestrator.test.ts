@@ -21,6 +21,10 @@ const rootMetadata: RootRepoMetadata = {
   topLevelEntries: [],
 };
 
+function repl(code: string): string {
+  return `\`\`\`repl\n${code}\n\`\`\``;
+}
+
 describe("RlmOrchestrator", () => {
   let config: RlmOrchestratorConfig;
 
@@ -60,9 +64,9 @@ describe("RlmOrchestrator", () => {
       const mockLlm = jest.fn(async () => {
         callCount += 1;
         if (callCount < 3) {
-          return "print('iteration ' + __iteration__)";
+          return repl("print('iteration ' + __iteration__)");
         }
-        return "FINAL('done')";
+        return repl("FINAL('done')");
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -77,7 +81,7 @@ describe("RlmOrchestrator", () => {
     });
 
     it("should stop iteration when FINAL() is set", async () => {
-      const mockLlm = jest.fn(async () => "FINAL('the answer')");
+      const mockLlm = jest.fn(async () => repl("FINAL('the answer')"));
       const orchestrator = new RlmOrchestrator({
         ...config,
         llmQuery: mockLlm,
@@ -103,9 +107,24 @@ describe("RlmOrchestrator", () => {
       expect(result).toBe("from fence");
     });
 
+    it("should ignore surrounding thinking text when a repl block is present", async () => {
+      const mockLlm = jest.fn(
+        async () =>
+          "<think>I should inspect the repo first</think>\n\n```repl\nFINAL('from wrapped fence')\n```\n\nI used the repl block above.",
+      );
+      const orchestrator = new RlmOrchestrator({
+        ...config,
+        llmQuery: mockLlm,
+      });
+
+      const result = await orchestrator.run("test query");
+
+      expect(result).toBe("from wrapped fence");
+    });
+
     it("should resolve FINAL_VAR() from active session bindings", async () => {
       const mockLlm = jest.fn(
-        async () => "const answer = 'local binding'; FINAL_VAR('answer')",
+        async () => repl("const answer = 'local binding'; FINAL_VAR('answer')"),
       );
       const orchestrator = new RlmOrchestrator({
         ...config,
@@ -123,7 +142,7 @@ describe("RlmOrchestrator", () => {
       const receivedHistories: string[] = [];
       const mockLlm = jest.fn(async (_instruction: string, history: string) => {
         receivedHistories.push(history);
-        return "FINAL('done')";
+        return repl("FINAL('done')");
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -149,9 +168,9 @@ describe("RlmOrchestrator", () => {
         callCount += 1;
         receivedHistories.push(history);
         if (callCount < 3) {
-          return "print('iteration ' + __iteration__)";
+          return repl("print('iteration ' + __iteration__)");
         }
-        return "FINAL('done')";
+        return repl("FINAL('done')");
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -174,9 +193,9 @@ describe("RlmOrchestrator", () => {
       const mockLlm = jest.fn(async () => {
         executionCount += 1;
         if (executionCount === 1) {
-          return "function double(x) { return x * 2; } let counter = 1;";
+          return repl("function double(x) { return x * 2; } let counter = 1;");
         }
-        return "counter = double(counter); FINAL(String(counter))";
+        return repl("counter = double(counter); FINAL(String(counter))");
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -194,17 +213,17 @@ describe("RlmOrchestrator", () => {
     it("should launch a child recursive run and inject its structured result", async () => {
       const mockLlm = jest.fn(async (_instruction: string, history: string) => {
         if (history.includes("Task:\nchild task")) {
-          return "FINAL(context.toUpperCase())";
+          return repl("FINAL(context.toUpperCase())");
         }
 
-        return `
+        return repl(`
           const child = await sub_rlm({
             prompt: "child task",
             context: "from child",
             rootHint: "uppercase the context"
           });
           FINAL(child.finalAnswer);
-        `;
+        `);
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -220,10 +239,10 @@ describe("RlmOrchestrator", () => {
     it("should isolate child buffers from the parent session", async () => {
       const mockLlm = jest.fn(async (_instruction: string, history: string) => {
         if (history.includes("Task:\ninspect child isolation")) {
-          return "FINAL(String(buffers.parentBuffer))";
+          return repl("FINAL(String(buffers.parentBuffer))");
         }
 
-        return `
+        return repl(`
           buffers.parentBuffer = "from-parent";
           const child = await sub_rlm({
             prompt: "inspect child isolation",
@@ -231,7 +250,7 @@ describe("RlmOrchestrator", () => {
             rootHint: "check buffer visibility"
           });
           FINAL(child.finalAnswer);
-        `;
+        `);
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -247,16 +266,16 @@ describe("RlmOrchestrator", () => {
     it("should expose child stats as part of the structured result", async () => {
       const mockLlm = jest.fn(async (_instruction: string, history: string) => {
         if (history.includes("Task:\nchild stats task")) {
-          return "FINAL(context)";
+          return repl("FINAL(context)");
         }
 
-        return `
+        return repl(`
           const child = await sub_rlm({
             prompt: "child stats task",
             context: "child answer"
           });
           FINAL(String(child.stats.rootIterations) + ":" + child.finalAnswer);
-        `;
+        `);
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -273,26 +292,26 @@ describe("RlmOrchestrator", () => {
     it("should aggregate nested child sub_rlm calls into root stats", async () => {
       const mockLlm = jest.fn(async (_instruction: string, history: string) => {
         if (history.includes("Task:\ngrandchild task")) {
-          return "FINAL('deep answer')";
+          return repl("FINAL('deep answer')");
         }
 
         if (history.includes("Task:\nchild task")) {
-          return `
+          return repl(`
             const nested = await sub_rlm({
               prompt: "grandchild task",
               context: "grandchild context"
             });
             FINAL(nested.finalAnswer);
-          `;
+          `);
         }
 
-        return `
+        return repl(`
           const child = await sub_rlm({
             prompt: "child task",
             context: "child context"
           });
           FINAL(child.finalAnswer);
-        `;
+        `);
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -309,26 +328,26 @@ describe("RlmOrchestrator", () => {
     it("should share the root iteration budget across nested child runs", async () => {
       const mockLlm = jest.fn(async (_instruction: string, history: string) => {
         if (history.includes("Task:\nchild task")) {
-          return `
+          return repl(`
             const grandchild = await sub_rlm({
               prompt: "grandchild task",
               context: "grandchild context"
             });
             FINAL(String(grandchild.stats.rootIterations) + ":" + grandchild.finalAnswer);
-          `;
+          `);
         }
 
         if (history.includes("Task:\ngrandchild task")) {
-          return "FINAL('grandchild final')";
+          return repl("FINAL('grandchild final')");
         }
 
-        return `
+        return repl(`
           const child = await sub_rlm({
             prompt: "child task",
             context: "child context"
           });
           FINAL(String(child.stats.rootIterations) + ":" + child.finalAnswer);
-        `;
+        `);
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -347,7 +366,7 @@ describe("RlmOrchestrator", () => {
     it("should enforce a maximum recursion depth for child runs", async () => {
       const mockLlm = jest.fn(async (_instruction: string, history: string) => {
         if (history.includes("Task:\nchild task")) {
-          return `
+          return repl(`
             try {
               await sub_rlm({
                 prompt: "grandchild task",
@@ -357,16 +376,16 @@ describe("RlmOrchestrator", () => {
             } catch (error) {
               FINAL(String(error.code));
             }
-          `;
+          `);
         }
 
-        return `
+        return repl(`
           const child = await sub_rlm({
             prompt: "child task",
             context: "child context"
           });
           FINAL(child.finalAnswer);
-        `;
+        `);
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -386,7 +405,7 @@ describe("RlmOrchestrator", () => {
   describe("completion and recovery", () => {
     it("should support FINAL() with multiline content", async () => {
       const mockLlm = jest.fn(
-        async () => "FINAL('Line 1\\nLine 2\\nLine 3')",
+        async () => repl("FINAL('Line 1\\nLine 2\\nLine 3')"),
       );
       const orchestrator = new RlmOrchestrator({
         ...config,
@@ -402,7 +421,7 @@ describe("RlmOrchestrator", () => {
       let callCount = 0;
       const mockLlm = jest.fn(async () => {
         callCount += 1;
-        return "print('still running')";
+        return repl("print('still running')");
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -440,6 +459,8 @@ describe("RlmOrchestrator", () => {
       expect(result.metadataHistory[0].environment.error?.code).toBe(
         "ROOT_MODEL_QUERY_FAILED",
       );
+      expect(result.stats.totalInputChars).toBeGreaterThan(0);
+      expect(result.stats.totalOutputChars).toBe(0);
     });
 
     it("should continue after script errors and allow later recovery", async () => {
@@ -447,9 +468,9 @@ describe("RlmOrchestrator", () => {
       const mockLlm = jest.fn(async () => {
         callCount += 1;
         if (callCount === 1) {
-          return "throw new Error('script error')";
+          return repl("throw new Error('script error')");
         }
-        return "FINAL('recovered')";
+        return repl("FINAL('recovered')");
       });
 
       const orchestrator = new RlmOrchestrator({
@@ -463,6 +484,29 @@ describe("RlmOrchestrator", () => {
       expect(result.metadataHistory[0].environment.error?.kind).toBe("runtime");
       expect(result.metadataHistory[0].environment.error?.code).toBe(
         "SCRIPT_EXECUTION_FAILED",
+      );
+    });
+
+    it("should reject unfenced root responses instead of executing raw text", async () => {
+      const mockLlm = jest
+        .fn()
+        .mockResolvedValueOnce("FINAL('raw answer')")
+        .mockResolvedValueOnce(repl("FINAL('recovered')"));
+
+      const orchestrator = new RlmOrchestrator({
+        ...config,
+        llmQuery: mockLlm,
+      });
+
+      const result = await orchestrator.runDetailed("test query");
+
+      expect(result.answer).toBe("recovered");
+      expect(result.metadataHistory[0].environment.error?.kind).toBe("llm");
+      expect(result.metadataHistory[0].environment.error?.code).toBe(
+        "ROOT_MODEL_RESPONSE_FORMAT_INVALID",
+      );
+      expect(result.metadataHistory[0].errorFeedback).toContain(
+        "Extra text outside the fence is ignored",
       );
     });
   });
