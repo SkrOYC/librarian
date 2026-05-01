@@ -27,7 +27,7 @@ export interface ReadmeConfig {
     | "anthropic"
     | "google"
     | "openai-compatible"
-    | "codex-cli";
+    | "codex-sdk";
   llm_model?: string;
   base_url?: string;
 }

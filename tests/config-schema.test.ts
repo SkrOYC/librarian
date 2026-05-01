@@ -114,20 +114,24 @@ describe("Config Schema Alignment", () => {
 
     const originalExit = process.exit;
     const originalError = console.error;
-    process.exit = ((code?: number) => {
+    const exitWithThrow: typeof process.exit = (code) => {
       throw new Error(`process.exit:${code ?? 0}`);
-    }) as typeof process.exit;
-    console.error = (() => undefined) as typeof console.error;
+    };
+    const noopError: typeof console.error = () => undefined;
+    process.exit = exitWithThrow;
+    console.error = noopError;
 
     try {
-      await expect(loadConfig(TEST_CONFIG_PATH)).rejects.toThrow("process.exit:1");
+      await expect(loadConfig(TEST_CONFIG_PATH)).rejects.toThrow(
+        "process.exit:1"
+      );
     } finally {
       process.exit = originalExit;
       console.error = originalError;
     }
   });
 
-  it("should support codex-cli provider without API key", async () => {
+  it("should support codex-sdk provider without API key", async () => {
     const newConfig = {
       technologies: {
         default: {
@@ -136,8 +140,8 @@ describe("Config Schema Alignment", () => {
       },
       repos_path: "./libs",
       aiProvider: {
-        type: "codex-cli",
-        model: "gpt-5.3-codex",
+        type: "codex-sdk",
+        model: "gpt-5.4:xhigh",
       },
     };
 
@@ -145,9 +149,111 @@ describe("Config Schema Alignment", () => {
 
     const loaded: any = await loadConfig(TEST_CONFIG_PATH);
 
-    expect(loaded.aiProvider?.type).toBe("codex-cli");
-    expect(loaded.aiProvider?.model).toBe("gpt-5.3-codex");
+    expect(loaded.aiProvider?.type).toBe("codex-sdk");
+    expect(loaded.aiProvider?.model).toBe("gpt-5.4:xhigh");
     expect(loaded.aiProvider?.apiKey).toBe("");
+  });
+
+  it("should not translate Librarian API keys into codex-sdk auth", async () => {
+    const newConfig = {
+      technologies: {
+        default: {
+          demo: { repo: "http://example.com" },
+        },
+      },
+      repos_path: "./libs",
+      aiProvider: {
+        type: "codex-sdk",
+        apiKey: "sk-config-key",
+        model: "gpt-5.4:xhigh",
+      },
+    };
+
+    fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
+    fs.writeFileSync(TEST_ENV_PATH, "LIBRARIAN_API_KEY=sk-env-key");
+
+    const loaded: any = await loadConfig(TEST_CONFIG_PATH);
+
+    expect(loaded.aiProvider?.type).toBe("codex-sdk");
+    expect(loaded.aiProvider?.apiKey).toBe("");
+  });
+
+  it("should support codex-sdk provider with a plain model", async () => {
+    const newConfig = {
+      technologies: {
+        default: {
+          demo: { repo: "http://example.com" },
+        },
+      },
+      repos_path: "./libs",
+      aiProvider: {
+        type: "codex-sdk",
+        model: "gpt-5.4",
+      },
+    };
+
+    fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
+
+    const loaded: any = await loadConfig(TEST_CONFIG_PATH);
+
+    expect(loaded.aiProvider?.type).toBe("codex-sdk");
+    expect(loaded.aiProvider?.model).toBe("gpt-5.4");
+  });
+
+  it("should support codex-sdk provider with omitted model", async () => {
+    const newConfig = {
+      technologies: {
+        default: {
+          demo: { repo: "http://example.com" },
+        },
+      },
+      repos_path: "./libs",
+      aiProvider: {
+        type: "codex-sdk",
+      },
+    };
+
+    fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
+
+    const loaded: any = await loadConfig(TEST_CONFIG_PATH);
+
+    expect(loaded.aiProvider?.type).toBe("codex-sdk");
+    expect(loaded.aiProvider?.model).toBeUndefined();
+  });
+
+  it("should reject malformed codex-sdk model suffixes", async () => {
+    const newConfig = {
+      technologies: {
+        default: {
+          demo: { repo: "http://example.com" },
+        },
+      },
+      repos_path: "./libs",
+      aiProvider: {
+        type: "codex-sdk",
+        model: "gpt-5.4:ultra",
+      },
+    };
+
+    fs.writeFileSync(TEST_CONFIG_PATH, stringify(newConfig));
+
+    const originalExit = process.exit;
+    const originalError = console.error;
+    const exitWithThrow: typeof process.exit = (code) => {
+      throw new Error(`process.exit:${code ?? 0}`);
+    };
+    const noopError: typeof console.error = () => undefined;
+    process.exit = exitWithThrow;
+    console.error = noopError;
+
+    try {
+      await expect(loadConfig(TEST_CONFIG_PATH)).rejects.toThrow(
+        "process.exit:1"
+      );
+    } finally {
+      process.exit = originalExit;
+      console.error = originalError;
+    }
   });
 
   it("should auto-create default config when file missing", async () => {

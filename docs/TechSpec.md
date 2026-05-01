@@ -515,7 +515,7 @@ src/
 │   │   ├── create-sub-model-query.ts
 │   │   ├── claude-cli.adapter.ts
 │   │   ├── gemini-cli.adapter.ts
-│   │   └── codex-cli.adapter.ts
+│   │   └── codex-sdk.adapter.ts
 │   ├── sandbox/
 │   │   ├── persistent-worker-session.ts
 │   │   ├── environment-metadata.ts

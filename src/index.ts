@@ -31,7 +31,7 @@ export interface LibrarianConfig {
       | "anthropic-compatible"
       | "claude-code"
       | "gemini-cli"
-      | "codex-cli";
+      | "codex-sdk";
     apiKey: string;
     model?: string;
     baseURL?: string;
@@ -45,7 +45,7 @@ export class Librarian {
 
   constructor(config: LibrarianConfig) {
     // Validate AI provider type
-    const validProviderTypes = [
+    const validProviderTypes = new Set<string>([
       "openai",
       "anthropic",
       "google",
@@ -53,13 +53,10 @@ export class Librarian {
       "anthropic-compatible",
       "claude-code",
       "gemini-cli",
-      "codex-cli",
-    ] as const;
-    type ValidProviderType = (typeof validProviderTypes)[number];
+      "codex-sdk",
+    ]);
 
-    if (
-      !validProviderTypes.includes(config.aiProvider.type as ValidProviderType)
-    ) {
+    if (!validProviderTypes.has(config.aiProvider.type)) {
       throw new Error(
         `Unsupported AI provider type: ${config.aiProvider.type}`
       );
@@ -78,16 +75,12 @@ export class Librarian {
   }
 
   async initialize(): Promise<void> {
-    const cliProviders = {
-      "claude-code": { command: "claude", displayName: "Claude" },
-      "gemini-cli": { command: "gemini", displayName: "Gemini" },
-      "codex-cli": { command: "codex", displayName: "Codex" },
-    } as const;
+    if (this.config.aiProvider.type === "claude-code") {
+      this.verifyCliProvider("claude", "claude-code", "Claude");
+    }
 
-    if (this.config.aiProvider.type in cliProviders) {
-      const providerType = this.config.aiProvider.type as keyof typeof cliProviders;
-      const { command, displayName } = cliProviders[providerType];
-      this.verifyCliProvider(command, providerType, displayName);
+    if (this.config.aiProvider.type === "gemini-cli") {
+      this.verifyCliProvider("gemini", "gemini-cli", "Gemini");
     }
 
     // Create working directory if it doesn't exist
@@ -107,9 +100,9 @@ export class Librarian {
   }
 
   private verifyCliProvider(
-    command: "claude" | "gemini" | "codex",
-    providerType: "claude-code" | "gemini-cli" | "codex-cli",
-    displayName: "Claude" | "Gemini" | "Codex"
+    command: "claude" | "gemini",
+    providerType: "claude-code" | "gemini-cli",
+    displayName: "Claude" | "Gemini"
   ): void {
     try {
       const result = Bun.spawnSync([command, "--version"], {

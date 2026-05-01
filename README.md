@@ -21,7 +21,7 @@ Librarian CLI allows AI coding agents to:
 - **Repository Management**: Auto-clone and sync from Git before each query
 - **Direct RLM Orchestrator**: API-backed providers run through a metadata-first recursive controller with persistent REPL state
 - **AI SDK Provider Adapters**: Support for OpenAI, Anthropic, Google, and OpenAI-compatible APIs through AI SDK adapters
-- **CLI Provider Routing**: Claude CLI, Gemini CLI, and Codex CLI stay on their native subprocess path
+- **Provider Routing**: Claude CLI and Gemini CLI stay on their native subprocess path; Codex uses the Codex SDK
 - **Dynamic Prompt Construction**: Context-aware system prompts based on technology/group selection
 - **Sandboxed Tool Execution**: Secure file operations within isolated working directories
 - **Integrated Toolset**: Built-in tools for file listing, reading, grep, and glob search
@@ -246,7 +246,7 @@ technologies:
 			description: "LangGraph is low-level orchestration framework..."
 # Optional: Uncomment and configure LLM provider if you want to override OpenCode Zen
 # aiProvider:
-#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
+#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-sdk
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
 #   model: gpt-5.2 # Required for openai-compatible and anthropic-compatible providers
 #   baseURL: # Required for openai-compatible and anthropic-compatible providers
@@ -367,7 +367,7 @@ technologies:
       description: "LangGraph is low-level orchestration framework..."
 # Optional: Uncomment and configure LLM provider if you want to override OpenCode Zen
 # aiProvider:
-#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-cli
+#   type: openai # Options: openai, anthropic, google, openai-compatible, anthropic-compatible, claude-code, gemini-cli, codex-sdk
 #   apiKey: # API key (loaded from .env as LIBRARIAN_API_KEY if not provided)
 #   model: gpt-5.2 # Required for openai-compatible and anthropic-compatible providers
 #   baseURL: # Required for openai-compatible and anthropic-compatible providers
@@ -412,7 +412,7 @@ Example:
 
 4. **Agent Orchestrator** (`src/agents/`)
    - Direct RLM orchestration for API-backed providers
-   - CLI subprocess routing for Claude CLI, Gemini CLI, and Codex CLI
+   - CLI subprocess routing for Claude CLI and Gemini CLI, plus Codex SDK routing
    - Dynamic system prompt construction based on group/tech context
    - Structured run accounting and logging
 
@@ -481,7 +481,7 @@ This sandbox is suitable for:
 
 ## LLM Provider Configuration
 
-Librarian uses AI SDK adapters for API-backed providers and subprocess routing for CLI-backed providers. It works out-of-the-box with OpenCode Zen (no LLM configuration required by default), and provider switching remains configuration-driven.
+Librarian uses AI SDK adapters for API-backed providers, subprocess routing for Claude/Gemini CLI providers, and the Codex SDK for Codex. It works out-of-the-box with OpenCode Zen (no LLM configuration required by default), and provider switching remains configuration-driven.
 
 By default, the system uses OpenCode Zen:
 
@@ -559,15 +559,15 @@ aiProvider:
 
 **Note**: For Gemini CLI provider, ensure the `gemini` CLI is installed and available in your PATH.
 
-### Codex CLI (CLI-based)
+### Codex SDK
 
 ```yaml
 aiProvider:
-  type: codex-cli
-  model: gpt-5.3-codex # Optional model passed to Codex CLI
+  type: codex-sdk
+  model: gpt-5.4:xhigh # Optional model with optional reasoning effort suffix
 ```
 
-**Note**: For Codex CLI provider, ensure the `codex` CLI is installed and available in your PATH.
+**Note**: Codex SDK uses the same auth as the system `codex` CLI. Librarian does not translate `apiKey` or `LIBRARIAN_API_KEY` into Codex SDK auth, so API keys used for other providers cannot override the local Codex login. Supported reasoning suffixes are `minimal`, `low`, `medium`, `high`, and `xhigh`; a plain model such as `gpt-5.4` is also valid. SDK 0.128.0 does not expose the old `--ephemeral` flag, so Librarian sets `history.persistence = "none"` where supported, while the SDK may still create local session files under the Codex session directory.
 
 **Note**: The same configuration interface works across all providers thanks to the internal adapter layer and OpenCode Zen integration.
 

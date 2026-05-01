@@ -59,14 +59,14 @@ describe("Configuration", () => {
         "anthropic",
         "google",
         "openai-compatible",
-        "codex-cli",
+        "codex-sdk",
       ]).toContain(config.llm_provider);
     });
 
     it("should support all LLM providers", () => {
       const providers: Array<
-        "openai" | "anthropic" | "google" | "openai-compatible" | "codex-cli"
-      > = ["openai", "anthropic", "google", "openai-compatible", "codex-cli"];
+        "openai" | "anthropic" | "google" | "openai-compatible" | "codex-sdk"
+      > = ["openai", "anthropic", "google", "openai-compatible", "codex-sdk"];
 
       for (const provider of providers) {
         const config = createReadmeAlignedConfig({ llm_provider: provider });

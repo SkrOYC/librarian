@@ -4,11 +4,12 @@ import path from "node:path";
 import type { z } from "zod";
 import { listTool } from "../tools/file-listing.tool.js";
 import { logger } from "../utils/logger.js";
+import { streamCodexSdk } from "./codex-sdk-adapter.js";
 import type { AgentContext } from "./context-schema.js";
 import {
-	RlmOrchestrator,
-	type RlmOrchestratorConfig,
-	type RlmRunResult,
+  RlmOrchestrator,
+  type RlmOrchestratorConfig,
+  type RlmRunResult,
 } from "./rlm-orchestrator.js";
 import { createRlmSystemPrompt } from "./rlm-prompts.js";
 import type { LlmConfig } from "./rlm-sandbox.js";
@@ -21,133 +22,139 @@ export type { AgentContext } from "./context-schema.js";
  * Configuration interface for ReactAgent
  */
 export interface ReactAgentConfig {
-	/** AI provider configuration including type, API key, and optional model/base URL */
-	aiProvider: {
-		type:
-			| "openai"
-			| "anthropic"
-			| "google"
-			| "openai-compatible"
-			| "anthropic-compatible"
-			| "claude-code"
-			| "gemini-cli"
-			| "codex-cli";
-		apiKey: string;
-		model?: string;
-		baseURL?: string;
-	};
-	/** Working directory where the agent operates */
-	workingDir: string;
-	/** Optional technology context for dynamic system prompt construction */
-	technology?: {
-		name: string;
-		repository: string;
-		branch: string;
-	};
-	/** Optional context schema for runtime context validation */
-	contextSchema?: z.ZodType | undefined;
+  /** AI provider configuration including type, API key, and optional model/base URL */
+  aiProvider: {
+    type:
+      | "openai"
+      | "anthropic"
+      | "google"
+      | "openai-compatible"
+      | "anthropic-compatible"
+      | "claude-code"
+      | "gemini-cli"
+      | "codex-sdk";
+    apiKey: string;
+    model?: string;
+    baseURL?: string;
+  };
+  /** Working directory where the agent operates */
+  workingDir: string;
+  /** Optional technology context for dynamic system prompt construction */
+  technology?: {
+    name: string;
+    repository: string;
+    branch: string;
+  };
+  /** Optional context schema for runtime context validation */
+  contextSchema?: z.ZodType | undefined;
 }
 
 export class ReactAgent {
-	private rlmOrchestrator?: RlmOrchestrator;
-	private readonly config: ReactAgentConfig;
-	private readonly contextSchema?: z.ZodType | undefined;
+  private rlmOrchestrator?: RlmOrchestrator;
+  private readonly config: ReactAgentConfig;
+  private readonly contextSchema?: z.ZodType | undefined;
 
-	constructor(config: ReactAgentConfig) {
-		this.config = config;
-		this.contextSchema = config.contextSchema;
+  constructor(config: ReactAgentConfig) {
+    this.config = config;
+    this.contextSchema = config.contextSchema;
+    let mode: "codex-sdk" | "cli" | "rlm" = "rlm";
+    if (this.config.aiProvider.type === "codex-sdk") {
+      mode = "codex-sdk";
+    } else if (this.isCliProvider()) {
+      mode = "cli";
+    }
 
-		logger.info("AGENT", "Initializing ReactAgent", {
-			aiProviderType: config.aiProvider.type,
-			model: config.aiProvider.model,
-			workingDir: config.workingDir.replace(os.homedir(), "~"),
-			mode: this.isCliProvider() ? "cli" : "rlm",
-			hasContextSchema: !!this.contextSchema,
-		});
-	}
+    logger.info("AGENT", "Initializing ReactAgent", {
+      aiProviderType: config.aiProvider.type,
+      model: config.aiProvider.model,
+      workingDir: config.workingDir.replace(os.homedir(), "~"),
+      mode,
+      hasContextSchema: !!this.contextSchema,
+    });
+  }
 
-	/**
-	 * Generates a pre-computed directory listing for the repository at depth 2.
-	 * This is used to provide the agent with structural context about the codebase.
-	 *
-	 * @param workingDir - The directory to list
-	 * @returns The directory listing as a string, or undefined if it fails
-	 */
-	private async getRepoOutline(
-		workingDir: string,
-	): Promise<string | undefined> {
-		try {
-			const toolContext = { workingDir, group: "", technology: "" };
-			const result = await listTool.invoke(
-				{
-					directoryPath: ".",
-					recursive: true,
-					maxDepth: 2,
-					includeHidden: false,
-				},
-				{ context: toolContext },
-			);
+  /**
+   * Generates a pre-computed directory listing for the repository at depth 2.
+   * This is used to provide the agent with structural context about the codebase.
+   *
+   * @param workingDir - The directory to list
+   * @returns The directory listing as a string, or undefined if it fails
+   */
+  private async getRepoOutline(
+    workingDir: string
+  ): Promise<string | undefined> {
+    try {
+      const toolContext = { workingDir, group: "", technology: "" };
+      const result = await listTool.invoke(
+        {
+          directoryPath: ".",
+          recursive: true,
+          maxDepth: 2,
+          includeHidden: false,
+        },
+        { context: toolContext }
+      );
 
-			// Parse to get a cleaner format for the prompt
-			const parsed = JSON.parse(result);
+      // Parse to get a cleaner format for the prompt
+      const parsed = JSON.parse(result);
 
-			// Format as a simple tree structure for readability
-			const lines: string[] = [];
-			for (const entry of parsed.entries || []) {
-				const indent = entry.depth === 0 ? "" : "  ".repeat(entry.depth);
-				const marker = entry.isDirectory ? "[DIR]" : "[FILE]";
-				const size = entry.size
-					? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})`
-					: "";
-				lines.push(`${indent}${marker} ${entry.name}${size}`);
-			}
+      // Format as a simple tree structure for readability
+      const lines: string[] = [];
+      for (const entry of parsed.entries || []) {
+        const indent = entry.depth === 0 ? "" : "  ".repeat(entry.depth);
+        const marker = entry.isDirectory ? "[DIR]" : "[FILE]";
+        const size = entry.size
+          ? ` (${entry.lineCount || entry.size} ${entry.isDirectory ? "items" : "lines"})`
+          : "";
+        lines.push(`${indent}${marker} ${entry.name}${size}`);
+      }
 
-			return lines.join("\n");
-		} catch (error) {
-			logger.warn("AGENT", "Failed to generate repo outline", {
-				workingDir: workingDir.replace(os.homedir(), "~"),
-				error: error instanceof Error ? error.message : String(error),
-			});
-			return undefined;
-		}
-	}
+      return lines.join("\n");
+    } catch (error) {
+      logger.warn("AGENT", "Failed to generate repo outline", {
+        workingDir: workingDir.replace(os.homedir(), "~"),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  }
 
-	/**
-	 * Builds the context block describing the repository
-	 */
-	private buildContextBlock(): string {
-		const { workingDir, technology } = this.config;
+  /**
+   * Builds the context block describing the repository
+   */
+  private buildContextBlock(): string {
+    const { workingDir, technology } = this.config;
 
-		if (technology) {
-			return `You have been provided the **${technology.name}** repository.
+    if (technology) {
+      return `You have been provided the **${technology.name}** repository.
 Repository: ${technology.repository}
 Your Working Directory: ${workingDir}`;
-		}
-		return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
-	}
+    }
+    return `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}`;
+  }
 
-	/**
-	 * Creates the RLM (Recursive Language Model) system prompt for API-backed providers.
-	 * Delegates to rlm-prompts.ts for the actual prompt template.
-	 *
-	 * @param repoOutline - Optional pre-computed directory listing
-	 * @returns A context-aware RLM system prompt string
-	 */
-	createRlmSystemPrompt(repoOutline?: string): string {
-		const contextBlock = this.buildContextBlock();
-		return createRlmSystemPrompt(contextBlock, repoOutline);
-	}
+  /**
+   * Creates the RLM (Recursive Language Model) system prompt for API-backed providers.
+   * Delegates to rlm-prompts.ts for the actual prompt template.
+   *
+   * @param repoOutline - Optional pre-computed directory listing
+   * @returns A context-aware RLM system prompt string
+   */
+  createRlmSystemPrompt(repoOutline?: string): string {
+    const contextBlock = this.buildContextBlock();
+    return createRlmSystemPrompt(contextBlock, repoOutline);
+  }
 
-	/**
-	 * Creates a dynamic system prompt based on current configuration and technology context.
-	 * Used by CLI providers (claude-code, gemini-cli, codex-cli).
-	 * @returns A context-aware system prompt string
-	 */
-	createDynamicSystemPrompt(): string {
-		const { workingDir, technology } = this.config;
+  /**
+   * Creates a dynamic system prompt based on current configuration and technology context.
+   * Used by CLI/SDK providers (claude-code, gemini-cli, codex-sdk).
+   * @returns A context-aware system prompt string
+   */
+  createDynamicSystemPrompt(): string {
+    const { workingDir, technology } = this.config;
 
-		// Dynamic system prompt generation code
-		let prompt = `
+    // Dynamic system prompt generation code
+    let prompt = `
 You are a **Codebase Investigator**. Your mission is to provide technical insights grounded in source code evidence. You approach every query as a methodical investigation, prioritizing verification over assumptions and ensuring every conclusion is backed by specific file citations.
 
 # Instructions
@@ -290,878 +297,556 @@ Remember: ALL tool calls MUST be executed using absolute path in \`[WORKING_DIRE
 **Final Reminder: Every claim must be backed by evidence. If you haven't verified it in the code, don't say it.**
 `;
 
-		// Add technology context if available
-		if (technology) {
-			prompt = prompt.replace(
-				"<context_block>",
-				`You have been provided the **${technology.name}** repository.
+    // Add technology context if available
+    if (technology) {
+      prompt = prompt.replace(
+        "<context_block>",
+        `You have been provided the **${technology.name}** repository.
 Repository: ${technology.repository}
 Your Working Directory: ${workingDir}
 
-Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``,
-			);
-			prompt = prompt.replace("</context_block>", "");
-		} else {
-			prompt = prompt.replace(
-				"<context_block>",
-				`You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}
-
-Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``,
-			);
-			prompt = prompt.replace("</context_block>", "");
-		}
-
-		logger.debug("AGENT", "Dynamic system prompt generated", {
-			hasTechnologyContext: !!technology,
-			promptLength: prompt.length,
-		});
-
-		return prompt;
-	}
-
-	private async createGeminiTempDir(): Promise<string> {
-		const tempDir = path.join(os.tmpdir(), `librarian-gemini-${Date.now()}`);
-		await mkdir(tempDir, { recursive: true });
-		return tempDir;
-	}
-
-	private async setupGeminiConfig(
-		tempDir: string,
-		systemPrompt: string,
-		_model: string,
-	): Promise<{ systemPromptPath: string; settingsPath: string }> {
-		const systemPromptPath = path.join(tempDir, "system.md");
-		const settingsPath = path.join(tempDir, "settings.json");
-
-		await Bun.write(systemPromptPath, systemPrompt);
-
-		const settings = {
-			tools: {
-				core: ["list_directory", "read_file", "glob", "search_file_content"],
-				autoAccept: true,
-			},
-			mcpServers: {},
-			mcp: {
-				excluded: ["*"],
-			},
-			experimental: {
-				enableAgents: false,
-			},
-			output: {
-				format: "json",
-			},
-		};
-		await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
-
-		return { systemPromptPath, settingsPath };
-	}
-
-	private buildGeminiEnv(
-		tempDir: string,
-		model: string,
-	): Record<string, string | undefined> {
-		const settingsPath = path.join(tempDir, "settings.json");
-		const systemPromptPath = path.join(tempDir, "system.md");
-
-		return {
-			...Bun.env,
-			GEMINI_SYSTEM_MD: systemPromptPath,
-			GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath,
-			GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
-			GEMINI_MODEL: model,
-		};
-	}
-
-	private async cleanupGeminiTempDir(tempDir: string): Promise<void> {
-		try {
-			await rm(tempDir, { recursive: true, force: true });
-		} catch (err) {
-			logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
-				error: err,
-			});
-		}
-	}
-
-	private async createCodexTempDir(): Promise<string> {
-		const tempDir = path.join(os.tmpdir(), `librarian-codex-${Date.now()}`);
-		await mkdir(tempDir, { recursive: true });
-		return tempDir;
-	}
-
-	private async setupCodexConfig(
-		tempDir: string,
-		systemPrompt: string,
-	): Promise<{ instructionsPath: string; configPath: string; codexHome: string }> {
-		const instructionsPath = path.join(tempDir, "instructions.md");
-		const codexHome = path.join(tempDir, ".codex-home");
-		const configPath = path.join(codexHome, "config.toml");
-
-		// Write the system prompt to a file
-		await Bun.write(instructionsPath, systemPrompt);
-		await mkdir(codexHome, { recursive: true });
-
-		// Create Codex config that uses the instructions file
-		const config = `# Librarian Codex Configuration
-# This config is isolated from user config
-#
-# Notes
-# - Root keys must appear before tables in TOML.
-# - Optional keys that default to "unset" are shown commented out with notes.
-# - MCP servers, profiles, and model providers are examples; remove or edit.
-
-################################################################################
-# Core Model Selection
-################################################################################
-
-# Primary model used by Codex. Default: "gpt-5.2-codex" on all platforms.
-model = "gpt-5.3-codex"
-
-# Default communication style for supported models. Default: "friendly".
-# Allowed values: none | friendly | pragmatic
-personality = "friendly"
-
-################################################################################
-# Reasoning & Verbosity (Responses API capable models)
-################################################################################
-
-# Reasoning effort: minimal | low | medium | high | xhigh (default: medium; xhigh on gpt-5.2-codex and gpt-5.2)
-model_reasoning_effort = "high"
-
-# Reasoning summary: auto | concise | detailed | none (default: auto)
-model_reasoning_summary = "none"
-
-# Text verbosity for GPT-5 family (Responses API): low | medium | high (default: medium)
-model_verbosity = "high"
-
-################################################################################
-# Instruction Overrides
-################################################################################
-
-# Override built-in base instructions with a file path. Default: unset.
-model_instructions_file = "${instructionsPath}"
-
-################################################################################
-# Notifications
-################################################################################
-
-# External notifier program (argv array). When unset: disabled.
-# Example: notify = ["notify-send", "Codex"]
-notify = [ ]
-
-################################################################################
-# Approval & Sandbox
-################################################################################
-
-# When to ask for command approval:
-# - untrusted: only known-safe read-only commands auto-run; others prompt
-# - on-request: model decides when to ask (default)
-# - never: never prompt (risky)
-# - { reject = { ... } }: auto-reject selected prompt categories
-approval_policy = "untrusted"
-# Example granular auto-reject policy:
-# approval_policy = { reject = { sandbox_approval = true, rules = false, mcp_elicitations = false } }
-
-# Allow login-shell semantics for shell-based tools when they request \`login = true\`.
-# Default: true. Set false to force non-login shells and reject explicit login-shell requests.
-allow_login_shell = false
-
-# Filesystem/network sandbox policy for tool calls:
-# - read-only (default)
-# - workspace-write
-# - danger-full-access (no sandbox; extremely risky)
-sandbox_mode = "read-only"
-
-################################################################################
-# History & File Opener
-################################################################################
-
-# URI scheme for clickable citations: vscode (default) | vscode-insiders | windsurf | cursor | none
-file_opener = "none"
-
-################################################################################
-# UI, Notifications, and Misc
-################################################################################
-
-# Suppress internal reasoning events from output. Default: false
-hide_agent_reasoning = true
-
-# Show raw reasoning content when available. Default: false
-show_raw_agent_reasoning = true
-
-# Check for updates on startup. Default: true
-check_for_update_on_startup = false
-
-################################################################################
-# Sandbox Advanced Settings
-################################################################################
-[sandbox_workspace_write]
-# Allow outbound network access inside the sandbox
-network_access = false
-
-################################################################################
-# Web Search
-################################################################################
-
-# Web search mode: disabled | cached | live. Default: "cached"
-# cached serves results from a web search cache (an OpenAI-maintained index).
-# cached returns pre-indexed results; live fetches the most recent data.
-# If you use --yolo or another full access sandbox setting, web search defaults to live.
-web_search = "disabled"
-
-################################################################################
-# Tool Controls
-################################################################################
-
-[tools]
-# Disable native web search tool regardless of mode defaults.
-web_search = false
-
-################################################################################
-# External Integrations
-################################################################################
-
-[mcp_servers]
-# Keep empty to prevent inherited MCP tool access.
-
-[apps._default]
-# Disable app/connectors so no external app tool can be invoked.
-enabled = false
-open_world_enabled = false
-
-################################################################################
-# History (table)
-################################################################################
-
-[history]
-# save-all (default) | none
-persistence = "none"
-
-################################################################################
-# UI, Notifications, and Misc (tables)
-################################################################################
-
-[tui]
-# Desktop notifications from the TUI: boolean or filtered list. Default: true
-# Examples: false | ["agent-turn-complete", "approval-requested"]
-notifications = false
-
-`;
-
-		await Bun.write(configPath, config);
-		await this.copyCodexAuthFile(codexHome);
-
-		return { instructionsPath, configPath, codexHome };
-	}
-
-	private async copyCodexAuthFile(codexHome: string): Promise<void> {
-		const sourceCodexHome = Bun.env.CODEX_HOME || path.join(os.homedir(), ".codex");
-		const sourceAuthPath = path.join(sourceCodexHome, "auth.json");
-		const targetAuthPath = path.join(codexHome, "auth.json");
-
-		const sourceAuth = Bun.file(sourceAuthPath);
-		if (!(await sourceAuth.exists())) {
-			logger.warn("AGENT", "Codex auth file not found in source CODEX_HOME", {
-				sourceCodexHome: sourceCodexHome.replace(os.homedir(), "~"),
-			});
-			return;
-		}
-
-		await Bun.write(targetAuthPath, sourceAuth);
-	}
-
-	private buildCodexEnv(
-		codexHome: string,
-		model?: string,
-	): Record<string, string | undefined> {
-		const env = { ...Bun.env };
-		delete env.CODEX_HOME;
-		delete env.CODEX_CONFIG_PATH;
-		delete env.CODEX_THREAD_ID;
-
-		return {
-			...env,
-			CODEX_HOME: codexHome,
-			...(model && { CODEX_MODEL: model }),
-		};
-	}
-
-	private async cleanupCodexTempDir(tempDir: string): Promise<void> {
-		try {
-			await rm(tempDir, { recursive: true, force: true });
-		} catch (err) {
-			logger.warn("AGENT", "Failed to cleanup Codex temp files", {
-				error: err,
-			});
-		}
-	}
-
-	private async *streamClaudeCli(
-		query: string,
-		context?: AgentContext,
-	): AsyncGenerator<string, void, unknown> {
-		const workingDir = context?.workingDir || this.config.workingDir;
-		const systemPrompt = this.createDynamicSystemPrompt();
-
-		const args = [
-			"-p",
-			query,
-			"--system-prompt",
-			systemPrompt,
-			"--tools",
-			"Read,Glob,Grep",
-			"--dangerously-skip-permissions",
-			"--output-format",
-			"stream-json",
-		];
-
-		const env = {
-			...Bun.env,
-			CLAUDE_PROJECT_DIR: workingDir,
-			...(this.config.aiProvider.model && {
-				ANTHROPIC_MODEL: this.config.aiProvider.model,
-			}),
-		};
-
-		logger.debug("AGENT", "Spawning Claude CLI", {
-			args: args.map((a) => (a.length > 100 ? `${a.substring(0, 100)}...` : a)),
-			workingDir,
-		});
-
-		const proc = Bun.spawn(["claude", ...args], {
-			cwd: workingDir,
-			env,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-
-		let buffer = "";
-
-		if (!proc.stdout) {
-			throw new Error("Failed to capture Claude CLI output");
-		}
-
-		const stderrPromise = proc.stderr
-			? new Response(proc.stderr).text()
-			: Promise.resolve("");
-		const decoder = new TextDecoder();
-		const reader = proc.stdout.getReader();
-
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) {
-				break;
-			}
-
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split("\n");
-			buffer = lines.pop() || "";
-
-			for (const line of lines) {
-				if (!line.trim()) {
-					continue;
-				}
-				try {
-					const data = JSON.parse(line);
-					// Filter for text content blocks in the stream
-					if (data.type === "text" && data.content) {
-						yield data.content;
-					} else if (data.type === "content_block_delta" && data.delta?.text) {
-						yield data.delta.text;
-					} else if (data.type === "message" && Array.isArray(data.content)) {
-						// Final message might come as a whole
-						for (const block of data.content) {
-							if (block.type === "text" && block.text) {
-								yield block.text;
-							}
-						}
-					}
-				} catch {
-					// Silent fail for non-JSON or partial lines
-				}
-			}
-		}
-
-		buffer += decoder.decode();
-		if (buffer.trim()) {
-			try {
-				const data = JSON.parse(buffer);
-				// Handle trailing partial line if the stream didn't end with newline
-				if (data.type === "text" && data.content) {
-					yield data.content;
-				} else if (data.type === "content_block_delta" && data.delta?.text) {
-					yield data.delta.text;
-				} else if (data.type === "message" && Array.isArray(data.content)) {
-					for (const block of data.content) {
-						if (block.type === "text" && block.text) {
-							yield block.text;
-						}
-					}
-				}
-			} catch {
-				// Ignore non-JSON trailing log lines emitted by claude CLI.
-			}
-		}
-
-		const [exitCode, stderrOutput] = await Promise.all([
-			proc.exited,
-			stderrPromise,
-		]);
-		if (exitCode !== 0) {
-			const stderrPreview = stderrOutput.trim().slice(0, 500);
-			throw new Error(
-				stderrPreview
-					? `Claude CLI exited with code ${exitCode}: ${stderrPreview}`
-					: `Claude CLI exited with code ${exitCode}`,
-			);
-		}
-	}
-
-	private async *streamGeminiCli(
-		query: string,
-		context?: AgentContext,
-	): AsyncGenerator<string, void, unknown> {
-		const workingDir = context?.workingDir || this.config.workingDir;
-		const systemPrompt = this.createDynamicSystemPrompt();
-
-		const tempDir = await this.createGeminiTempDir();
-		const model = this.config.aiProvider.model || "gemini-2.5-flash";
-
-		try {
-			await this.setupGeminiConfig(tempDir, systemPrompt, model);
-
-			const args = [
-				"gemini",
-				"-p",
-				query,
-				"--output-format",
-				"stream-json",
-				"--yolo",
-			];
-
-			const env = this.buildGeminiEnv(tempDir, model);
-
-			logger.debug("AGENT", "Spawning Gemini CLI", {
-				args,
-				workingDir,
-				model,
-			});
-
-			const proc = Bun.spawn(args, {
-				cwd: workingDir,
-				env,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-
-			const reader = proc.stdout.getReader();
-			let buffer = "";
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) {
-					break;
-				}
-
-				buffer += new TextDecoder().decode(value);
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-
-				for (const line of lines) {
-					if (!line.trim()) {
-						continue;
-					}
-					try {
-						const data = JSON.parse(line);
-						const text = this.parseGeminiStreamLine(data);
-						if (text) {
-							yield text;
-						}
-					} catch {
-						// Silent fail for non-JSON or partial lines
-					}
-				}
-			}
-
-			const exitCode = await proc.exited;
-			if (exitCode !== 0) {
-				throw new Error(`Gemini CLI exited with code ${exitCode}`);
-			}
-		} finally {
-			await this.cleanupGeminiTempDir(tempDir);
-		}
-	}
-
-	private parseGeminiStreamLine(data: unknown): string | null {
-		if (
-			data &&
-			typeof data === "object" &&
-			"type" in data &&
-			"role" in data &&
-			"content" in data
-		) {
-			const typedData = data as { type: string; role: string; content: string };
-			if (
-				typedData.type === "message" &&
-				typedData.role === "assistant" &&
-				typedData.content
-			) {
-				return typedData.content;
-			}
-		}
-		return null;
-	}
-
-	private parseCodexExecStreamLine(data: unknown): string | null {
-		if (!data || typeof data !== "object" || !("type" in data)) {
-			return null;
-		}
-
-		const typedData = data as {
-			type: string;
-			item?: {
-				type?: string;
-				text?: string;
-			};
-		};
-
-		if (
-			typedData.type === "item.completed" &&
-			typedData.item?.type === "agent_message" &&
-			typedData.item.text
-		) {
-			return typedData.item.text;
-		}
-
-		return null;
-	}
-
-	private async *streamCodexCli(
-		query: string,
-		context?: AgentContext,
-	): AsyncGenerator<string, void, unknown> {
-		const workingDir = context?.workingDir || this.config.workingDir;
-		const systemPrompt = this.createDynamicSystemPrompt();
-
-		// Create a temporary directory with isolated Codex config
-		const tempDir = await this.createCodexTempDir();
-		const model = this.config.aiProvider.model;
-
-		try {
-			const codexSetup = await this.setupCodexConfig(tempDir, systemPrompt);
-
-			// Build args - now simpler since config is in the temp file
-			const args = [
-				"exec",
-				"--json",
-				"--ephemeral",
-				"--sandbox",
-				"read-only",
-				"--skip-git-repo-check",
-				"--color",
-				"never",
-				...(model ? ["-m", model] : []),
-				"--",
-				query,
-			];
-
-			const env = this.buildCodexEnv(codexSetup.codexHome, model);
-
-			logger.debug("AGENT", "Spawning Codex CLI", {
-				workingDir,
-				model: model || "default",
-				queryLength: query.length,
-				systemPromptLength: systemPrompt.length,
-				mode: "read-only",
-				configPath: codexSetup.configPath,
-				codexHome: codexSetup.codexHome,
-			});
-
-			const proc = Bun.spawn(["codex", ...args], {
-				cwd: workingDir,
-				env,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-
-			if (!proc.stdout) {
-				throw new Error("Failed to capture Codex CLI output");
-			}
-
-			const stderrPromise = proc.stderr
-				? new Response(proc.stderr).text()
-				: Promise.resolve("");
-
-			let buffer = "";
-			const decoder = new TextDecoder();
-			const reader = proc.stdout.getReader();
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) {
-					break;
-				}
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-
-				for (const line of lines) {
-					if (!line.trim()) {
-						continue;
-					}
-					try {
-						const data = JSON.parse(line);
-						const text = this.parseCodexExecStreamLine(data);
-						if (text) {
-							yield text;
-						}
-					} catch {
-						// Ignore non-JSON log lines emitted by codex CLI.
-					}
-				}
-			}
-
-			buffer += decoder.decode();
-			if (buffer.trim()) {
-				try {
-					const data = JSON.parse(buffer);
-					const text = this.parseCodexExecStreamLine(data);
-					if (text) {
-						yield text;
-					}
-				} catch {
-					// Ignore non-JSON trailing log lines emitted by codex CLI.
-				}
-			}
-
-			const [exitCode, stderrOutput] = await Promise.all([
-				proc.exited,
-				stderrPromise,
-			]);
-			if (exitCode !== 0) {
-				const stderrPreview = stderrOutput.trim().slice(0, 500);
-				throw new Error(
-					stderrPreview
-						? `Codex CLI exited with code ${exitCode}: ${stderrPreview}`
-						: `Codex CLI exited with code ${exitCode}`,
-				);
-			}
-		} finally {
-			await this.cleanupCodexTempDir(tempDir);
-		}
-	}
-
-	private isCliProvider(): boolean {
-		return (
-			this.config.aiProvider.type === "claude-code" ||
-			this.config.aiProvider.type === "gemini-cli" ||
-			this.config.aiProvider.type === "codex-cli"
-		);
-	}
-
-	async initialize(): Promise<void> {
-		if (this.isCliProvider()) {
-			logger.info(
-				"AGENT",
-				`${this.config.aiProvider.type} CLI mode initialized`,
-			);
-			return;
-		}
-
-		logger.info("AGENT", "Direct RLM mode initialized", {
-			hasContextSchema: !!this.contextSchema,
-		});
-	}
-
-	/**
-	 * Query repository with a given query and optional context
-	 *
-	 * @param repoPath - The repository path (deprecated, for compatibility)
-	 * @param query - The query string
-	 * @param context - Optional context object containing working directory and metadata
-	 * @returns The agent's response as a string
-	 */
-	async queryRepository(
-		_repoPath: string,
-		query: string,
-		context?: AgentContext,
-	): Promise<string> {
-		logger.info("AGENT", "Query started", {
-			queryLength: query.length,
-			hasContext: !!context,
-		});
-
-		// Use RLM mode for supported providers (not CLI-based ones)
-		if (this.shouldUseRlm()) {
-			logger.info("AGENT", "Using RLM mode");
-			const result = await this.executeRlmQuery(query);
-			logger.info("AGENT", "RLM query result received", {
-				root_iterations: result.stats.rootIterations,
-				sub_rlm_calls: result.stats.subRlmCalls,
-				sub_model_calls: result.stats.subModelCalls,
-				repo_calls: result.stats.repoCalls,
-				total_input_chars: result.stats.totalInputChars,
-				total_output_chars: result.stats.totalOutputChars,
-				final_set: result.stats.finalSet,
-				fallback_recovery_used: result.stats.fallbackRecoveryUsed,
-				metadata_history_entries: result.metadataHistory.length,
-				last_error:
-					result.metadataHistory[result.metadataHistory.length - 1]?.environment.error
-						?.message ?? null,
-			});
-			return result.answer;
-		}
-
-		if (this.config.aiProvider.type === "claude-code") {
-			let fullContent = "";
-			for await (const chunk of this.streamClaudeCli(query, context)) {
-				fullContent += chunk;
-			}
-			return fullContent;
-		}
-
-		if (this.config.aiProvider.type === "gemini-cli") {
-			let fullContent = "";
-			for await (const chunk of this.streamGeminiCli(query, context)) {
-				fullContent += chunk;
-			}
-			return fullContent;
-		}
-
-		if (this.config.aiProvider.type === "codex-cli") {
-			let fullContent = "";
-			for await (const chunk of this.streamCodexCli(query, context)) {
-				fullContent += chunk;
-			}
-			return fullContent;
-		}
-
-		throw new Error(
-			`Unsupported AI provider for direct repository query: ${this.config.aiProvider.type}`,
-		);
-	}
-
-	/**
-	 * Check if RLM mode should be used based on provider type
-	 * RLM mode is used for API-based providers (OpenAI, Anthropic, Google)
-	 * CLI-based providers (claude-code, gemini-cli, codex-cli) use their own execution path
-	 */
-	private shouldUseRlm(): boolean {
-		const rlmProviders = [
-			"openai",
-			"anthropic",
-			"google",
-			"openai-compatible",
-			"anthropic-compatible",
-		];
-		return rlmProviders.includes(this.config.aiProvider.type);
-	}
-
-	/**
-	 * Initialize the RLM orchestrator on first use
-	 */
-	private initializeRlmOrchestrator(): void {
-		const llmConfig: LlmConfig = {
-			type: this.config.aiProvider.type as LlmConfig["type"],
-			apiKey: this.config.aiProvider.apiKey,
-			model: this.config.aiProvider.model,
-			baseURL: this.config.aiProvider.baseURL,
-		};
-
-		const orchestratorConfig: RlmOrchestratorConfig = {
-			llmConfig,
-			rootMetadataLoader: () => this.loadRootMetadata(),
-			workingDir: this.config.workingDir,
-			maxIterations: 30,
-			stdoutPreviewLength: 2000,
-			systemPrompt: this.createRlmSystemPrompt(),
-		};
-
-		this.rlmOrchestrator = new RlmOrchestrator(orchestratorConfig);
-		logger.info("AGENT", "RLM Orchestrator initialized", {
-			workingDir: this.config.workingDir,
-			maxIterations: orchestratorConfig.maxIterations,
-		});
-	}
-
-	private async loadRootMetadata(): Promise<RootRepoMetadata> {
-		const { workingDir, technology } = this.config;
-		let topLevelEntries: RootRepoMetadata["topLevelEntries"] = [];
-
-		try {
-			const rawListing = await listTool.invoke(
-				{
-					directoryPath: ".",
-					recursive: false,
-					maxDepth: 1,
-					includeHidden: false,
-				},
-				{ context: { workingDir, group: "", technology: "" } },
-			);
-			const listing = JSON.parse(rawListing) as {
-				entries?: Array<{
-					name: string;
-					path: string;
-					isDirectory: boolean;
-					size?: number;
-					lineCount?: number;
-					depth?: number;
-				}>;
-				error?: unknown;
-				message?: unknown;
-			};
-
-			if (!Array.isArray(listing.entries)) {
-				logger.warn("AGENT", "Root metadata listing returned no entries", {
-					workingDir: workingDir.replace(os.homedir(), "~"),
-					...(typeof listing.message === "string"
-						? { message: listing.message }
-						: {}),
-				});
-			} else {
-				topLevelEntries = listing.entries.map((entry) => ({
-					name: entry.name,
-					path: entry.path,
-					isDirectory: entry.isDirectory,
-					...(entry.size !== undefined ? { size: entry.size } : {}),
-					...(entry.lineCount !== undefined ? { lineCount: entry.lineCount } : {}),
-					...(entry.depth !== undefined ? { depth: entry.depth } : {}),
-				}));
-			}
-		} catch (error) {
-			logger.warn("AGENT", "Failed to load root metadata listing", {
-				workingDir: workingDir.replace(os.homedir(), "~"),
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
-
-		return {
-			workingDir,
-			targetLabel: technology ? technology.name : path.basename(workingDir),
-			...(technology?.repository ? { repository: technology.repository } : {}),
-			...(technology?.branch ? { branch: technology.branch } : {}),
-			outline: (await this.getRepoOutline(workingDir)) || "(outline unavailable)",
-			topLevelEntries,
-		};
-	}
-	/**
-	 * Execute query using RLM Orchestrator
-	 * This implements the multi-turn RLM pattern from the paper using RlmOrchestrator
-	 */
-	private async executeRlmQuery(query: string): Promise<RlmRunResult> {
-		const timingId = logger.timingStart("rlmQuery");
-
-		// Initialize orchestrator if not already done
-		if (!this.rlmOrchestrator) {
-			this.initializeRlmOrchestrator();
-		}
-
-		// Run the orchestrator with the query
-		const result = await this.rlmOrchestrator!.runDetailed(query);
-
-		logger.timingEnd(timingId, "AGENT", "RLM query completed");
-		return result;
-	}
+Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``
+      );
+      prompt = prompt.replace("</context_block>", "");
+    } else {
+      prompt = prompt.replace(
+        "<context_block>",
+        `You have been provided several related repositories to work with grouped in the following working directory: ${workingDir}
+
+Remember that ALL tool calls MUST be executed using absolute path in \`${workingDir}\``
+      );
+      prompt = prompt.replace("</context_block>", "");
+    }
+
+    logger.debug("AGENT", "Dynamic system prompt generated", {
+      hasTechnologyContext: !!technology,
+      promptLength: prompt.length,
+    });
+
+    return prompt;
+  }
+
+  private async createGeminiTempDir(): Promise<string> {
+    const tempDir = path.join(os.tmpdir(), `librarian-gemini-${Date.now()}`);
+    await mkdir(tempDir, { recursive: true });
+    return tempDir;
+  }
+
+  private async setupGeminiConfig(
+    tempDir: string,
+    systemPrompt: string,
+    _model: string
+  ): Promise<{ systemPromptPath: string; settingsPath: string }> {
+    const systemPromptPath = path.join(tempDir, "system.md");
+    const settingsPath = path.join(tempDir, "settings.json");
+
+    await Bun.write(systemPromptPath, systemPrompt);
+
+    const settings = {
+      tools: {
+        core: ["list_directory", "read_file", "glob", "search_file_content"],
+        autoAccept: true,
+      },
+      mcpServers: {},
+      mcp: {
+        excluded: ["*"],
+      },
+      experimental: {
+        enableAgents: false,
+      },
+      output: {
+        format: "json",
+      },
+    };
+    await Bun.write(settingsPath, JSON.stringify(settings, null, 2));
+
+    return { systemPromptPath, settingsPath };
+  }
+
+  private buildGeminiEnv(
+    tempDir: string,
+    model: string
+  ): Record<string, string | undefined> {
+    const settingsPath = path.join(tempDir, "settings.json");
+    const systemPromptPath = path.join(tempDir, "system.md");
+
+    return {
+      ...Bun.env,
+      GEMINI_SYSTEM_MD: systemPromptPath,
+      GEMINI_CLI_SYSTEM_DEFAULTS_PATH: settingsPath,
+      GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
+      GEMINI_MODEL: model,
+    };
+  }
+
+  private async cleanupGeminiTempDir(tempDir: string): Promise<void> {
+    try {
+      await rm(tempDir, { recursive: true, force: true });
+    } catch (err) {
+      logger.warn("AGENT", "Failed to cleanup Gemini temp files", {
+        error: err,
+      });
+    }
+  }
+
+  private async *streamClaudeCli(
+    query: string,
+    context?: AgentContext
+  ): AsyncGenerator<string, void, unknown> {
+    const workingDir = context?.workingDir || this.config.workingDir;
+    const systemPrompt = this.createDynamicSystemPrompt();
+
+    const args = [
+      "-p",
+      query,
+      "--system-prompt",
+      systemPrompt,
+      "--tools",
+      "Read,Glob,Grep",
+      "--dangerously-skip-permissions",
+      "--output-format",
+      "stream-json",
+    ];
+
+    const env = {
+      ...Bun.env,
+      CLAUDE_PROJECT_DIR: workingDir,
+      ...(this.config.aiProvider.model && {
+        ANTHROPIC_MODEL: this.config.aiProvider.model,
+      }),
+    };
+
+    logger.debug("AGENT", "Spawning Claude CLI", {
+      args: args.map((a) => (a.length > 100 ? `${a.substring(0, 100)}...` : a)),
+      workingDir,
+    });
+
+    const proc = Bun.spawn(["claude", ...args], {
+      cwd: workingDir,
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    let buffer = "";
+
+    if (!proc.stdout) {
+      throw new Error("Failed to capture Claude CLI output");
+    }
+
+    const stderrPromise = proc.stderr
+      ? new Response(proc.stderr).text()
+      : Promise.resolve("");
+    const decoder = new TextDecoder();
+    const reader = proc.stdout.getReader();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+        try {
+          const data = JSON.parse(line);
+          // Filter for text content blocks in the stream
+          if (data.type === "text" && data.content) {
+            yield data.content;
+          } else if (data.type === "content_block_delta" && data.delta?.text) {
+            yield data.delta.text;
+          } else if (data.type === "message" && Array.isArray(data.content)) {
+            // Final message might come as a whole
+            for (const block of data.content) {
+              if (block.type === "text" && block.text) {
+                yield block.text;
+              }
+            }
+          }
+        } catch {
+          // Silent fail for non-JSON or partial lines
+        }
+      }
+    }
+
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      try {
+        const data = JSON.parse(buffer);
+        // Handle trailing partial line if the stream didn't end with newline
+        if (data.type === "text" && data.content) {
+          yield data.content;
+        } else if (data.type === "content_block_delta" && data.delta?.text) {
+          yield data.delta.text;
+        } else if (data.type === "message" && Array.isArray(data.content)) {
+          for (const block of data.content) {
+            if (block.type === "text" && block.text) {
+              yield block.text;
+            }
+          }
+        }
+      } catch {
+        // Ignore non-JSON trailing log lines emitted by claude CLI.
+      }
+    }
+
+    const [exitCode, stderrOutput] = await Promise.all([
+      proc.exited,
+      stderrPromise,
+    ]);
+    if (exitCode !== 0) {
+      const stderrPreview = stderrOutput.trim().slice(0, 500);
+      throw new Error(
+        stderrPreview
+          ? `Claude CLI exited with code ${exitCode}: ${stderrPreview}`
+          : `Claude CLI exited with code ${exitCode}`
+      );
+    }
+  }
+
+  private async *streamGeminiCli(
+    query: string,
+    context?: AgentContext
+  ): AsyncGenerator<string, void, unknown> {
+    const workingDir = context?.workingDir || this.config.workingDir;
+    const systemPrompt = this.createDynamicSystemPrompt();
+
+    const tempDir = await this.createGeminiTempDir();
+    const model = this.config.aiProvider.model || "gemini-2.5-flash";
+
+    try {
+      await this.setupGeminiConfig(tempDir, systemPrompt, model);
+
+      const args = [
+        "gemini",
+        "-p",
+        query,
+        "--output-format",
+        "stream-json",
+        "--yolo",
+      ];
+
+      const env = this.buildGeminiEnv(tempDir, model);
+
+      logger.debug("AGENT", "Spawning Gemini CLI", {
+        args,
+        workingDir,
+        model,
+      });
+
+      const proc = Bun.spawn(args, {
+        cwd: workingDir,
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const reader = proc.stdout.getReader();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buffer += new TextDecoder().decode(value);
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) {
+            continue;
+          }
+          try {
+            const data = JSON.parse(line);
+            const text = this.parseGeminiStreamLine(data);
+            if (text) {
+              yield text;
+            }
+          } catch {
+            // Silent fail for non-JSON or partial lines
+          }
+        }
+      }
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        throw new Error(`Gemini CLI exited with code ${exitCode}`);
+      }
+    } finally {
+      await this.cleanupGeminiTempDir(tempDir);
+    }
+  }
+
+  private parseGeminiStreamLine(data: unknown): string | null {
+    if (
+      data &&
+      typeof data === "object" &&
+      "type" in data &&
+      "role" in data &&
+      "content" in data
+    ) {
+      const typedData = data as { type: string; role: string; content: string };
+      if (
+        typedData.type === "message" &&
+        typedData.role === "assistant" &&
+        typedData.content
+      ) {
+        return typedData.content;
+      }
+    }
+    return null;
+  }
+
+  private isCliProvider(): boolean {
+    return (
+      this.config.aiProvider.type === "claude-code" ||
+      this.config.aiProvider.type === "gemini-cli"
+    );
+  }
+
+  async initialize(): Promise<void> {
+    if (this.isCliProvider()) {
+      logger.info(
+        "AGENT",
+        `${this.config.aiProvider.type} CLI mode initialized`
+      );
+      return;
+    }
+
+    if (this.config.aiProvider.type === "codex-sdk") {
+      logger.info("AGENT", "Codex SDK mode initialized");
+      return;
+    }
+
+    logger.info("AGENT", "Direct RLM mode initialized", {
+      hasContextSchema: !!this.contextSchema,
+    });
+  }
+
+  /**
+   * Query repository with a given query and optional context
+   *
+   * @param repoPath - The repository path (deprecated, for compatibility)
+   * @param query - The query string
+   * @param context - Optional context object containing working directory and metadata
+   * @returns The agent's response as a string
+   */
+  async queryRepository(
+    _repoPath: string,
+    query: string,
+    context?: AgentContext
+  ): Promise<string> {
+    logger.info("AGENT", "Query started", {
+      queryLength: query.length,
+      hasContext: !!context,
+    });
+
+    // Use RLM mode for supported providers (not CLI-based ones)
+    if (this.shouldUseRlm()) {
+      logger.info("AGENT", "Using RLM mode");
+      const result = await this.executeRlmQuery(query);
+      logger.info("AGENT", "RLM query result received", {
+        root_iterations: result.stats.rootIterations,
+        sub_rlm_calls: result.stats.subRlmCalls,
+        sub_model_calls: result.stats.subModelCalls,
+        repo_calls: result.stats.repoCalls,
+        total_input_chars: result.stats.totalInputChars,
+        total_output_chars: result.stats.totalOutputChars,
+        final_set: result.stats.finalSet,
+        fallback_recovery_used: result.stats.fallbackRecoveryUsed,
+        metadata_history_entries: result.metadataHistory.length,
+        last_error:
+          result.metadataHistory[result.metadataHistory.length - 1]?.environment
+            .error?.message ?? null,
+      });
+      return result.answer;
+    }
+
+    if (this.config.aiProvider.type === "claude-code") {
+      let fullContent = "";
+      for await (const chunk of this.streamClaudeCli(query, context)) {
+        fullContent += chunk;
+      }
+      return fullContent;
+    }
+
+    if (this.config.aiProvider.type === "gemini-cli") {
+      let fullContent = "";
+      for await (const chunk of this.streamGeminiCli(query, context)) {
+        fullContent += chunk;
+      }
+      return fullContent;
+    }
+
+    if (this.config.aiProvider.type === "codex-sdk") {
+      let fullContent = "";
+      for await (const chunk of this.streamCodexSdk(query, context)) {
+        fullContent += chunk;
+      }
+      return fullContent;
+    }
+
+    throw new Error(
+      `Unsupported AI provider for direct repository query: ${this.config.aiProvider.type}`
+    );
+  }
+
+  /**
+   * Check if RLM mode should be used based on provider type
+   * RLM mode is used for API-based providers (OpenAI, Anthropic, Google)
+   * CLI/SDK providers (claude-code, gemini-cli, codex-sdk) use their own execution path
+   */
+  private shouldUseRlm(): boolean {
+    const rlmProviders = [
+      "openai",
+      "anthropic",
+      "google",
+      "openai-compatible",
+      "anthropic-compatible",
+    ];
+    return rlmProviders.includes(this.config.aiProvider.type);
+  }
+
+  private async *streamCodexSdk(
+    query: string,
+    context?: AgentContext
+  ): AsyncGenerator<string, void, unknown> {
+    const workingDir = context?.workingDir || this.config.workingDir;
+    const systemPrompt = this.createDynamicSystemPrompt();
+
+    logger.debug("AGENT", "Starting Codex SDK stream", {
+      workingDir,
+      model: this.config.aiProvider.model || "sdk-default",
+      queryLength: query.length,
+      systemPromptLength: systemPrompt.length,
+      sandboxMode: "read-only",
+    });
+
+    yield* streamCodexSdk({
+      workingDir: this.config.workingDir,
+      query,
+      systemPrompt,
+      aiProvider: this.config.aiProvider,
+      ...(context ? { context } : {}),
+    });
+  }
+
+  /**
+   * Initialize the RLM orchestrator on first use
+   */
+  private initializeRlmOrchestrator(): void {
+    const llmConfig: LlmConfig = {
+      type: this.config.aiProvider.type as LlmConfig["type"],
+      apiKey: this.config.aiProvider.apiKey,
+      model: this.config.aiProvider.model,
+      baseURL: this.config.aiProvider.baseURL,
+    };
+
+    const orchestratorConfig: RlmOrchestratorConfig = {
+      llmConfig,
+      rootMetadataLoader: () => this.loadRootMetadata(),
+      workingDir: this.config.workingDir,
+      maxIterations: 30,
+      stdoutPreviewLength: 2000,
+      systemPrompt: this.createRlmSystemPrompt(),
+    };
+
+    this.rlmOrchestrator = new RlmOrchestrator(orchestratorConfig);
+    logger.info("AGENT", "RLM Orchestrator initialized", {
+      workingDir: this.config.workingDir,
+      maxIterations: orchestratorConfig.maxIterations,
+    });
+  }
+
+  private async loadRootMetadata(): Promise<RootRepoMetadata> {
+    const { workingDir, technology } = this.config;
+    let topLevelEntries: RootRepoMetadata["topLevelEntries"] = [];
+
+    try {
+      const rawListing = await listTool.invoke(
+        {
+          directoryPath: ".",
+          recursive: false,
+          maxDepth: 1,
+          includeHidden: false,
+        },
+        { context: { workingDir, group: "", technology: "" } }
+      );
+      const listing = JSON.parse(rawListing) as {
+        entries?: Array<{
+          name: string;
+          path: string;
+          isDirectory: boolean;
+          size?: number;
+          lineCount?: number;
+          depth?: number;
+        }>;
+        error?: unknown;
+        message?: unknown;
+      };
+
+      if (!Array.isArray(listing.entries)) {
+        logger.warn("AGENT", "Root metadata listing returned no entries", {
+          workingDir: workingDir.replace(os.homedir(), "~"),
+          ...(typeof listing.message === "string"
+            ? { message: listing.message }
+            : {}),
+        });
+      } else {
+        topLevelEntries = listing.entries.map((entry) => ({
+          name: entry.name,
+          path: entry.path,
+          isDirectory: entry.isDirectory,
+          ...(entry.size !== undefined ? { size: entry.size } : {}),
+          ...(entry.lineCount !== undefined
+            ? { lineCount: entry.lineCount }
+            : {}),
+          ...(entry.depth !== undefined ? { depth: entry.depth } : {}),
+        }));
+      }
+    } catch (error) {
+      logger.warn("AGENT", "Failed to load root metadata listing", {
+        workingDir: workingDir.replace(os.homedir(), "~"),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return {
+      workingDir,
+      targetLabel: technology ? technology.name : path.basename(workingDir),
+      ...(technology?.repository ? { repository: technology.repository } : {}),
+      ...(technology?.branch ? { branch: technology.branch } : {}),
+      outline:
+        (await this.getRepoOutline(workingDir)) || "(outline unavailable)",
+      topLevelEntries,
+    };
+  }
+  /**
+   * Execute query using RLM Orchestrator
+   * This implements the multi-turn RLM pattern from the paper using RlmOrchestrator
+   */
+  private async executeRlmQuery(query: string): Promise<RlmRunResult> {
+    const timingId = logger.timingStart("rlmQuery");
+
+    // Initialize orchestrator if not already done
+    if (!this.rlmOrchestrator) {
+      this.initializeRlmOrchestrator();
+    }
+
+    // Run the orchestrator with the query
+    const result = await this.rlmOrchestrator!.runDetailed(query);
+
+    logger.timingEnd(timingId, "AGENT", "RLM query completed");
+    return result;
+  }
 
   /**
    * Stream repository query with optional context
@@ -1175,42 +860,42 @@ notifications = false
    * @param context - Optional context object containing working directory and metadata
    * @returns Async generator yielding token-by-token chunks from the LLM
    */
-	async *streamRepository(
-		_repoPath: string,
-		query: string,
-		context?: AgentContext,
-	): AsyncGenerator<string, void, unknown> {
-		logger.info("AGENT", "Stream started", {
-			queryLength: query.length,
-			hasContext: !!context,
-		});
+  async *streamRepository(
+    _repoPath: string,
+    query: string,
+    context?: AgentContext
+  ): AsyncGenerator<string, void, unknown> {
+    logger.info("AGENT", "Stream started", {
+      queryLength: query.length,
+      hasContext: !!context,
+    });
 
-		if (this.config.aiProvider.type === "claude-code") {
-			yield* this.streamClaudeCli(query, context);
-			return;
-		}
+    if (this.config.aiProvider.type === "claude-code") {
+      yield* this.streamClaudeCli(query, context);
+      return;
+    }
 
-		if (this.config.aiProvider.type === "gemini-cli") {
-			yield* this.streamGeminiCli(query, context);
-			return;
-		}
+    if (this.config.aiProvider.type === "gemini-cli") {
+      yield* this.streamGeminiCli(query, context);
+      return;
+    }
 
-		if (this.config.aiProvider.type === "codex-cli") {
-			yield* this.streamCodexCli(query, context);
-			return;
-		}
+    if (this.config.aiProvider.type === "codex-sdk") {
+      yield* this.streamCodexSdk(query, context);
+      return;
+    }
 
-		// API-backed providers stream through the direct orchestrator path.
-		if (this.shouldUseRlm()) {
-			// For RLM mode, yield progress indicator then execute and return final result
-			yield "Exploring repository...\n";
-			const result = await this.queryRepository(_repoPath, query, context);
-			yield result;
-			return;
-		}
+    // API-backed providers stream through the direct orchestrator path.
+    if (this.shouldUseRlm()) {
+      // For RLM mode, yield progress indicator then execute and return final result
+      yield "Exploring repository...\n";
+      const result = await this.queryRepository(_repoPath, query, context);
+      yield result;
+      return;
+    }
 
-		throw new Error(
-			`Unsupported AI provider for streaming query: ${this.config.aiProvider.type}`,
-		);
-	}
+    throw new Error(
+      `Unsupported AI provider for streaming query: ${this.config.aiProvider.type}`
+    );
+  }
 }
