@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
+import { parseCodexModelSelection } from "./agents/codex-sdk-adapter.js";
 import type { LibrarianConfig } from "./index.js";
 import { logger } from "./utils/logger.js";
 import { expandTilde } from "./utils/path-utils.js";
@@ -29,7 +30,7 @@ const ConfigSchema = z.object({
         "anthropic-compatible",
         "claude-code",
         "gemini-cli",
-        "codex-cli",
+        "codex-sdk",
       ]),
       apiKey: z.string().optional(), // Optional - will be loaded from .env or not needed for CLI providers
       model: z.string().optional(),
@@ -46,7 +47,7 @@ const ConfigSchema = z.object({
       "anthropic-compatible",
       "claude-code",
       "gemini-cli",
-      "codex-cli",
+      "codex-sdk",
     ])
     .optional(),
   llm_model: z.string().optional(),
@@ -119,7 +120,7 @@ function validateApiKey(
   const isCliProvider =
     config.aiProvider.type === "claude-code" ||
     config.aiProvider.type === "gemini-cli" ||
-    config.aiProvider.type === "codex-cli";
+    config.aiProvider.type === "codex-sdk";
   if (
     !isCliProvider &&
     (!config.aiProvider.apiKey || config.aiProvider.apiKey.trim() === "")
@@ -174,6 +175,26 @@ function validateBaseUrlForCompatibleProviders(
         "Validation failed: model missing for anthropic-compatible provider"
       );
     }
+  }
+}
+
+function validateCodexModelSelection(
+  config: LibrarianConfig,
+  errors: string[]
+): void {
+  if (config.aiProvider.type !== "codex-sdk") {
+    return;
+  }
+
+  try {
+    parseCodexModelSelection(config.aiProvider.model);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errors.push(message);
+    logger.debug("CONFIG", "Validation failed: invalid Codex model string", {
+      model: config.aiProvider.model,
+      error: message,
+    });
   }
 }
 
@@ -258,6 +279,7 @@ function validateConfig(config: LibrarianConfig, envPath: string): void {
 
   validateApiKey(config, envPath, errors);
   validateBaseUrlForCompatibleProviders(config, errors);
+  validateCodexModelSelection(config, errors);
   validateReposPath(config, errors);
   validateTechnologies(config, errors);
 
@@ -291,6 +313,28 @@ function normalizeTechnologies(
   return technologies;
 }
 
+function buildLibrarianTechnologies(
+  technologies: TechnologiesType
+): LibrarianConfig["technologies"] {
+  if (!technologies) {
+    return { default: {} };
+  }
+
+  const result: LibrarianConfig["technologies"] = {};
+  for (const [groupName, group] of Object.entries(technologies)) {
+    result[groupName] = {};
+    for (const [techName, tech] of Object.entries(group)) {
+      result[groupName][techName] = {
+        repo: tech.repo ?? "",
+        branch: tech.branch,
+        ...(tech.description ? { description: tech.description } : {}),
+      };
+    }
+  }
+
+  return result;
+}
+
 function buildAiProvider(
   validatedConfig: z.infer<typeof ConfigSchema>,
   envVars: Record<string, string>
@@ -300,7 +344,11 @@ function buildAiProvider(
     return {
       type,
       apiKey:
-        validatedConfig.aiProvider.apiKey || envVars.LIBRARIAN_API_KEY || "",
+        type === "codex-sdk"
+          ? ""
+          : validatedConfig.aiProvider.apiKey ||
+            envVars.LIBRARIAN_API_KEY ||
+            "",
       ...(model && { model }),
       ...(baseURL && { baseURL }),
     };
@@ -310,7 +358,10 @@ function buildAiProvider(
     logger.debug("CONFIG", "Using README-style llm_* keys for AI provider");
     return {
       type: validatedConfig.llm_provider,
-      apiKey: envVars.LIBRARIAN_API_KEY || "",
+      apiKey:
+        validatedConfig.llm_provider === "codex-sdk"
+          ? ""
+          : envVars.LIBRARIAN_API_KEY || "",
       ...(validatedConfig.llm_model && { model: validatedConfig.llm_model }),
       ...(validatedConfig.base_url && { baseURL: validatedConfig.base_url }),
     };
@@ -370,7 +421,9 @@ export async function loadConfig(
   const validatedConfig = ConfigSchema.parse(parsedConfig);
   logger.debug("CONFIG", "Config schema validation passed");
 
-  const technologies = normalizeTechnologies(validatedConfig.technologies);
+  const technologies = buildLibrarianTechnologies(
+    normalizeTechnologies(validatedConfig.technologies)
+  );
   const aiProvider = buildAiProvider(validatedConfig, envVars);
 
   logger.debug("CONFIG", "API key source", {
@@ -378,15 +431,14 @@ export async function loadConfig(
     fromConfig: !!validatedConfig.aiProvider?.apiKey,
   });
 
-  const config = {
-    ...validatedConfig,
-    technologies: technologies || { default: {} },
+  const config: LibrarianConfig = {
+    technologies,
     aiProvider,
-    repos_path: validatedConfig.repos_path
-      ? expandTilde(validatedConfig.repos_path)
-      : undefined,
     workingDir: expandTilde(validatedConfig.workingDir),
-  } as LibrarianConfig;
+    ...(validatedConfig.repos_path
+      ? { repos_path: expandTilde(validatedConfig.repos_path) }
+      : {}),
+  };
 
   validateConfig(config, envPath);
 

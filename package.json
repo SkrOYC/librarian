@@ -62,6 +62,7 @@
     "@ai-sdk/google": "^3.0.43",
     "@ai-sdk/openai": "^3.0.41",
     "@ai-sdk/openai-compatible": "^2.0.35",
+    "@openai/codex-sdk": "^0.128.0",
     "ai": "^6.0.116",
     "commander": "^14.0.2",
     "glob": "^13.0.0",

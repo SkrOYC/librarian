@@ -84,13 +84,13 @@ describe("AI Provider Integration", () => {
       expect(librarian).toBeInstanceOf(Librarian);
     });
 
-    it("should support Codex CLI provider configuration", () => {
+    it("should support Codex SDK provider configuration", () => {
       const config: LibrarianConfig = {
         ...mockConfig,
         aiProvider: {
-          type: "codex-cli",
+          type: "codex-sdk",
           apiKey: "",
-          model: "gpt-5.3-codex",
+          model: "gpt-5.4:xhigh",
         },
       };
 

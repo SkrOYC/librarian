@@ -129,7 +129,9 @@ describe("ReactAgent RLM integration", () => {
 
       await agent.initialize();
 
-      expect((agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator).toBeUndefined();
+      expect(
+        (agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator
+      ).toBeUndefined();
     });
 
     it("should create the direct orchestrator on first non-CLI use", () => {
@@ -138,9 +140,13 @@ describe("ReactAgent RLM integration", () => {
         workingDir: "/test/repo",
       });
 
-      (agent as unknown as { initializeRlmOrchestrator: () => void }).initializeRlmOrchestrator();
+      (
+        agent as unknown as { initializeRlmOrchestrator: () => void }
+      ).initializeRlmOrchestrator();
 
-      expect((agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator).toBeDefined();
+      expect(
+        (agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator
+      ).toBeDefined();
     });
 
     it("should keep claude-code on the CLI path", async () => {
@@ -151,7 +157,9 @@ describe("ReactAgent RLM integration", () => {
 
       await agent.initialize();
 
-      expect((agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator).toBeUndefined();
+      expect(
+        (agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator
+      ).toBeUndefined();
     });
 
     it("should keep gemini-cli on the CLI path", async () => {
@@ -162,18 +170,22 @@ describe("ReactAgent RLM integration", () => {
 
       await agent.initialize();
 
-      expect((agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator).toBeUndefined();
+      expect(
+        (agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator
+      ).toBeUndefined();
     });
 
-    it("should keep codex-cli on the CLI path", async () => {
+    it("should keep codex-sdk off the RLM path", async () => {
       const agent = new ReactAgent({
-        aiProvider: { type: "codex-cli", apiKey: "" },
+        aiProvider: { type: "codex-sdk", apiKey: "" },
         workingDir: "/test/repo",
       });
 
       await agent.initialize();
 
-      expect((agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator).toBeUndefined();
+      expect(
+        (agent as unknown as { rlmOrchestrator?: unknown }).rlmOrchestrator
+      ).toBeUndefined();
     });
   });
 
@@ -188,7 +200,7 @@ describe("ReactAgent RLM integration", () => {
       let callCount = 0;
       (listTool as { invoke: typeof listTool.invoke }).invoke = async (
         input,
-        config,
+        config
       ) => {
         callCount += 1;
         if (callCount === 1) {
@@ -211,7 +223,8 @@ describe("ReactAgent RLM integration", () => {
         expect(metadata.topLevelEntries).toEqual([]);
         expect(metadata.outline).toBe("(outline unavailable)");
       } finally {
-        (listTool as { invoke: typeof listTool.invoke }).invoke = originalInvoke;
+        (listTool as { invoke: typeof listTool.invoke }).invoke =
+          originalInvoke;
       }
     });
 
@@ -259,7 +272,8 @@ describe("ReactAgent RLM integration", () => {
         expect(metadata.topLevelEntries).toEqual([]);
         expect(metadata.outline).toBe("[DIR] src");
       } finally {
-        (listTool as { invoke: typeof listTool.invoke }).invoke = originalInvoke;
+        (listTool as { invoke: typeof listTool.invoke }).invoke =
+          originalInvoke;
       }
     });
   });
@@ -341,8 +355,9 @@ describe("ReactAgent RLM integration", () => {
 
         expect(result).toBe("done");
         expect(
-          logEntries.find((entry) => entry.message === "RLM query result received")
-            ?.metadata,
+          logEntries.find(
+            (entry) => entry.message === "RLM query result received"
+          )?.metadata
         ).toEqual({
           root_iterations: 3,
           sub_rlm_calls: 2,
