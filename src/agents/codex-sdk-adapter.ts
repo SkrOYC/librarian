@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -118,9 +119,11 @@ export function buildCodexSdkClientOptions(
   codexHome: string
 ): CodexOptions {
   const baseUrl = aiProvider.baseURL?.trim();
+  const codexPathOverride = resolveCodexPathOverride();
 
   return {
     ...(baseUrl ? { baseUrl } : {}),
+    ...(codexPathOverride ? { codexPathOverride } : {}),
     env: buildCodexSdkEnv(codexHome),
     config: {
       model_instructions_file: instructionsPath,
@@ -154,6 +157,42 @@ export function buildCodexSdkClientOptions(
       },
     },
   };
+}
+
+function resolveCodexPathOverride(): string | undefined {
+  const explicitPath =
+    envValue("LIBRARIAN_CODEX_PATH") ?? envValue("CODEX_PATH");
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  // Standalone Bun/Nix builds cannot rely on the SDK's optional-package
+  // resolver, so prefer the same system codex executable the user already runs.
+  return findExecutableOnPath("codex");
+}
+
+function findExecutableOnPath(command: string): string | undefined {
+  const pathEnv = envValue("PATH");
+  if (!pathEnv) {
+    return undefined;
+  }
+
+  const names =
+    process.platform === "win32" ? [`${command}.exe`, command] : [command];
+  for (const directory of pathEnv.split(path.delimiter)) {
+    if (!directory) {
+      continue;
+    }
+
+    for (const name of names) {
+      const candidate = path.join(directory, name);
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 export function buildCodexThreadOptions(

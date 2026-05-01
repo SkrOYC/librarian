@@ -67,6 +67,29 @@ describe("Codex SDK adapter", () => {
     );
   });
 
+  it("allows an explicit system Codex executable override", () => {
+    const originalPath = Bun.env.LIBRARIAN_CODEX_PATH;
+    Bun.env.LIBRARIAN_CODEX_PATH = "/opt/codex/bin/codex";
+
+    try {
+      const options = buildCodexSdkClientOptions(
+        {
+          apiKey: "",
+        },
+        "/tmp/instructions.md",
+        "/tmp/codex-home"
+      );
+
+      expect(options.codexPathOverride).toBe("/opt/codex/bin/codex");
+    } finally {
+      if (originalPath) {
+        Bun.env.LIBRARIAN_CODEX_PATH = originalPath;
+      } else {
+        Bun.env.LIBRARIAN_CODEX_PATH = undefined;
+      }
+    }
+  });
+
   it("builds an isolated SDK environment for the Codex child process", () => {
     const env = buildCodexSdkEnv("/tmp/isolated-codex-home");
 
