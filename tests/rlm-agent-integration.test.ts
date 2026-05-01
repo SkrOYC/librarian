@@ -352,6 +352,8 @@ describe("ReactAgent RLM integration", () => {
           total_output_chars: 222,
           final_set: true,
           fallback_recovery_used: false,
+          metadata_history_entries: 0,
+          last_error: null,
         });
       } finally {
         logger.info = originalInfo;
