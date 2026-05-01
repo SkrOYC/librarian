@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -277,13 +277,20 @@ async function copyCodexAuth(codexHome: string): Promise<void> {
 export async function createCodexRuntimeFiles(
   systemPrompt: string
 ): Promise<{ tempDir: string; instructionsPath: string; codexHome: string }> {
-  const tempDir = path.join(os.tmpdir(), `librarian-codex-sdk-${Date.now()}`);
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "librarian-codex-sdk-"));
   const instructionsPath = path.join(tempDir, "instructions.md");
   const codexHome = path.join(tempDir, ".codex-home");
 
-  await mkdir(codexHome, { recursive: true });
-  await Bun.write(instructionsPath, systemPrompt);
-  await copyCodexAuth(codexHome);
+  try {
+    await mkdir(codexHome, { recursive: true });
+    await Bun.write(instructionsPath, systemPrompt);
+    await copyCodexAuth(codexHome);
+  } catch (error) {
+    // Cleanup must happen here because streamCodexSdk's finally block is not
+    // installed until this setup function resolves.
+    await cleanupCodexRuntimeFiles(tempDir);
+    throw error;
+  }
 
   return { tempDir, instructionsPath, codexHome };
 }
