@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -18,6 +19,19 @@ const CODEX_REASONING_EFFORTS: readonly ModelReasoningEffort[] = [
   "high",
   "xhigh",
 ];
+
+const CODEX_NPM_NAME = "@openai/codex";
+
+const CODEX_PLATFORM_PACKAGE_BY_TARGET: Record<string, string> = {
+  "x86_64-unknown-linux-musl": "@openai/codex-linux-x64",
+  "aarch64-unknown-linux-musl": "@openai/codex-linux-arm64",
+  "x86_64-apple-darwin": "@openai/codex-darwin-x64",
+  "aarch64-apple-darwin": "@openai/codex-darwin-arm64",
+  "x86_64-pc-windows-msvc": "@openai/codex-win32-x64",
+  "aarch64-pc-windows-msvc": "@openai/codex-win32-arm64",
+};
+
+const moduleRequire = createRequire(import.meta.url);
 
 interface CodexThread {
   runStreamed(input: string): Promise<{
@@ -166,9 +180,77 @@ function resolveCodexPathOverride(): string | undefined {
     return explicitPath;
   }
 
-  // Standalone Bun/Nix builds cannot rely on the SDK's optional-package
-  // resolver, so prefer the same system codex executable the user already runs.
+  const bundledPath = findBundledCodexPath();
+  if (bundledPath) {
+    return bundledPath;
+  }
+
+  // Standalone Bun/Nix builds can hide the SDK's optional platform package from
+  // require.resolve(), so fall back to the user's system codex executable there.
   return findExecutableOnPath("codex");
+}
+
+function findBundledCodexPath(): string | undefined {
+  const targetTriple = codexTargetTriple();
+  const platformPackage = CODEX_PLATFORM_PACKAGE_BY_TARGET[targetTriple];
+  if (!platformPackage) {
+    return undefined;
+  }
+
+  try {
+    const codexPackageJsonPath = moduleRequire.resolve(
+      `${CODEX_NPM_NAME}/package.json`
+    );
+    const codexRequire = createRequire(codexPackageJsonPath);
+    const platformPackageJsonPath = codexRequire.resolve(
+      `${platformPackage}/package.json`
+    );
+    const binaryName = process.platform === "win32" ? "codex.exe" : "codex";
+    return path.join(
+      path.dirname(platformPackageJsonPath),
+      "vendor",
+      targetTriple,
+      "codex",
+      binaryName
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function codexTargetTriple(): string {
+  switch (process.platform) {
+    case "linux":
+    case "android":
+      switch (process.arch) {
+        case "x64":
+          return "x86_64-unknown-linux-musl";
+        case "arm64":
+          return "aarch64-unknown-linux-musl";
+        default:
+          return "";
+      }
+    case "darwin":
+      switch (process.arch) {
+        case "x64":
+          return "x86_64-apple-darwin";
+        case "arm64":
+          return "aarch64-apple-darwin";
+        default:
+          return "";
+      }
+    case "win32":
+      switch (process.arch) {
+        case "x64":
+          return "x86_64-pc-windows-msvc";
+        case "arm64":
+          return "aarch64-pc-windows-msvc";
+        default:
+          return "";
+      }
+    default:
+      return "";
+  }
 }
 
 function findExecutableOnPath(command: string): string | undefined {

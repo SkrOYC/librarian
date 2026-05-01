@@ -57,17 +57,18 @@ export class ReactAgent {
   constructor(config: ReactAgentConfig) {
     this.config = config;
     this.contextSchema = config.contextSchema;
+    let mode: "codex-sdk" | "cli" | "rlm" = "rlm";
+    if (this.config.aiProvider.type === "codex-sdk") {
+      mode = "codex-sdk";
+    } else if (this.isCliProvider()) {
+      mode = "cli";
+    }
 
     logger.info("AGENT", "Initializing ReactAgent", {
       aiProviderType: config.aiProvider.type,
       model: config.aiProvider.model,
       workingDir: config.workingDir.replace(os.homedir(), "~"),
-      mode:
-        this.config.aiProvider.type === "codex-sdk"
-          ? "codex-sdk"
-          : this.isCliProvider()
-            ? "cli"
-            : "rlm",
+      mode,
       hasContextSchema: !!this.contextSchema,
     });
   }

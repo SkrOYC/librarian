@@ -90,6 +90,30 @@ describe("Codex SDK adapter", () => {
     }
   });
 
+  it("prefers the SDK-bundled Codex executable when available", () => {
+    const originalLibrarianCodexPath = Bun.env.LIBRARIAN_CODEX_PATH;
+    const originalCodexPath = Bun.env.CODEX_PATH;
+    Bun.env.LIBRARIAN_CODEX_PATH = undefined;
+    Bun.env.CODEX_PATH = undefined;
+
+    try {
+      const options = buildCodexSdkClientOptions(
+        {
+          apiKey: "",
+        },
+        "/tmp/instructions.md",
+        "/tmp/codex-home"
+      );
+
+      expect(options.codexPathOverride).toContain("node_modules");
+      expect(options.codexPathOverride).toContain("@openai");
+      expect(options.codexPathOverride).toContain("codex-");
+    } finally {
+      Bun.env.LIBRARIAN_CODEX_PATH = originalLibrarianCodexPath;
+      Bun.env.CODEX_PATH = originalCodexPath;
+    }
+  });
+
   it("builds an isolated SDK environment for the Codex child process", () => {
     const env = buildCodexSdkEnv("/tmp/isolated-codex-home");
 
