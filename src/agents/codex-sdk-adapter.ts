@@ -74,6 +74,8 @@ export interface CodexSdkRuntimeOptions {
   cleanupRuntimeFiles?: (tempDir: string) => Promise<void>;
 }
 
+type Platform = NodeJS.Platform;
+
 function isCodexReasoningEffort(value: string): value is ModelReasoningEffort {
   switch (value) {
     case "minimal":
@@ -146,6 +148,7 @@ export function buildCodexSdkClientOptions(
       model_verbosity: "high",
       notify: [],
       allow_login_shell: false,
+      default_permissions: ":workspace",
       file_opener: "none",
       hide_agent_reasoning: true,
       show_raw_agent_reasoning: false,
@@ -153,6 +156,16 @@ export function buildCodexSdkClientOptions(
       sandbox_workspace_write: {
         network_access: false,
       },
+      ...(shouldEnableLegacyLandlock()
+        ? {
+            // Codex's default Linux bubblewrap sandbox requires bwrap support
+            // on the host. When it is unavailable, prefer the legacy Landlock
+            // backend so Librarian can keep Codex confined to the repo root.
+            features: {
+              use_legacy_landlock: true,
+            },
+          }
+        : {}),
       tools: {
         web_search: false,
       },
@@ -171,6 +184,13 @@ export function buildCodexSdkClientOptions(
       },
     },
   };
+}
+
+export function shouldEnableLegacyLandlock(
+  platform: Platform = process.platform,
+  bwrapPath: string | undefined = findExecutableOnPath("bwrap")
+): boolean {
+  return (platform === "linux" || platform === "android") && !bwrapPath;
 }
 
 function resolveCodexPathOverride(): string | undefined {

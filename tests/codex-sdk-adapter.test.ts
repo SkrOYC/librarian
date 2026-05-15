@@ -11,6 +11,7 @@ import {
   codexSdkEventText,
   createCodexSdkTextStreamState,
   parseCodexModelSelection,
+  shouldEnableLegacyLandlock,
   streamCodexSdk,
 } from "../src/agents/codex-sdk-adapter.js";
 
@@ -65,6 +66,17 @@ describe("Codex SDK adapter", () => {
     expect(options.config?.model_instructions_file).toBe(
       "/tmp/instructions.md"
     );
+    expect(options.config?.default_permissions).toBe(":workspace");
+    expect(options.config?.sandbox_workspace_write).toEqual({
+      network_access: false,
+    });
+  });
+
+  it("uses legacy Landlock on Linux when bwrap is unavailable", () => {
+    expect(shouldEnableLegacyLandlock("linux", undefined)).toBe(true);
+    expect(shouldEnableLegacyLandlock("android", undefined)).toBe(true);
+    expect(shouldEnableLegacyLandlock("linux", "/usr/bin/bwrap")).toBe(false);
+    expect(shouldEnableLegacyLandlock("darwin", undefined)).toBe(false);
   });
 
   it("allows an explicit system Codex executable override", () => {
